@@ -118,9 +118,10 @@ in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case
 change their seeds locally to hunt for rarer bugs). Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. LSP: references (Shift+F12, a peek list). (Done: diagnostics, rename, signature help,
-   document highlights, inlay hints, incremental sync through `LanguageServices::text_changed`
-   and `Outcome::texts_before`.)
+1. Services across files: definitions and references in other documents (they need the
+   application to open them: an `EditorResponse` request, gitgud decides). (Done in the same
+   text: diagnostics, rename, signature help, document highlights, inlay hints, references
+   (Shift+F12), incremental LSP sync.)
 2. (done since: snippets — `rustext_core::snippet`, `Command::InsertSnippet`; their tab stops aren't highlighted yet.)
 3. (done since: injected text, ghost text, inlay hints with LSP.) Next: code lens as a row above
    lines (a new `RowContent`).

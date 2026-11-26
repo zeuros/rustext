@@ -23,6 +23,7 @@ enum RequestKind {
     SignatureHelp,
     InlayHints,
     DocumentHighlights,
+    References,
 }
 
 /// What a request was about: answers for another key are not what the editor asks for now.
@@ -423,6 +424,37 @@ impl LanguageServices for LspServices {
                 })
                 .collect()
         });
+        Reply::Ready(ranges)
+    }
+
+    fn references(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Vec<Range>> {
+        let key = RequestKey { kind: RequestKind::References, text_revision, position, argument: String::new() };
+        let params = json!({ "context": { "includeDeclaration": true } });
+        let result = match self.ask_with(text, key, "textDocument/references", params) {
+            Reply::Ready(result) => result,
+            Reply::Pending => return Reply::Pending,
+        };
+        let position_of = |value: &Value| -> Option<Position> {
+            let line = value["line"].as_u64()? as usize;
+            (line < text.line_count()).then(|| {
+                Position::new(line, char_column(text, line, value["character"].as_u64().unwrap_or(0) as usize))
+            })
+        };
+        let ranges = result
+            .as_array()
+            .map(|locations| {
+                locations
+                    .iter()
+                    .filter(|location| location["uri"].as_str() == Some(self.document_uri.as_str()))
+                    .filter_map(|location| {
+                        Some(Range::new(
+                            position_of(&location["range"]["start"])?,
+                            position_of(&location["range"]["end"])?,
+                        ))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         Reply::Ready(ranges)
     }
 

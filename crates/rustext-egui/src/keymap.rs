@@ -47,6 +47,8 @@ pub enum Action {
     CommandPalette,
     /// Renames the symbol at the cursor through the language services (F2).
     Rename,
+    /// Lists the references of the symbol at the cursor (Shift+F12).
+    FindReferences,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -238,6 +240,7 @@ impl Keymap {
             (chord(none, Key::F12), Action::GoToDefinition),
             (chord(none, Key::F1), Action::CommandPalette),
             (chord(none, Key::F2), Action::Rename),
+            (chord(shift, Key::F12), Action::FindReferences),
             (chord(command_shift, Key::P), Action::CommandPalette),
             (chord(shift, Key::F8), Action::PreviousProblem),
             (chord(shift, Key::F7), Action::PreviousChange),

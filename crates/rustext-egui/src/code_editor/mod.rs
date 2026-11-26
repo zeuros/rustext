@@ -15,6 +15,7 @@ mod input;
 mod layout;
 mod paint;
 mod palette;
+mod references;
 mod structure;
 mod wrapping;
 
@@ -237,6 +238,8 @@ pub struct EditorView {
     pub signature: SignatureState,
     pub inlay_hints: assist::InlayHintsState,
     pub document_highlights: assist::DocumentHighlightsState,
+    /// The references list (Shift+F12).
+    pub references: references::ReferencesState,
     wraps: wrapping::WrapState,
     /// Lines pinned at the top by sticky scroll in the last frame.
     sticky_lines: Vec<usize>,
@@ -580,7 +583,7 @@ impl<'a> CodeEditor<'a> {
         }
         self.after_outcome(ui, &outcome);
         self.refresh_service_diagnostics();
-        if self.refresh_inlay_hints(&metrics) | self.refresh_document_highlights() {
+        if self.refresh_inlay_hints(&metrics) | self.refresh_document_highlights() | self.refresh_references() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
         let typed = std::mem::take(&mut self.typed_this_frame);
@@ -604,6 +607,7 @@ impl<'a> CodeEditor<'a> {
             response.request_focus();
         }
         self.show_signature_help(ui, &metrics, id);
+        self.show_references(ui, &metrics, id, &mut completion_outcome);
         let (picked_action, palette_closed) = self.show_palette(ui, &metrics, id);
         if palette_closed {
             response.request_focus();

@@ -123,3 +123,14 @@ fn document_highlights() {
     assert_eq!(ranges.len(), 2);
     assert_eq!(ranges[1], rustext_core::Range::new(Position::new(1, 0), Position::new(1, 2)));
 }
+
+#[test]
+fn references_in_this_document() {
+    let mut services = start();
+    let text = Text::new("ab\nab c\n");
+
+    let ranges = until_ready(|| services.references(&text, 1, Position::new(0, 1)));
+
+    let lines: Vec<usize> = ranges.iter().map(|range| range.start.line).collect();
+    assert_eq!(lines, vec![0, 1]);
+}

@@ -210,6 +210,16 @@ pub trait LanguageServices {
         Reply::Ready(None)
     }
 
+    /// The uses of the symbol at `position` in the text, its declaration included (Shift+F12).
+    fn references(
+        &mut self,
+        _text: &Text,
+        _text_revision: u64,
+        _position: Position,
+    ) -> Reply<Vec<crate::position::Range>> {
+        Reply::Ready(Vec::new())
+    }
+
     /// Where the symbol at `position` is defined, in the same text (F12, Ctrl+click).
     fn definition(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Option<Position>> {
         Reply::Ready(None)

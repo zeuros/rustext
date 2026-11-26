@@ -352,7 +352,11 @@ impl CodeEditor<'_> {
         outcome: &mut Outcome,
         unhandled_actions: &mut Vec<Action>,
     ) {
-        if modifiers.is_none() && (self.completion_key(key, outcome) || self.ghost_text_key(key, outcome)) {
+        if modifiers.is_none()
+            && (self.completion_key(key, outcome)
+                || self.references_key(key, outcome)
+                || self.ghost_text_key(key, outcome))
+        {
             return;
         }
         if key == Key::Escape && modifiers.is_none() && self.close_signature_help() {
@@ -411,6 +415,7 @@ impl CodeEditor<'_> {
             Action::TriggerSuggest => self.view.completion.request(),
             Action::CommandPalette => self.view.palette.open(),
             Action::Rename => self.open_rename(),
+            Action::FindReferences => self.open_references(),
             Action::GoToDefinition => {
                 let text = self.state.text().clone();
                 if let Some(definition) = self.definition_of(text.position(self.state.selections().primary().head)) {

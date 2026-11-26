@@ -98,6 +98,19 @@ impl LanguageServices for TestServices {
         Reply::Ready(Some(calls))
     }
 
+    /// Every whole-word `helper`.
+    fn references(&mut self, text: &Text, _revision: u64, _position: Position) -> Reply<Vec<rustext_core::Range>> {
+        use rustext_core::find::{SearchQuery, find_matches};
+        let query = SearchQuery { match_case: true, whole_word: true, ..SearchQuery::new("helper") };
+        let found = find_matches(text, &query, None, 100).unwrap();
+        Reply::Ready(
+            found
+                .into_iter()
+                .map(|found| rustext_core::Range::new(text.position(found.start), text.position(found.end)))
+                .collect(),
+        )
+    }
+
     /// `: i32` after the name of every `let`.
     fn inlay_hints(
         &mut self,
@@ -453,4 +466,41 @@ fn document_highlights_from_the_services_replace_the_word_highlight() {
     let pos = harness.state().view.geometry().unwrap().cell_center(3, 2);
     press(&mut harness, pos, Modifiers::NONE);
     assert_eq!(highlights(&harness), None);
+}
+
+#[test]
+fn shift_f12_lists_references_and_enter_jumps_to_one() {
+    let mut harness = harness("fn helper() {}\nhelper();\nlet x = helper();\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(1, 2);
+    press(&mut harness, pos, Modifiers::NONE);
+
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::F12);
+    harness.run();
+    let references = &harness.state().view.references;
+    assert_eq!(references.entries(), &[(3, 9), (15, 21), (33, 39)]);
+    assert_eq!(references.selected(), 1);
+    harness.get_by_label("3 references");
+
+    harness.key_press(Key::ArrowDown);
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!(!harness.state().view.references.is_open());
+    let primary = harness.state().state.selections().primary();
+    assert_eq!((primary.anchor, primary.head), (33, 39));
+}
+
+#[test]
+fn escape_closes_the_references_without_moving() {
+    let mut harness = harness("helper();\nhelper();\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(0, 2);
+    press(&mut harness, pos, Modifiers::NONE);
+    let head_before = harness.state().state.selections().primary().head;
+
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::F12);
+    harness.run();
+    assert!(harness.state().view.references.is_open());
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(!harness.state().view.references.is_open());
+    assert_eq!(harness.state().state.selections().primary().head, head_before);
 }

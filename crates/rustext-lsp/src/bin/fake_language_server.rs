@@ -67,6 +67,11 @@ fn main() {
                 "activeSignature": 0,
                 "activeParameter": 1,
             }),
+            "textDocument/references" => {
+                let uri = message["params"]["textDocument"]["uri"].clone();
+                let location = |uri: Value, line: u64| json!({ "uri": uri, "range": { "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 2 } } });
+                json!([location(uri.clone(), 0), location(json!("file:///elsewhere.rs"), 5), location(uri, 1)])
+            }
             "textDocument/documentHighlight" => {
                 let range = |line: u64| json!({ "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 2 } });
                 json!([{ "range": range(0), "kind": 3 }, { "range": range(1), "kind": 2 }])
