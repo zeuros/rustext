@@ -238,6 +238,7 @@ impl CodeEditor<'_> {
             is_hovered,
         };
         self.paint_gutter(&painter, metrics, &text, &rows, &gutter_context);
+        self.paint_lightbulb(&painter.with_clip_rect(metrics.gutter_rect()), metrics);
         self.view.sticky_lines = self.compute_sticky_lines(metrics);
         self.paint_sticky_lines(ui, &painter, metrics, primary_head.line);
         self.paint_minimap(&painter, metrics, &text);

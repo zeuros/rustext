@@ -620,6 +620,23 @@ fn ctrl_period_lists_code_actions_and_enter_applies_one() {
 }
 
 #[test]
+fn a_lightbulb_shows_where_the_cursor_rests_on_code_actions_and_a_click_lists_them() {
+    let mut harness = harness("let x = 1\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(0, 4);
+    press(&mut harness, pos, Modifiers::NONE);
+    assert!(!harness.state().view.shows_lightbulb());
+
+    for _ in 0..30 {
+        harness.step();
+    }
+    assert!(harness.state().view.shows_lightbulb());
+
+    let bulb = harness.state().view.lightbulb_rect().unwrap().center();
+    press(&mut harness, bulb, Modifiers::NONE);
+    assert!(harness.state().view.code_actions.is_open());
+}
+
+#[test]
 fn escape_closes_the_references_without_moving() {
     let mut harness = harness("helper();\nhelper();\n");
     let pos = harness.state().view.geometry().unwrap().cell_center(0, 2);

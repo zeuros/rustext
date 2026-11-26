@@ -121,15 +121,14 @@ rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP featu
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. A lightbulb in the gutter when the cursor's line has code actions (asked when the cursor
-   rests, D19), and LSP code lenses turned into `CodeLens` values.
+1. LSP code lenses turned into `CodeLens` values (`textDocument/codeLens`, resolved lazily).
 2. Tree-sitter for bracket matching and colorization where a grammar is bundled, replacing
    the lexer (D21) there; language injections (JS in HTML, code blocks in Markdown).
 3. An accessible diff viewer (`accessibleDiffViewerNext`): the changes read one by one.
 4. Range formatting and format on type (`documentRangeFormatting`, `onTypeFormatting`).
 
 **Done in the last sessions** (newest first):
-- Language services: code actions (Ctrl+.), format document (Shift+Alt+F), Go to Symbol
+- Language services: a lightbulb where the cursor rests on code actions; code actions (Ctrl+.), format document (Shift+Alt+F), Go to Symbol
   (Ctrl+Shift+O, from LSP or tree-sitter tags), definitions and references in other
   documents (`EditorResponse::open_request`, D26), F12 answered on a later frame.
 - Editing and display: links (Ctrl+click), word wrap in diffs, screen readers read the

@@ -107,6 +107,9 @@ impl CodeEditor<'_> {
         let pointer_pos = pointer_pos?;
 
         let mut pressed_target = None;
+        if primary_pressed && response.hovered() && self.press_lightbulb(pointer_pos) {
+            return None;
+        }
         if primary_pressed && metrics.full_rect().contains(pointer_pos) && response.hovered() {
             let target = self.target_at(ui, metrics, pointer_pos);
             pressed_target = Some(target);

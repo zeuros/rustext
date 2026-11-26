@@ -132,6 +132,9 @@ pub struct ViewConfig {
     pub folding_strategy: FoldingStrategy,
     pub indent_guides: bool,
     pub match_brackets: bool,
+    /// A lightbulb in the gutter where the cursor rests on code actions (Monaco's
+    /// `lightbulb.enabled`); a click opens them.
+    pub lightbulb: bool,
     /// Underlines URLs; Ctrl+click opens them (Monaco's `links`).
     pub links: bool,
     /// Highlights the other occurrences of the word at the cursor.
@@ -189,6 +192,7 @@ impl Default for ViewConfig {
             bracket_pair_colorization: true,
             bracket_pair_guides: false,
             links: true,
+            lightbulb: true,
             word_wrap: WordWrap::default(),
             inlay_hints: true,
             sticky_scroll: true,
@@ -268,6 +272,7 @@ pub struct EditorView {
     pub references: navigation::ReferencesState,
     /// The code actions list (Ctrl+.).
     pub code_actions: code_actions::CodeActionsState,
+    lightbulb: code_actions::LightbulbState,
     /// A definition asked for (F12, Ctrl+click) and not answered yet: (text revision, position).
     definition_request: Option<(u64, Position)>,
     /// Formatting asked for (Shift+Alt+F) and not answered yet: the text revision.
@@ -671,7 +676,8 @@ impl<'a> CodeEditor<'a> {
             | self.refresh_references()
             | self.refresh_definition()
             | self.refresh_formatting()
-            | self.refresh_code_actions();
+            | self.refresh_code_actions()
+            | self.refresh_lightbulb(ui.input(|input| input.time));
         if is_awaiting_services {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
