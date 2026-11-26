@@ -59,6 +59,11 @@ impl CodeEditor<'_> {
             RowContent::Collapsed { first_line, last_line } => return MouseTarget::Collapsed { first_line, last_line },
             RowContent::Foreign(line) => return MouseTarget::Foreign { line },
             RowContent::Padding => return MouseTarget::Padding,
+            RowContent::CodeLens(line) => {
+                return self
+                    .code_lens_at(metrics, line, pos.x)
+                    .map_or(MouseTarget::Padding, |index| MouseTarget::CodeLens { index });
+            }
             RowContent::Line(_) | RowContent::Wrapped { .. } => {}
         }
         let line = self.nearest_line(row);
@@ -157,6 +162,7 @@ impl CodeEditor<'_> {
                 }
             }
             MouseTarget::Collapsed { .. } | MouseTarget::Foreign { .. } | MouseTarget::Padding => {}
+            MouseTarget::CodeLens { .. } => {}
             MouseTarget::FoldMarker { line } => self.toggle_fold(line),
             MouseTarget::Minimap => {
                 self.scroll_to_minimap_y(metrics, pos.y);

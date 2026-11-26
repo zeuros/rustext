@@ -199,7 +199,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Document highlights | `registerDocumentHighlightProvider` | P2 | done (replaces the word highlight when the services answer; LSP too) |
 | Rename (F2) | `registerRenameProvider`, `registerNewSymbolNameProvider` | P2 | done (same text) |
 | Code actions, lightbulb, quick fix | `registerCodeActionProvider`, `lightbulb.enabled` | P2 | todo |
-| Code lens | `registerCodeLensProvider`, `codeLens` | P2 | todo |
+| Code lens | `registerCodeLensProvider`, `codeLens` | P2 | partial (application-provided rows, clicks reported, D25; not from LSP yet) |
 | Formatting (document, range, on type, on paste) | `registerDocumentFormattingEditProvider`, `…Range…`, `…OnType…`, `formatOnType`, `formatOnPaste` | P2 | todo |
 | Inlay hints | `registerInlayHintsProvider`, `inlayHints.*` | P2 | done: `LanguageServices::inlay_hints` per block of visible lines, LSP `textDocument/inlayHint`; hints aren't clickable |
 | Inline completions (ghost text, AI) | `registerInlineCompletionsProvider`, `inlineSuggest.*` | P2 | done (`inline_completion`) |

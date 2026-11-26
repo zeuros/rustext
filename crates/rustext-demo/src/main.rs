@@ -5,7 +5,7 @@
 //! `rustext-demo --diff <old> <new>` opens a diff; `--page diff` starts on the diff page;
 //! `--inline` shows the diff inline; `--find <pattern>` opens the find widget;
 //! `--showcase` folds a block, shows whitespace and puts the cursor on a bracket; `--blame`
-//! turns the blame demo on; `--wrap <columns>` wraps lines;
+//! turns the blame demo on; `--code-lens` the code lens demo; `--wrap <columns>` wraps lines;
 //! `--complete` opens the completion list; `--scroll <lines>` scrolls down;
 //! `--minimap` shows the minimap; `--lsp "<server command>"` uses a language server.
 
@@ -71,6 +71,7 @@ struct Arguments {
     find: Option<String>,
     showcase: bool,
     blame: bool,
+    code_lens: bool,
     wrap_columns: Option<usize>,
     complete: bool,
     scroll_lines: Option<usize>,
@@ -87,6 +88,7 @@ fn parse_arguments() -> Arguments {
         find: None,
         showcase: false,
         blame: false,
+        code_lens: false,
         wrap_columns: None,
         complete: false,
         scroll_lines: None,
@@ -105,6 +107,7 @@ fn parse_arguments() -> Arguments {
             "--find" => arguments.find = raw.next(),
             "--showcase" => arguments.showcase = true,
             "--blame" => arguments.blame = true,
+            "--code-lens" => arguments.code_lens = true,
             "--complete" => arguments.complete = true,
             "--minimap" => arguments.minimap = true,
             "--lsp" => arguments.language_server = raw.next(),
@@ -168,6 +171,7 @@ fn main() -> eframe::Result {
                         arguments.showcase,
                     );
                     editor_page.shows_blame = arguments.blame;
+                    editor_page.shows_code_lenses = arguments.code_lens;
                     if let Some(lines) = arguments.scroll_lines {
                         editor_page.scroll_to_line(lines);
                     }

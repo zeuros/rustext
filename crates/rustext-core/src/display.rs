@@ -16,6 +16,8 @@ pub enum RowContent {
     Collapsed { first_line: usize, last_line: usize },
     /// A line of the foreign text the editor is given (read-only).
     Foreign(usize),
+    /// The code lenses of `line`, in a row above it.
+    CodeLens(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -107,7 +109,7 @@ impl DisplayLayout {
         let line_at = |row: &DisplayRow| match row.content {
             RowContent::Line(line) | RowContent::Wrapped { line, .. } => Some(line),
             RowContent::Collapsed { first_line, .. } => Some(first_line),
-            RowContent::Padding | RowContent::Foreign(_) => None,
+            RowContent::Padding | RowContent::Foreign(_) | RowContent::CodeLens(_) => None,
         };
         let row = row.min(self.rows.len().saturating_sub(1));
         self.rows[row..]

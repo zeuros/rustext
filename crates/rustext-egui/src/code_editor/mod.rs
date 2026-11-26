@@ -9,6 +9,7 @@
 //! `DisplayLayout` (padding, collapsed and foreign rows, for diffs and folding).
 
 mod assist;
+mod code_lens;
 mod completion;
 mod find;
 mod input;
@@ -23,6 +24,7 @@ mod wrapping;
 use egui::{CursorIcon, EventFilter, FontId, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 use rustext_core::decoration::{Decoration, DecorationKind};
 use rustext_core::display::{DisplayLayout, RowContent};
+use rustext_core::services::CodeLens;
 use rustext_core::style::{LineStyler, Rgba};
 use rustext_core::{EditorState, Outcome, Position, Text};
 
@@ -335,6 +337,10 @@ pub enum MouseTarget {
     GlyphMargin {
         line: usize,
     },
+    /// A code lens: its index in the slice given to `CodeEditor::code_lenses`.
+    CodeLens {
+        index: usize,
+    },
     /// A collapsed row standing for hidden lines.
     Collapsed {
         first_line: usize,
@@ -368,6 +374,8 @@ pub struct EditorResponse {
     /// An action the widget doesn't handle itself (find, go to line, folding…), for the
     /// application or a wrapping widget.
     pub unhandled_actions: Vec<Action>,
+    /// The index (in the slice given to `code_lenses`) of the code lens clicked this frame.
+    pub clicked_code_lens: Option<usize>,
 }
 
 pub use rustext_core::services::Severity;
@@ -406,6 +414,9 @@ pub struct CodeEditor<'a> {
     keymap: &'a Keymap,
     styler: Option<&'a mut dyn LineStyler>,
     decorations: &'a [Decoration],
+    code_lenses: &'a [CodeLens],
+    /// The code lens under the pointer this frame, drawn brighter.
+    hovered_code_lens: Option<usize>,
     display_layout: Option<&'a DisplayLayout>,
     foreign: Option<Foreign<'a>>,
     glyph_margin: bool,
@@ -483,6 +494,8 @@ impl<'a> CodeEditor<'a> {
             keymap,
             styler: None,
             decorations: &[],
+            code_lenses: &[],
+            hovered_code_lens: None,
             display_layout: None,
             foreign: None,
             glyph_margin: false,
@@ -509,6 +522,12 @@ impl<'a> CodeEditor<'a> {
     /// Completion, hover and definitions for the text (DECISIONS D9).
     pub fn services(mut self, services: &'a mut dyn rustext_core::services::LanguageServices) -> Self {
         self.services = Some(services);
+        self
+    }
+
+    /// Labels in a row above their lines; a click on one is `EditorResponse::clicked_code_lens`.
+    pub fn code_lenses(mut self, code_lenses: &'a [CodeLens]) -> Self {
+        self.code_lenses = code_lenses;
         self
     }
 
@@ -580,6 +599,10 @@ impl<'a> CodeEditor<'a> {
         let mut unhandled_actions = Vec::new();
         let pointer_pos = ui.input(|input| input.pointer.hover_pos());
         let hovered = pointer_pos.filter(|pos| rect.contains(*pos)).map(|pos| self.target_at(ui, &metrics, pos));
+        self.hovered_code_lens = match hovered {
+            Some(MouseTarget::CodeLens { index }) => Some(index),
+            _ => None,
+        };
         let pressed = self.handle_pointer(ui, &metrics, &response, &mut outcome);
         if has_focus || response.has_focus() {
             self.handle_keyboard(ui, &metrics, &mut outcome, &mut unhandled_actions);
@@ -631,7 +654,7 @@ impl<'a> CodeEditor<'a> {
         if matches!(hovered, Some(MouseTarget::Text { .. } | MouseTarget::Empty { .. })) {
             ui.ctx().set_cursor_icon(CursorIcon::Text);
         }
-        if matches!(hovered, Some(MouseTarget::Collapsed { .. })) {
+        if matches!(hovered, Some(MouseTarget::Collapsed { .. } | MouseTarget::CodeLens { .. })) {
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
         // Screen readers see a text input named after `aria_label`, valued with the cursor's line.
@@ -678,7 +701,11 @@ impl<'a> CodeEditor<'a> {
             padding_top: self.config.padding_top,
         });
 
-        EditorResponse { response, outcome, pressed, hovered, unhandled_actions }
+        let clicked_code_lens = match hovered {
+            Some(MouseTarget::CodeLens { index }) if response.clicked() => Some(index),
+            _ => None,
+        };
+        EditorResponse { response, outcome, pressed, hovered, unhandled_actions, clicked_code_lens }
     }
 
     fn metrics(&self, ui: &Ui, rect: Rect) -> Metrics {

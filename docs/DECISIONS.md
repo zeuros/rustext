@@ -316,6 +316,22 @@ Both come from Helix's authors and are published as standalone crates.
   The `regex` crate stays for expanding `$1` groups in one match's replacement, from the same
   pattern (`SearchQuery::regex_pattern`).
 
+## D25. Code lenses are rows the application fills, clicks are reported
+
+`CodeEditor::code_lenses(&[CodeLens { line, label }])` puts a row above each line with
+lenses, its labels aligned with the line's indentation. A click sets
+`EditorResponse::clicked_code_lens` to the lens's index in that slice; the application runs
+what it means (gitgud: stage a hunk, show a commit). No command ids, no resolve step: Monaco's
+`CodeLensProvider` returns command ids to look up in a global registry (D8).
+
+- The lens row is `RowContent::CodeLens(line)` in the editor's own layout (folds, wraps), so
+  scrolling, clicks below it and hidden lines work as for any row; a layout an application
+  passes (diffs) has no lens rows.
+- Lenses come every frame from the caller (like decorations); keeping them on the right line
+  across edits is the caller's job (recompute, or map through `Outcome::applied_changes`).
+- Language servers' `codeLens` isn't requested yet: the application can turn its answers into
+  `CodeLens` values.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

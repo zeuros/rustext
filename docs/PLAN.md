@@ -119,8 +119,8 @@ in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case
 change their seeds locally to hunt for rarer bugs). Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. Code lens: a row above a line (a new `RowContent`) with clickable labels from the services
-   or the application (gitgud: blame, "stage hunk").
+1. Tree-sitter for folding (`foldingStrategy: 'auto'`) and bracket matching, replacing the
+   lexer (D21) where a grammar is bundled.
 2. Services across files: definitions and references in other documents need the application
    to open them (an `EditorResponse` request; gitgud decides).
 3. Snippet tab stops highlighted while the snippet session lasts.
@@ -128,7 +128,7 @@ change their seeds locally to hunt for rarer bugs). Every feature is a commit on
    AccessKit; an accessible diff viewer (`accessibleDiffViewerNext`).
 5. Bracket pair guides (`guides.bracketPairs`), from `BracketLineStarts`.
 
-Done since: Helix's crates (D22–D24): tree-sitter highlighting for 18 languages, parsed on a
+Done since: code lenses (D25, `--code-lens` in the demo); Helix's crates (D22–D24): tree-sitter highlighting for 18 languages, parsed on a
 thread; smart select (Shift+Alt+→/←); `lsp-types` messages, checked against a real
 rust-analyzer (`crates/rustext-lsp/tests/rust_analyzer.rs`, ignored); `nucleo` fuzzy matching;
 `regex-cursor` find over the rope.
@@ -151,5 +151,5 @@ text; random tests.
 
 **How to verify visually**: `scripts/screenshot.sh <png> [file] [--showcase | --find x |
 --page diff | --page merge | --inline | --diff old new | --blame | --wrap N | --complete |
---minimap | --scroll N]`, then look at the PNG. Performance: `cargo test --release -p
+--minimap | --scroll N | --code-lens]`, then look at the PNG. Performance: `cargo test --release -p
 rustext-egui --test performance -- --ignored --nocapture` (numbers in D19).

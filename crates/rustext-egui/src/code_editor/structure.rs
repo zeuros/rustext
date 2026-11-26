@@ -39,7 +39,9 @@ pub struct FoldState {
     blocks: Vec<FoldedBlock>,
     /// The rows when something is folded or wrapped, and the line count, folded ranges and wrap
     /// generation they were built for.
-    layout_key: Option<(usize, Vec<FoldRange>, u64)>,
+    /// What the layout was built from: line count, folded ranges, wrap generation, code lens
+    /// lines.
+    layout_key: Option<(usize, Vec<FoldRange>, u64, Vec<usize>)>,
     pub(super) layout: Option<DisplayLayout>,
 }
 
@@ -202,7 +204,9 @@ impl CodeEditor<'_> {
         let text = self.state.text().clone();
         let wrap_width_columns = self.wrap_width_columns(metrics);
         self.view.wraps.ensure(&text, wrap_width_columns, self.state.config.indentation.tab_size);
-        if self.display_layout.is_some() || (!self.config.folding && !self.view.wraps.is_wrapping()) {
+        let code_lens_lines = self.code_lens_lines();
+        let needs_layout = self.config.folding || self.view.wraps.is_wrapping() || !code_lens_lines.is_empty();
+        if self.display_layout.is_some() || !needs_layout {
             self.view.folds.layout = None;
             self.state.hidden_lines = HiddenLines::default();
             return;
@@ -216,17 +220,17 @@ impl CodeEditor<'_> {
         }
         let folded = if self.config.folding { self.folded_ranges() } else { Vec::new() };
         let folds = &mut self.view.folds;
-        if folded.is_empty() && !self.view.wraps.is_wrapping() {
+        if folded.is_empty() && !self.view.wraps.is_wrapping() && code_lens_lines.is_empty() {
             folds.layout = None;
             folds.layout_key = None;
             self.state.hidden_lines = HiddenLines::default();
             return;
         }
-        let key = (text.line_count(), folded, self.view.wraps.generation());
+        let key = (text.line_count(), folded, self.view.wraps.generation(), code_lens_lines);
         if folds.layout.is_some() && folds.layout_key.as_ref() == Some(&key) {
             return;
         }
-        let folded = key.1.clone();
+        let (folded, code_lens_lines) = (key.1.clone(), &key.3);
 
         let hidden_lines =
             HiddenLines::new(folded.iter().map(|range| (range.first_hidden_line(), range.last_hidden_line)).collect());
@@ -238,7 +242,12 @@ impl CodeEditor<'_> {
                     .points(line)
                     .iter()
                     .map(move |&start_column| DisplayRow::new(RowContent::Wrapped { line, start_column }));
-                std::iter::once(DisplayRow::new(RowContent::Line(line))).chain(continuations)
+                let code_lens =
+                    code_lens_lines.binary_search(&line).ok().map(|_| DisplayRow::new(RowContent::CodeLens(line)));
+                code_lens
+                    .into_iter()
+                    .chain(std::iter::once(DisplayRow::new(RowContent::Line(line))))
+                    .chain(continuations)
             })
             .collect();
         folds.layout = Some(DisplayLayout::new(rows, text.line_count()));

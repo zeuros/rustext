@@ -2,6 +2,7 @@
 
 use eframe::egui;
 use rustext_core::indentation::Indentation;
+use rustext_core::services::CodeLens;
 use rustext_core::{EditingConfig, EditorState, Text};
 use rustext_egui::code_editor::{CursorStyle, LineNumbers, WhitespaceRendering, WordWrap};
 use rustext_egui::{CodeEditor, EditorView, Keymap, ViewConfig};
@@ -21,6 +22,9 @@ pub struct EditorPage {
     highlighted_theme: ThemeChoice,
     shows_diagnostics: bool,
     pub shows_blame: bool,
+    pub shows_code_lenses: bool,
+    /// The demo's code lenses and the text revision they were computed for.
+    code_lenses: (Vec<CodeLens>, Option<u64>),
     /// Word completions, or a language server when the playground was started with `--lsp`.
     services: Box<dyn rustext_core::services::LanguageServices>,
 }
@@ -143,6 +147,8 @@ impl EditorPage {
             highlighted_theme: *theme_choice,
             shows_diagnostics: showcase,
             shows_blame: false,
+            shows_code_lenses: false,
+            code_lenses: (Vec::new(), None),
             services: Box::new(rustext_core::services::WordCompletions::default()),
         }
     }
@@ -156,11 +162,15 @@ impl EditorPage {
         egui::Panel::left("editor-options").resizable(true).default_size(220.0).show(ui, |ui| self.options_panel(ui));
         egui::Panel::bottom("editor-status").show(ui, |ui| self.status_bar(ui));
         let decorations = self.demo_decorations(&theme);
+        self.refresh_code_lenses();
+        let no_code_lenses = Vec::new();
+        let code_lenses = if self.shows_code_lenses { &self.code_lenses.0 } else { &no_code_lenses };
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
             let response = CodeEditor::new(&mut self.state, &mut self.view, &self.view_config, &theme, keymap)
                 .decorations(&decorations)
                 .services(self.services.as_mut())
                 .glyph_margin(self.shows_blame)
+                .code_lenses(code_lenses)
                 .styler(&mut self.highlighter)
                 .show(ui);
             if let Some(action) = response.unhandled_actions.last() {
@@ -171,10 +181,35 @@ impl EditorPage {
                 self.last_action =
                     format!("blame: line {} is from {} ({})", line + 1, commit.short_sha, commit.summary);
             }
+            if let Some(lens) = response.clicked_code_lens.and_then(|index| code_lenses.get(index)) {
+                self.last_action = format!("code lens: {} (line {})", lens.label, lens.line + 1);
+            }
             if response.outcome.rejected_read_only {
                 self.last_action = "Cannot edit in read-only editor".into();
             }
         });
+    }
+
+    /// The code lens demo: "Run" and a count of uses above each function, computed again when
+    /// the text changes.
+    fn refresh_code_lenses(&mut self) {
+        let revision = self.state.text_revision();
+        if !self.shows_code_lenses || self.code_lenses.1 == Some(revision) {
+            return;
+        }
+        let content = self.state.text().to_string();
+        let mut lenses = Vec::new();
+        for (line, line_content) in content.lines().enumerate() {
+            let declaration = line_content.trim_start();
+            let declaration = declaration.strip_prefix("pub ").unwrap_or(declaration);
+            let Some(after_fn) = declaration.strip_prefix("fn ") else { continue };
+            let name: String =
+                after_fn.chars().take_while(|character| character.is_alphanumeric() || *character == '_').collect();
+            let uses = content.matches(name.as_str()).count().saturating_sub(1);
+            lenses.push(CodeLens::new(line, "Run"));
+            lenses.push(CodeLens::new(line, format!("{uses} use{}", if uses == 1 { "" } else { "s" })));
+        }
+        self.code_lenses = (lenses, Some(revision));
     }
 
     /// Decorations of the demos: diagnostics on a few words, blame shading and glyphs.
@@ -244,6 +279,7 @@ impl EditorPage {
         ui.heading("Editor");
         ui.checkbox(&mut self.shows_diagnostics, "Diagnostics demo (F8)");
         ui.checkbox(&mut self.shows_blame, "Blame demo");
+        ui.checkbox(&mut self.shows_code_lenses, "Code lens demo");
         let mut language_name = self.highlighter.language().name.clone();
         egui::ComboBox::from_label("Language").selected_text(&language_name).height(400.0).show_ui(ui, |ui| {
             for name in self.languages.names() {

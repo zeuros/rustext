@@ -10,6 +10,20 @@ use crate::position::{Position, Range};
 use crate::text::Text;
 use crate::words::WordDefinition;
 
+/// A clickable label shown above a line (Monaco's code lens): "3 references", "Run test", or
+/// the application's own ("Stage hunk", a blame summary).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CodeLens {
+    pub line: usize,
+    pub label: String,
+}
+
+impl CodeLens {
+    pub fn new(line: usize, label: impl Into<String>) -> Self {
+        Self { line, label: label.into() }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Reply<T> {
     Ready(T),

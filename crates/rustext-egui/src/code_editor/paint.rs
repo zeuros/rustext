@@ -66,7 +66,7 @@ impl CodeEditor<'_> {
                     })
                 }
                 RowContent::Foreign(line) => self.layout_foreign_line(ui, metrics, line),
-                RowContent::Padding | RowContent::Collapsed { .. } => None,
+                RowContent::Padding | RowContent::Collapsed { .. } | RowContent::CodeLens(_) => None,
             };
             if let Some(layout) = &layout {
                 self.view.widest_line_px = self.view.widest_line_px.max(layout.width());
@@ -138,6 +138,13 @@ impl CodeEditor<'_> {
                     self.paint_galley(&text_painter, metrics, layout, top);
                 }
                 (RowContent::Padding, _) => paint_padding(&text_painter, row_rect, theme.diff_padding_background),
+                (RowContent::CodeLens(line), _) => {
+                    let hovered_lens = match self.hovered_code_lens {
+                        Some(index) if self.code_lenses.get(index).is_some_and(|lens| lens.line == line) => Some(index),
+                        _ => None,
+                    };
+                    self.paint_code_lens_row(&text_painter, metrics, line, top, hovered_lens);
+                }
                 (RowContent::Collapsed { first_line, last_line }, _) => {
                     let full_row = Rect::from_min_max(
                         pos2(metrics.full_rect().left(), top),
@@ -630,7 +637,7 @@ impl CodeEditor<'_> {
                     continue;
                 }
                 RowContent::Wrapped { .. } => continue,
-                RowContent::Padding | RowContent::Foreign(_) => continue,
+                RowContent::Padding | RowContent::Foreign(_) | RowContent::CodeLens(_) => continue,
             };
             let is_cursor_line = cursor_lines.contains(&line);
             if context.highlights_current_line && is_cursor_line && background.is_none() {
