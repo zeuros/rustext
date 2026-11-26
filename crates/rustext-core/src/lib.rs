@@ -6,6 +6,7 @@ pub mod comment;
 pub mod config;
 pub mod cursors;
 pub mod decoration;
+pub mod display;
 pub mod edit;
 pub mod history;
 pub mod indentation;

@@ -2894,6 +2894,7 @@ dependencies = [
  "eframe",
  "egui",
  "rustext-core",
+ "rustext-diff",
  "rustext-egui",
  "rustext-syntax",
 ]
@@ -2913,6 +2914,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "rustext-core",
+ "rustext-diff",
 ]
 
 [[package]]

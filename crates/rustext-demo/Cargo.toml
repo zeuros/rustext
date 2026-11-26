@@ -12,6 +12,7 @@ publish = false
 rustext-core.workspace = true
 rustext-egui.workspace = true
 rustext-syntax.workspace = true
+rustext-diff.workspace = true
 egui.workspace = true
 eframe = { workspace = true, features = ["glow", "__screenshot"] }
 

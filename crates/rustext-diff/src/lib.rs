@@ -2,10 +2,12 @@
 //! changes, side-by-side and inline row layouts, collapsed unchanged regions, and patches of
 //! selected lines for staging with git.
 
+pub mod display;
 pub mod layout;
 pub mod line_diff;
 pub mod patch;
 
+pub use display::{Collapsing, DiffColors, inline_layout, inner_change_decorations, side_by_side_layouts};
 pub use layout::{
     CollapseOptions, InlineRow, RowKind, Segment, SideBySideRow, collapse_unchanged, inline_rows, side_by_side_rows,
 };

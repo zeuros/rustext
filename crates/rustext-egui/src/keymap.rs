@@ -33,6 +33,9 @@ pub enum Action {
     FoldAll,
     UnfoldAll,
     JumpToBracket,
+    /// Diff editors: the next / previous change (F7 / Shift+F7).
+    NextChange,
+    PreviousChange,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -218,6 +221,8 @@ impl Keymap {
             (chord(command_shift, Key::OpenBracket), Action::Fold),
             (chord(command_shift, Key::CloseBracket), Action::Unfold),
             (chord(command_shift, Key::Backslash), Action::JumpToBracket),
+            (chord(none, Key::F7), Action::NextChange),
+            (chord(shift, Key::F7), Action::PreviousChange),
         ];
         for (key_chord, action) in widget_actions {
             keymap = keymap.bind(&[key_chord], action);

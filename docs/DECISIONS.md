@@ -177,6 +177,30 @@ tabs and ligatures are placed right. Monospace is not assumed in the core.
 GPL-3.0-or-later like gitgud, so code can move between the two freely. Easy to relicense
 while the author is the only contributor.
 
+## D17. Editors paint display rows, not lines
+
+`CodeEditor` paints a list of display rows (`rustext_core::display::DisplayLayout`): a line of
+its text, padding, one collapsed row standing for hidden lines, or a line of a *foreign* text.
+Without a layout it is one row per line.
+
+- The diff editor is two plain code editors given aligned layouts (padding where a side has
+  no line, collapsed unchanged regions); the inline view is one editor whose removed lines
+  are foreign rows from the old text. No second rendering path, no diff-specific widget code
+  beyond wiring (Monaco needs view zones for the same).
+- Folding and word wrap will be more layouts of the same kind (hidden lines; a line split in
+  several rows), Zed's "display map" idea kept to a flat `Vec` of rows: KISS until a 1M-line
+  file needs a tree.
+- What to show is computed by pure functions (`rustext_diff::display`), tested without UI.
+
+## D18. Partial staging: one rule for every hunk shape
+
+Gitgud's patch builder had five cases (pure insertion, pure deletion, equal and unequal line
+counts…), and could not stage a deletion selected in the new side. `rustext_diff::patch` uses
+the rule GitHub Desktop uses: for staging, unselected removed lines become context and
+unselected added lines are dropped; for reverting (unstage / discard, `apply -R`), the other
+way round. `tests/git_apply.rs` applies every subset of changed lines of nine text pairs with
+the real `git apply --unidiff-zero` and checks the result.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

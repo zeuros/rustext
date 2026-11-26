@@ -205,7 +205,7 @@ fn paste_event_inserts_text() {
 fn gutter_click_selects_the_line() {
     let mut harness = harness("one\ntwo\nthree");
     let geometry = geometry(&harness);
-    let pos = Pos2::new(geometry.text_rect.left() - 10.0, geometry.line_top(1) + geometry.row_height / 2.0);
+    let pos = Pos2::new(geometry.text_rect.left() - 10.0, geometry.row_top(1) + geometry.row_height / 2.0);
 
     press_at(&mut harness, pos, Modifiers::NONE);
 
