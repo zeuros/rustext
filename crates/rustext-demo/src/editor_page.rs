@@ -25,6 +25,10 @@ pub struct EditorPage {
 }
 
 impl EditorPage {
+    pub fn show_minimap(&mut self) {
+        self.view_config.minimap = true;
+    }
+
     pub fn set_word_wrap(&mut self, word_wrap: WordWrap) {
         self.view_config.word_wrap = word_wrap;
     }
@@ -254,6 +258,8 @@ impl EditorPage {
             },
         );
         ui.checkbox(&mut self.view_config.show_carriage_returns, "Show CR of CRLF lines");
+        ui.checkbox(&mut self.view_config.minimap, "Minimap");
+        ui.checkbox(&mut self.view_config.sticky_scroll, "Sticky scroll");
         ui.checkbox(&mut self.view_config.folding, "Folding");
         ui.checkbox(&mut self.view_config.indent_guides, "Indent guides");
         ui.checkbox(&mut self.view_config.match_brackets, "Match brackets");

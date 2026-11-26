@@ -42,6 +42,9 @@ impl CodeEditor<'_> {
         if pos.x >= metrics.scrollbar_rect.left() {
             return MouseTarget::Scrollbar;
         }
+        if metrics.minimap_rect.contains(pos) {
+            return MouseTarget::Minimap;
+        }
         if self.horizontal_scrollbar_track(metrics).is_some_and(|track| track.contains(pos)) {
             return MouseTarget::HorizontalScrollbar;
         }
@@ -155,6 +158,10 @@ impl CodeEditor<'_> {
             }
             MouseTarget::Collapsed { .. } | MouseTarget::Foreign { .. } | MouseTarget::Padding => {}
             MouseTarget::FoldMarker { line } => self.toggle_fold(line),
+            MouseTarget::Minimap => {
+                self.scroll_to_minimap_y(metrics, pos.y);
+                self.view.drag = Some(Drag::Minimap);
+            }
             MouseTarget::StickyLine { line } => {
                 self.view.scroll_offset.y = self.row_of_line(line) as f32 * metrics.row_height;
                 self.execute(outcome, Command::SetSelections(Selections::cursor(text.line_start(line))));
@@ -222,6 +229,7 @@ impl CodeEditor<'_> {
                     ((pos.y - grab_offset_y - track.top()) / (track.height() - thumb_height).max(1.0)).clamp(0.0, 1.0);
                 self.view.scroll_offset.y = fraction * self.max_scroll_y(metrics);
             }
+            Drag::Minimap => self.scroll_to_minimap_y(metrics, pos.y),
             Drag::HorizontalScrollbar { grab_offset_x } => {
                 let (Some(track), Some(thumb)) =
                     (self.horizontal_scrollbar_track(metrics), self.horizontal_scrollbar_thumb(metrics))
@@ -464,8 +472,10 @@ impl CodeEditor<'_> {
         if let (Some(styler), Some(first_changed_offset)) = (self.styler.as_deref_mut(), first_changed_offset) {
             styler.invalidate_from(self.state.text().line_of_offset(first_changed_offset));
         }
-        let is_dragging_scrollbar =
-            matches!(self.view.drag, Some(Drag::VerticalScrollbar { .. } | Drag::HorizontalScrollbar { .. }));
+        let is_dragging_scrollbar = matches!(
+            self.view.drag,
+            Some(Drag::VerticalScrollbar { .. } | Drag::HorizontalScrollbar { .. } | Drag::Minimap)
+        );
         if (outcome.text_changed() || outcome.selections_changed) && !is_dragging_scrollbar {
             self.view.reveal_primary_cursor = true;
             self.view.last_interaction_time = ui.input(|input| input.time);

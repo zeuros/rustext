@@ -99,7 +99,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [ ] LSP client implementation (stdio)
 
 ## M12. Extras
-- [ ] Minimap
+- [x] Minimap (token-colored runs, viewport slider, click or drag to scroll; off by default)
 - [x] Sticky scroll (indentation headers, up to 5 pinned; click to go back)
 - [ ] Command palette
 - [ ] Inlay hints, code lens, inline completions (ghost text)

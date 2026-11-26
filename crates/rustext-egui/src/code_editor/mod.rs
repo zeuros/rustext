@@ -124,6 +124,8 @@ pub struct ViewConfig {
     /// Pins the headers of the blocks enclosing the top line (Monaco's `stickyScroll`).
     pub sticky_scroll: bool,
     pub sticky_scroll_max_lines: usize,
+    /// A zoomed-out map of the text right of it (Monaco's `minimap`).
+    pub minimap: bool,
 }
 
 impl Default for ViewConfig {
@@ -155,6 +157,7 @@ impl Default for ViewConfig {
             word_wrap: WordWrap::default(),
             sticky_scroll: true,
             sticky_scroll_max_lines: 5,
+            minimap: false,
         }
     }
 }
@@ -186,6 +189,7 @@ enum Drag {
     HorizontalScrollbar {
         grab_offset_x: f32,
     },
+    Minimap,
 }
 
 /// Per-view state the application keeps between frames: scroll, zoom, mouse drag, chord in
@@ -306,6 +310,8 @@ pub enum MouseTarget {
     FoldMarker {
         line: usize,
     },
+    /// The minimap.
+    Minimap,
     /// A header pinned at the top by sticky scroll.
     StickyLine {
         line: usize,
@@ -383,6 +389,10 @@ pub struct CodeEditor<'a> {
     typed_this_frame: String,
 }
 
+const MINIMAP_WIDTH: f32 = 90.0;
+/// Height of a row in the minimap, in points.
+const MINIMAP_ROW_HEIGHT: f32 = 2.0;
+
 /// Sizes of one frame's layout.
 #[derive(Clone, Copy, Debug)]
 struct Metrics {
@@ -396,6 +406,8 @@ struct Metrics {
     gutter_width: f32,
     text_rect: Rect,
     scrollbar_rect: Rect,
+    /// Empty (zero width) when the minimap is off.
+    minimap_rect: Rect,
 }
 
 impl Metrics {
@@ -615,10 +627,13 @@ impl<'a> CodeEditor<'a> {
         let gutter_width = glyph_margin_width + line_numbers_width + marker_width + fold_marker_width + char_width;
         let scrollbar_rect =
             Rect::from_min_max(pos2(rect.right() - self.config.scrollbar_width, rect.top()), rect.right_bottom());
-        let text_rect = Rect::from_min_max(
-            pos2(rect.left() + gutter_width, rect.top()),
+        let minimap_width = if self.config.minimap && self.display_layout.is_none() { MINIMAP_WIDTH } else { 0.0 };
+        let minimap_rect = Rect::from_min_max(
+            pos2(scrollbar_rect.left() - minimap_width, rect.top()),
             pos2(scrollbar_rect.left(), rect.bottom()),
         );
+        let text_rect =
+            Rect::from_min_max(pos2(rect.left() + gutter_width, rect.top()), pos2(minimap_rect.left(), rect.bottom()));
         Metrics {
             font_size,
             row_height,
@@ -630,6 +645,7 @@ impl<'a> CodeEditor<'a> {
             gutter_width,
             text_rect,
             scrollbar_rect,
+            minimap_rect,
         }
     }
 
@@ -766,6 +782,22 @@ impl<'a> CodeEditor<'a> {
             .take_while(|&(slot, line)| self.row_of_line(line) < first_row + slot + 1)
             .map(|(_, line)| line)
             .collect()
+    }
+
+    /// The first row the minimap shows: it scrolls proportionally when the text is taller.
+    fn minimap_first_row(&self, metrics: &Metrics) -> usize {
+        let minimap_rows = (metrics.minimap_rect.height() / MINIMAP_ROW_HEIGHT) as usize;
+        let hidden_rows = self.row_count().saturating_sub(minimap_rows);
+        let fraction =
+            if self.max_scroll_y(metrics) > 0.0 { self.view.scroll_offset.y / self.max_scroll_y(metrics) } else { 0.0 };
+        (fraction * hidden_rows as f32).round() as usize
+    }
+
+    /// Scrolls so the row under `y` in the minimap is in the middle of the viewport.
+    fn scroll_to_minimap_y(&mut self, metrics: &Metrics, y: f32) {
+        let row =
+            self.minimap_first_row(metrics) as f32 + ((y - metrics.minimap_rect.top()) / MINIMAP_ROW_HEIGHT).max(0.0);
+        self.view.scroll_offset.y = row * metrics.row_height - metrics.text_rect.height() / 2.0;
     }
 
     /// The width rows wrap at, in columns (0: no wrapping).

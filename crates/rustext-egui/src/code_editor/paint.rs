@@ -212,7 +212,63 @@ impl CodeEditor<'_> {
         self.paint_gutter(&painter, metrics, &text, &rows, &gutter_context);
         self.view.sticky_lines = self.compute_sticky_lines(metrics);
         self.paint_sticky_lines(ui, &painter, metrics, primary_head.line);
+        self.paint_minimap(&painter, metrics, &text);
         self.paint_scrollbar(ui, &painter, metrics, &text, &selections);
+    }
+
+    /// Rows at two points each, one point per char, in their token colors, and a slider over
+    /// the rows the viewport shows.
+    fn paint_minimap(&mut self, painter: &Painter, metrics: &Metrics, text: &Text) {
+        const MAX_COLUMNS: usize = 120;
+        let rect = metrics.minimap_rect;
+        if rect.width() <= 0.0 {
+            return;
+        }
+        let theme = self.theme.clone();
+        let minimap_painter = painter.with_clip_rect(rect);
+        minimap_painter.rect_filled(rect, CornerRadius::ZERO, theme.background);
+        let column_width = (rect.width() - 6.0) / MAX_COLUMNS as f32;
+        let first_row = self.minimap_first_row(metrics);
+        let row_count = (rect.height() / super::MINIMAP_ROW_HEIGHT) as usize + 1;
+        for row in first_row..(first_row + row_count).min(self.row_count()) {
+            let Some((line, start_column, end_column)) = self.row_segment(row) else { continue };
+            let spans = self.styler.as_deref_mut().map(|styler| styler.style_line(text, line)).unwrap_or_default();
+            let top = rect.top() + (row - first_row) as f32 * super::MINIMAP_ROW_HEIGHT;
+            let segment_len = end_column.saturating_sub(start_column).min(MAX_COLUMNS);
+            let content: Vec<char> = text.line_content(line).chars().skip(start_column).take(segment_len).collect();
+            let mut column = 0;
+            while column < content.len() {
+                if content[column].is_whitespace() {
+                    column += 1;
+                    continue;
+                }
+                let absolute_column = start_column + column;
+                let span =
+                    spans.iter().find(|span| span.start_column <= absolute_column && absolute_column < span.end_column);
+                let color = span.and_then(|span| span.style.foreground).map(to_color).unwrap_or(theme.foreground);
+                let run_end = (column..content.len())
+                    .find(|&end| {
+                        content[end].is_whitespace() || span.is_some_and(|span| start_column + end >= span.end_column)
+                    })
+                    .unwrap_or(content.len());
+                let left = rect.left() + 3.0 + column as f32 * column_width;
+                let size = vec2((run_end - column) as f32 * column_width, super::MINIMAP_ROW_HEIGHT - 0.5);
+                minimap_painter.rect_filled(
+                    Rect::from_min_size(pos2(left, top), size),
+                    CornerRadius::ZERO,
+                    color.gamma_multiply(0.7),
+                );
+                column = run_end.max(column + 1);
+            }
+        }
+        let first_visible_row = self.row_at_y(metrics, metrics.text_rect.top());
+        let visible_rows = (metrics.text_rect.height() / metrics.row_height).ceil();
+        let slider_top = rect.top() + first_visible_row.saturating_sub(first_row) as f32 * super::MINIMAP_ROW_HEIGHT;
+        let slider = Rect::from_min_size(
+            pos2(rect.left(), slider_top),
+            vec2(rect.width(), visible_rows * super::MINIMAP_ROW_HEIGHT),
+        );
+        minimap_painter.rect_filled(slider, CornerRadius::ZERO, theme.scrollbar_thumb.gamma_multiply(0.6));
     }
 
     /// The pinned headers over the top rows, gutter included, with a line under them.
