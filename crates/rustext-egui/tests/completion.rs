@@ -10,6 +10,8 @@ use rustext_egui::{CodeEditor, EditorTheme, EditorView, Keymap, ViewConfig};
 /// Word completions, plus a hover text and a definition for `helper`.
 struct TestServices {
     words: WordCompletions,
+    /// Published once, on the next frame.
+    pending_diagnostics: Option<Vec<rustext_core::services::Diagnostic>>,
 }
 
 impl LanguageServices for TestServices {
@@ -18,6 +20,10 @@ impl LanguageServices for TestServices {
         items.push(CompletionItem::new("helper", CompletionKind::Function).with_detail("fn() -> u8"));
         items.push(CompletionItem::snippet("forloop", "for ${1:item} in ${2:items} {\n    $0\n}"));
         Reply::Ready(items)
+    }
+
+    fn take_diagnostics(&mut self, _text: &Text) -> Option<Vec<rustext_core::services::Diagnostic>> {
+        self.pending_diagnostics.take()
     }
 
     fn completion_trigger_chars(&self) -> &[char] {
@@ -54,7 +60,7 @@ fn harness(content: &str) -> Harness<'static, Fixture> {
         config: ViewConfig { cursor_blinking: false, ..ViewConfig::default() },
         theme: EditorTheme::dark(),
         keymap: Keymap::vscode(),
-        services: TestServices { words: WordCompletions::default() },
+        services: TestServices { words: WordCompletions::default(), pending_diagnostics: None },
     };
     let mut harness = Harness::builder().with_size(Vec2::new(900.0, 500.0)).with_step_dt(1.0 / 60.0).build_ui_state(
         |ui, fixture: &mut Fixture| {
@@ -222,4 +228,28 @@ fn snippet_completions_visit_their_tab_stops_with_tab() {
     type_text(&mut harness, "x");
 
     assert_eq!(content(&harness), "for row in rows {\n    x\n}\n");
+}
+
+#[test]
+fn service_diagnostics_show_follow_edits_and_take_f8() {
+    use rustext_core::Range;
+    use rustext_core::services::{Diagnostic, Severity};
+    let mut harness = harness("let x = 1;\nlet y = 2;\n");
+    harness.state_mut().services.pending_diagnostics = Some(vec![Diagnostic {
+        range: Range::new(Position::new(1, 4), Position::new(1, 5)),
+        severity: Severity::Warning,
+        message: "unused y".into(),
+    }]);
+    click_end(&mut harness, 0);
+
+    // An edit above the diagnostic moves it down a line.
+    harness.key_press(Key::Home);
+    harness.key_press(Key::Enter);
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Home);
+    harness.key_press(Key::F8);
+    harness.run();
+
+    let head = harness.state().state.text().position(harness.state().state.selections().primary().head);
+    assert_eq!(head, Position::new(2, 4));
 }

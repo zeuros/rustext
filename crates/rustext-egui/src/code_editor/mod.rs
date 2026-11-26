@@ -223,6 +223,8 @@ pub struct EditorView {
     wraps: wrapping::WrapState,
     /// Lines pinned at the top by sticky scroll in the last frame.
     sticky_lines: Vec<usize>,
+    /// The language services' latest diagnostics, as decorations that follow edits.
+    service_diagnostics: Vec<Decoration>,
     bracket_depths: rustext_core::structure::BracketDepths,
     /// The text revision the view's caches follow; another one means the text changed outside
     /// the widget (`set_text`, an application command) and the caches start over.
@@ -334,14 +336,7 @@ pub struct EditorResponse {
     pub unhandled_actions: Vec<Action>,
 }
 
-/// How bad a diagnostic is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Severity {
-    Error,
-    Warning,
-    Info,
-    Hint,
-}
+pub use rustext_core::services::Severity;
 
 /// A diagnostic (Monaco's marker) as a decoration: a squiggle in the severity's color, an
 /// overview mark, and the message on hover.
@@ -547,6 +542,7 @@ impl<'a> CodeEditor<'a> {
             self.handle_keyboard(ui, &metrics, &mut outcome, &mut unhandled_actions);
         }
         self.after_outcome(ui, &outcome);
+        self.refresh_service_diagnostics();
         let typed = std::mem::take(&mut self.typed_this_frame);
         self.refresh_completion(&typed);
         if self.view.completion.is_waiting() {
@@ -666,10 +662,35 @@ impl<'a> CodeEditor<'a> {
         self.tracked_outcome = std::mem::take(&mut self.tracked_outcome).merged(result);
     }
 
+    /// The application's decorations and the language services' diagnostics.
+    fn all_decorations(&self) -> impl Iterator<Item = &Decoration> {
+        self.decorations.iter().chain(self.view.service_diagnostics.iter())
+    }
+
+    /// Takes the diagnostics the services published, as decorations.
+    fn refresh_service_diagnostics(&mut self) {
+        let Some(services) = self.services.as_deref_mut() else { return };
+        let text = self.state.text();
+        let Some(diagnostics) = services.take_diagnostics(text) else { return };
+        self.view.service_diagnostics = diagnostics
+            .into_iter()
+            .map(|item| {
+                let (start, end) = text.range_offsets(item.range);
+                diagnostic(
+                    start,
+                    end.max(start + 1).min(text.len_chars().max(start)),
+                    item.severity,
+                    item.message,
+                    self.theme,
+                )
+            })
+            .collect();
+    }
+
     /// Messages of the decorations under the pointer: on the text, or in the gutter for glyphs.
     fn hover_messages(&self, target: MouseTarget, hovered_char: Option<usize>) -> Vec<String> {
         let text = self.state.text();
-        let decorations = self.decorations.iter().filter(|decoration| decoration.hover_message.is_some());
+        let decorations = self.all_decorations().filter(|decoration| decoration.hover_message.is_some());
         let hovered: Vec<&Decoration> = match target {
             MouseTarget::Text { .. } => match hovered_char {
                 Some(offset) => decorations
@@ -703,8 +724,7 @@ impl<'a> CodeEditor<'a> {
     /// Moves the cursor to the next (or previous) squiggle, wrapping around (F8).
     fn go_to_problem(&mut self, forward: bool) -> Option<usize> {
         let mut starts: Vec<usize> = self
-            .decorations
-            .iter()
+            .all_decorations()
             .filter(|decoration| matches!(decoration.kind, DecorationKind::Squiggle(_)))
             .map(|decoration| decoration.start)
             .collect();

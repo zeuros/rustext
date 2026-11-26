@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use rustext_core::services::{CompletionItem, CompletionKind, LanguageServices, Reply};
-use rustext_core::{Position, Text};
+use rustext_core::services::{CompletionItem, CompletionKind, Diagnostic, LanguageServices, Reply, Severity};
+use rustext_core::{Position, Range, Text};
 use serde_json::{Value, json};
 
 use crate::transport::Connection;
@@ -36,6 +36,8 @@ pub struct LspServices {
     trigger_chars: Vec<char>,
     request_ids: HashMap<RequestKey, u64>,
     results: HashMap<u64, Value>,
+    /// The last `publishDiagnostics` for the document, not taken yet.
+    published_diagnostics: Option<Vec<Value>>,
 }
 
 /// `file:///path` for an absolute path.
@@ -109,6 +111,7 @@ impl LspServices {
             trigger_chars,
             request_ids: HashMap::new(),
             results: HashMap::new(),
+            published_diagnostics: None,
         })
     }
 
@@ -141,6 +144,12 @@ impl LspServices {
                 }
                 (Some(_), Some(_)) => {
                     let _ = self.connection.respond(message["id"].clone(), Value::Null);
+                }
+                (None, Some(method))
+                    if method == "textDocument/publishDiagnostics"
+                        && message["params"]["uri"].as_str() == Some(self.document_uri.as_str()) =>
+                {
+                    self.published_diagnostics = message["params"]["diagnostics"].as_array().cloned();
                 }
                 _ => {}
             }
@@ -225,6 +234,30 @@ impl LanguageServices for LspServices {
             Reply::Ready(result) => Reply::Ready(completion_items(&result)),
             Reply::Pending => Reply::Pending,
         }
+    }
+
+    fn take_diagnostics(&mut self, text: &Text) -> Option<Vec<Diagnostic>> {
+        self.receive();
+        let published = self.published_diagnostics.take()?;
+        let position = |value: &Value| -> Option<Position> {
+            let line = (value["line"].as_u64()? as usize).min(text.last_line());
+            Some(Position::new(line, char_column(text, line, value["character"].as_u64()? as usize)))
+        };
+        let diagnostics = published
+            .iter()
+            .filter_map(|item| {
+                let range = Range::new(position(&item["range"]["start"])?, position(&item["range"]["end"])?);
+                let severity = match item["severity"].as_u64() {
+                    Some(2) => Severity::Warning,
+                    Some(3) => Severity::Info,
+                    Some(4) => Severity::Hint,
+                    _ => Severity::Error,
+                };
+                let message = item["message"].as_str().unwrap_or_default().to_string();
+                Some(Diagnostic { range, severity, message })
+            })
+            .collect();
+        Some(diagnostics)
     }
 
     fn completion_trigger_chars(&self) -> &[char] {

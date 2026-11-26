@@ -3,7 +3,7 @@
 //! ready yet (an LSP request in flight): the editor asks again on a later frame. Every method
 //! has a default answering "nothing", so a service implements only what it knows.
 
-use crate::position::Position;
+use crate::position::{Position, Range};
 use crate::text::Text;
 use crate::words::WordDefinition;
 
@@ -67,6 +67,23 @@ impl CompletionItem {
     }
 }
 
+/// How bad a diagnostic is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Severity {
+    Error,
+    Warning,
+    Info,
+    Hint,
+}
+
+/// A problem in the text, from a compiler or linter (Monaco's marker).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Diagnostic {
+    pub range: Range,
+    pub severity: Severity,
+    pub message: String,
+}
+
 /// What the editor asks about a text. `text_revision` identifies the text's version, so a
 /// service can drop answers computed for an older one.
 pub trait LanguageServices {
@@ -83,6 +100,13 @@ pub trait LanguageServices {
     /// What to show when hovering `position` (documentation, a type).
     fn hover(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Option<String>> {
         Reply::Ready(None)
+    }
+
+    /// The diagnostics the service published since the last call (they replace the previous
+    /// ones), `None` when nothing new arrived. Services push them when they like (LSP's
+    /// `publishDiagnostics`), so the editor asks every frame.
+    fn take_diagnostics(&mut self, _text: &Text) -> Option<Vec<Diagnostic>> {
+        None
     }
 
     /// Where the symbol at `position` is defined, in the same text (F12, Ctrl+click).

@@ -94,6 +94,8 @@ impl CodeEditor<'_> {
                     let is_first_segment = matches!(painted.content, RowContent::Line(_));
                     let is_last_segment = layout.end_column() >= text.line_len(line);
                     self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, self.decorations);
+                    let service_diagnostics = &self.view.service_diagnostics;
+                    self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, service_diagnostics);
                     self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, &find_decorations);
                     self.paint_line_decorations(
                         &text_painter,
@@ -639,7 +641,7 @@ impl CodeEditor<'_> {
                 );
             }
             let mut line_number_color = None;
-            for decoration in self.decorations.iter().filter(|decoration| decoration.covers_line(text, line)) {
+            for decoration in self.all_decorations().filter(|decoration| decoration.covers_line(text, line)) {
                 match decoration.kind {
                     DecorationKind::WholeLineBackground(color) => {
                         gutter_painter.rect_filled(row_rect, CornerRadius::ZERO, to_color(color));
@@ -692,7 +694,7 @@ impl CodeEditor<'_> {
                     }
                 }
             }
-            for decoration in self.decorations {
+            for decoration in self.all_decorations() {
                 if let Some(color) = decoration.overview_ruler {
                     let y = y_of_row(self.row_of_line(decoration.first_line(text)));
                     let mark = Rect::from_center_size(pos2(track.center().x, y), vec2(track.width() - 4.0, 3.0));

@@ -49,3 +49,20 @@ fn the_first_ask_is_pending() {
 
     assert_eq!(services.completions(&Text::new("x"), 1, Position::new(0, 1)), Reply::Pending);
 }
+
+#[test]
+fn published_diagnostics_are_taken_once() {
+    let mut services = start();
+    let text = Text::new("fn main() {}");
+    let _ = services.completions(&text, 1, Position::new(0, 0));
+
+    let diagnostics = until_ready(|| match services.take_diagnostics(&text) {
+        Some(diagnostics) => Reply::Ready(diagnostics),
+        None => Reply::Pending,
+    });
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, "fake warning");
+    assert_eq!(diagnostics[0].severity, rustext_core::services::Severity::Warning);
+    assert!(services.take_diagnostics(&text).is_none());
+}

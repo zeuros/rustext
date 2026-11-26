@@ -459,6 +459,10 @@ impl CodeEditor<'_> {
             .filter_map(|changes| changes.changes().first())
             .map(|change| change.start)
             .min();
+        for changes in &outcome.applied_changes {
+            self.view.service_diagnostics =
+                self.view.service_diagnostics.iter().filter_map(|decoration| decoration.map(changes)).collect();
+        }
         for edited in &outcome.edited_lines {
             self.view.folds.follow_edit(edited);
             self.view.wraps.follow_edit(edited, self.state.text());

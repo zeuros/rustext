@@ -1,6 +1,7 @@
 //! A tiny language server for tests: answers `initialize`, completion (two items, one a
 //! snippet), hover ("fake hover at line:character") and definition (line 0, character 3),
-//! with a delay so clients see pending answers.
+//! with a delay so clients see pending answers; publishes one warning on lines 0:0..0:2 when
+//! the document opens or changes.
 
 use std::io::{BufReader, Write};
 
@@ -12,6 +13,13 @@ fn main() {
     let mut stdout = std::io::stdout();
     while let Some(message) = read_message(&mut reader) {
         let method = message["method"].as_str().unwrap_or_default();
+        if method == "textDocument/didOpen" || method == "textDocument/didChange" {
+            let uri = message["params"]["textDocument"]["uri"].clone();
+            let diagnostic = json!({ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } }, "severity": 2, "message": "fake warning" });
+            let notification = json!({ "jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": { "uri": uri, "diagnostics": [diagnostic] } });
+            let _ = write_message(&mut stdout, &notification);
+            let _ = stdout.flush();
+        }
         let id = message.get("id").cloned();
         let position = &message["params"]["position"];
         let result = match method {
