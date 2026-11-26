@@ -2896,6 +2896,7 @@ dependencies = [
  "rustext-core",
  "rustext-diff",
  "rustext-egui",
+ "rustext-lsp",
  "rustext-syntax",
 ]
 
@@ -2916,6 +2917,14 @@ dependencies = [
  "rustext-core",
  "rustext-diff",
  "rustext-syntax",
+]
+
+[[package]]
+name = "rustext-lsp"
+version = "0.1.0"
+dependencies = [
+ "rustext-core",
+ "serde_json",
 ]
 
 [[package]]

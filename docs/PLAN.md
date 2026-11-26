@@ -96,7 +96,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [x] `LanguageServices` trait, versioned async results — `Reply::Pending` makes the editor ask again on the next frames
 - [x] Completion widget (fuzzy filter, details, snippets with tab stops) — snippets with tab stops, mirrors and `$0`; word-based completions built in
 - [x] Hover, signature help, go to definition (Ctrl+click), document highlights, rename — hover and definition (F12, Ctrl+click, same text) done; signature help, rename not yet
-- [ ] LSP client implementation (stdio)
+- [x] LSP client implementation (stdio) — `rustext-lsp`: completion, hover, definition, full document sync; tested against a fake server binary; playground `--lsp "<server>"`
 
 ## M12. Extras
 - [x] Minimap (token-colored runs, viewport slider, click or drag to scroll; off by default)
@@ -116,9 +116,8 @@ Last updated: 2026-11-26, end of the first session (continued).
 `scripts/check.sh` green; ~230 tests. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. M11 LSP client: a crate `rustext-lsp` implementing `LanguageServices` over stdio JSON-RPC
-   (a reader thread, requests keyed by text revision, `Reply::Pending` until answered);
-   positions converted to UTF-16 only there (D5). Then signature help and rename.
+1. LSP: incremental document sync (send our `ChangeSet`s instead of the whole text), diagnostics
+   (`textDocument/publishDiagnostics` → `diagnostic()` decorations), signature help, rename.
 2. (done since: snippets — `rustext_core::snippet`, `Command::InsertSnippet`; their tab stops aren't highlighted yet.)
 3. Inlay hints, code lens, inline completions (ghost text) — they need decorations that inject
    text (`DecorationKind::InjectedText`) in `line_layout_job`.

@@ -21,10 +21,34 @@ pub struct EditorPage {
     highlighted_theme: ThemeChoice,
     shows_diagnostics: bool,
     pub shows_blame: bool,
-    word_completions: rustext_core::services::WordCompletions,
+    /// Word completions, or a language server when the playground was started with `--lsp`.
+    services: Box<dyn rustext_core::services::LanguageServices>,
 }
 
 impl EditorPage {
+    /// Uses a language server (`rust-analyzer`, `typescript-language-server --stdio`…) for
+    /// completion, hover and definitions.
+    pub fn use_language_server(&mut self, command_line: &str) {
+        let mut words = command_line.split_whitespace();
+        let Some(program) = words.next() else { return };
+        let arguments: Vec<&str> = words.collect();
+        let path = std::fs::canonicalize(&self.file_name).unwrap_or_else(|_| std::path::PathBuf::from(&self.file_name));
+        let language_id = self.highlighter.language().name.to_lowercase();
+        match rustext_lsp::LspServices::start(
+            program,
+            &arguments,
+            &path,
+            &language_id,
+            std::time::Duration::from_secs(10),
+        ) {
+            Ok(services) => {
+                self.services = Box::new(services);
+                self.last_action = format!("language server: {program}");
+            }
+            Err(error) => self.last_action = format!("language server {program} failed: {error}"),
+        }
+    }
+
     pub fn show_minimap(&mut self) {
         self.view_config.minimap = true;
     }
@@ -119,7 +143,7 @@ impl EditorPage {
             highlighted_theme: *theme_choice,
             shows_diagnostics: showcase,
             shows_blame: false,
-            word_completions: rustext_core::services::WordCompletions::default(),
+            services: Box::new(rustext_core::services::WordCompletions::default()),
         }
     }
 
@@ -135,7 +159,7 @@ impl EditorPage {
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
             let response = CodeEditor::new(&mut self.state, &mut self.view, &self.view_config, &theme, keymap)
                 .decorations(&decorations)
-                .services(&mut self.word_completions)
+                .services(self.services.as_mut())
                 .glyph_margin(self.shows_blame)
                 .styler(&mut self.highlighter)
                 .show(ui);

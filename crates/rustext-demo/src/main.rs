@@ -7,7 +7,7 @@
 //! `--showcase` folds a block, shows whitespace and puts the cursor on a bracket; `--blame`
 //! turns the blame demo on; `--wrap <columns>` wraps lines;
 //! `--complete` opens the completion list; `--scroll <lines>` scrolls down;
-//! `--minimap` shows the minimap.
+//! `--minimap` shows the minimap; `--lsp "<server command>"` uses a language server.
 
 mod diff_page;
 mod editor_page;
@@ -75,6 +75,7 @@ struct Arguments {
     complete: bool,
     scroll_lines: Option<usize>,
     minimap: bool,
+    language_server: Option<String>,
 }
 
 fn parse_arguments() -> Arguments {
@@ -90,6 +91,7 @@ fn parse_arguments() -> Arguments {
         complete: false,
         scroll_lines: None,
         minimap: false,
+        language_server: None,
     };
     let mut raw = std::env::args().skip(1);
     while let Some(argument) = raw.next() {
@@ -105,6 +107,7 @@ fn parse_arguments() -> Arguments {
             "--blame" => arguments.blame = true,
             "--complete" => arguments.complete = true,
             "--minimap" => arguments.minimap = true,
+            "--lsp" => arguments.language_server = raw.next(),
             "--scroll" => arguments.scroll_lines = raw.next().and_then(|lines| lines.parse().ok()),
             "--wrap" => arguments.wrap_columns = raw.next().and_then(|columns| columns.parse().ok()),
             "--inline" => {
@@ -167,6 +170,9 @@ fn main() -> eframe::Result {
                     editor_page.shows_blame = arguments.blame;
                     if let Some(lines) = arguments.scroll_lines {
                         editor_page.scroll_to_line(lines);
+                    }
+                    if let Some(command_line) = &arguments.language_server {
+                        editor_page.use_language_server(command_line);
                     }
                     if arguments.minimap {
                         editor_page.show_minimap();

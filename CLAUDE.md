@@ -24,7 +24,8 @@ Start here, in this order:
 | `crates/rustext-core` | `Text` (ropey), `Position`/`Range`, `Selection`/`Selections`, `ChangeSet`, `Transaction`, `History`, `Command`, `EditorState`, motions, edits, line ops, comments, multi-cursor |
 | `crates/rustext-syntax` | languages and tokenizing (syntect + two-face grammars), themes |
 | `crates/rustext-diff` | line diff, inner changes, aligned rows, collapsed regions, patches for staging |
-| `crates/rustext-egui` | `CodeEditor` and `DiffEditor` widgets |
+| `crates/rustext-egui` | `CodeEditor`, `DiffEditor` and `MergeEditor` widgets |
+| `crates/rustext-lsp` | a Language Server Protocol client implementing `LanguageServices` |
 | `crates/rustext-demo` | the playground |
 
 Only `rustext-egui` and `rustext-demo` know about egui. Anything decidable without pixels goes
