@@ -936,6 +936,9 @@ impl<'a> CodeEditor<'a> {
             self.paint_ime(ui, &text_painter, metrics, &layouts, primary_head, &theme);
         }
 
+        if self.styler.as_deref().is_some_and(|styler| styler.is_catching_up()) {
+            ui.ctx().request_repaint();
+        }
         self.paint_gutter(
             &painter,
             metrics,

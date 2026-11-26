@@ -3,10 +3,10 @@
 //! `rustext-demo [file]` opens a file (a sample when none is given).
 
 use eframe::egui;
-use rustext_core::config::LanguageConfiguration;
 use rustext_core::{EditorState, Text};
 use rustext_egui::code_editor::{CursorStyle, LineNumbers};
 use rustext_egui::{CodeEditor, EditorTheme, EditorView, Keymap, ViewConfig};
+use rustext_syntax::{LanguageRegistry, SyntaxHighlighter, SyntaxTheme};
 
 const SAMPLE: &str = include_str!("../samples/sample.rs");
 
@@ -19,6 +19,8 @@ struct Playground {
     file_name: String,
     saved_version: u64,
     last_action: String,
+    languages: LanguageRegistry,
+    highlighter: SyntaxHighlighter,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -41,6 +43,13 @@ impl ThemeName {
         }
     }
 
+    fn syntax_theme(self) -> SyntaxTheme {
+        match self {
+            ThemeName::Dark | ThemeName::GitgudDark => SyntaxTheme::dark_modern(),
+            ThemeName::Light | ThemeName::GitgudLight => SyntaxTheme::light_modern(),
+        }
+    }
+
     fn theme(self) -> EditorTheme {
         match self {
             ThemeName::Dark => EditorTheme::dark(),
@@ -56,8 +65,13 @@ impl Playground {
         let text = Text::new(content);
         let mut config = rustext_core::EditingConfig::default();
         config.indentation = rustext_core::indentation::Indentation::detect(&text, config.indentation);
-        let state = EditorState::with_text(text).with_config(config).with_language(LanguageConfiguration::c_like());
+        let languages = LanguageRegistry::new();
+        let language = languages.detect(&file_name, &text.line_content(0));
+        let state = EditorState::with_text(text).with_config(config).with_language(language.configuration.clone());
+        let highlighter = SyntaxHighlighter::new(&languages, language, ThemeName::Dark.syntax_theme());
         Self {
+            languages,
+            highlighter,
             saved_version: state.history().version(),
             state,
             view: EditorView::default(),
@@ -71,11 +85,27 @@ impl Playground {
 
     fn options_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Options");
+        let previous_theme_name = self.theme_name;
         egui::ComboBox::from_label("Theme").selected_text(self.theme_name.label()).show_ui(ui, |ui| {
             for theme_name in ThemeName::ALL {
                 ui.selectable_value(&mut self.theme_name, theme_name, theme_name.label());
             }
         });
+        if self.theme_name != previous_theme_name {
+            self.highlighter.set_theme(self.theme_name.syntax_theme());
+        }
+        let mut language_name = self.highlighter.language().name.clone();
+        egui::ComboBox::from_label("Language").selected_text(&language_name).height(400.0).show_ui(ui, |ui| {
+            for name in self.languages.names() {
+                ui.selectable_value(&mut language_name, name.clone(), name);
+            }
+        });
+        if language_name != self.highlighter.language().name
+            && let Some(language) = self.languages.by_name(&language_name)
+        {
+            self.state.language = language.configuration.clone();
+            self.highlighter.set_language(language);
+        }
         egui::ComboBox::from_label("Line numbers")
             .selected_text(format!("{:?}", self.view_config.line_numbers))
             .show_ui(ui, |ui| {
@@ -141,8 +171,9 @@ impl eframe::App for Playground {
         egui::Panel::left("options").resizable(true).default_size(220.0).show(ui, |ui| self.options_panel(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
-            let response =
-                CodeEditor::new(&mut self.state, &mut self.view, &self.view_config, &theme, &self.keymap).show(ui);
+            let response = CodeEditor::new(&mut self.state, &mut self.view, &self.view_config, &theme, &self.keymap)
+                .styler(&mut self.highlighter)
+                .show(ui);
             if let Some(action) = response.unhandled_actions.last() {
                 self.last_action = format!("{action:?}");
             }

@@ -1,8 +1,16 @@
 [package]
 name = "rustext-syntax"
+description = "Languages and syntax highlighting of the rustext editor (syntect + two-face grammars)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustext-core.workspace = true
+syntect.workspace = true
+two-face.workspace = true
 
 [lints]
 workspace = true
