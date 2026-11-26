@@ -459,16 +459,15 @@ impl CodeEditor<'_> {
     }
 
     pub(super) fn after_outcome(&mut self, ui: &Ui, outcome: &Outcome) {
-        // The text before the earliest change is the same in every version, so its line is exact.
-        let first_changed_offset = outcome
-            .applied_changes
-            .iter()
-            .filter_map(|changes| changes.changes().first())
-            .map(|change| change.start)
-            .min();
+        if let Some(styler) = self.styler.as_deref_mut() {
+            for edited in &outcome.edited_lines {
+                styler.lines_edited(edited);
+            }
+        }
         for changes in &outcome.applied_changes {
             self.view.service_diagnostics =
                 self.view.service_diagnostics.iter().filter_map(|decoration| decoration.map(changes)).collect();
+            self.map_find_scope(changes);
         }
         for edited in &outcome.edited_lines {
             self.view.folds.follow_edit(edited);
@@ -478,14 +477,8 @@ impl CodeEditor<'_> {
         if outcome.text_changed() {
             self.view.seen_text_revision = Some(self.state.text_revision());
         }
-        for changes in &outcome.applied_changes {
-            self.map_find_scope(changes);
-        }
         if let [changes] = outcome.applied_changes.as_slice() {
             self.update_find_matches_after(changes);
-        }
-        if let (Some(styler), Some(first_changed_offset)) = (self.styler.as_deref_mut(), first_changed_offset) {
-            styler.invalidate_from(self.state.text().line_of_offset(first_changed_offset));
         }
         let is_dragging_scrollbar = matches!(
             self.view.drag,

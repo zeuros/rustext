@@ -54,6 +54,12 @@ pub trait LineStyler {
     /// The text changed at `first_changed_line` and after.
     fn invalidate_from(&mut self, first_changed_line: usize);
 
+    /// An edit replaced some lines (D19): a styler keeping state per line can shift what
+    /// follows instead of dropping it. Defaults to `invalidate_from`.
+    fn lines_edited(&mut self, edited: &crate::state::EditedLines) {
+        self.invalidate_from(edited.first_line);
+    }
+
     /// Whether some lines were left unstyled to keep the frame fast: paint again soon.
     fn is_catching_up(&self) -> bool {
         false

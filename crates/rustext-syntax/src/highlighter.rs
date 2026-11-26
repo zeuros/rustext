@@ -24,6 +24,13 @@ pub struct SyntaxHighlighter {
     /// Lines longer than this are not tokenized (minified files).
     pub max_line_chars: usize,
     is_catching_up: bool,
+    /// Lines before this one have correct spans and states; lines after it keep spans and
+    /// states from before an edit (shifted), right until proven otherwise.
+    verified_lines: usize,
+    /// No early stop before this line: the edited lines hold placeholder states.
+    edited_until: usize,
+    /// Lines tokenized so far, to check that edits don't re-tokenize what they needn't.
+    tokenized_line_count: usize,
 }
 
 impl SyntaxHighlighter {
@@ -37,6 +44,9 @@ impl SyntaxHighlighter {
             max_lines_per_call: 5_000,
             max_line_chars: 20_000,
             is_catching_up: false,
+            verified_lines: 0,
+            edited_until: 0,
+            tokenized_line_count: 0,
         };
         highlighter.reset();
         highlighter
@@ -61,17 +71,24 @@ impl SyntaxHighlighter {
         let initial = (ParseState::new(&self.language.syntax), HighlightState::new(&highlighter, ScopeStack::new()));
         self.line_states = vec![initial];
         self.line_spans.clear();
+        self.verified_lines = 0;
+        self.edited_until = 0;
+    }
+
+    /// Lines tokenized since the highlighter was created.
+    pub fn tokenized_line_count(&self) -> usize {
+        self.tokenized_line_count
     }
 
     fn tokenize_through(&mut self, text: &Text, last_line: usize) {
         let highlighter = Highlighter::new(&self.theme.theme);
         let syntaxes = self.registry.syntaxes.clone();
-        let budget_end = self.line_spans.len() + self.max_lines_per_call;
+        let budget_end = self.verified_lines + self.max_lines_per_call;
         self.is_catching_up = last_line >= budget_end;
         let last_line = last_line.min(budget_end.saturating_sub(1)).min(text.last_line());
 
-        while self.line_spans.len() <= last_line {
-            let line = self.line_spans.len();
+        while self.verified_lines <= last_line {
+            let line = self.verified_lines;
             let (mut parse_state, mut highlight_state) = self.line_states[line].clone();
             let content = text.line_content(line);
             let spans = if content.chars().count() > self.max_line_chars {
@@ -87,8 +104,22 @@ impl SyntaxHighlighter {
                     Err(_) => Vec::new(),
                 }
             };
-            self.line_spans.push(spans);
-            self.line_states.push((parse_state, highlight_state));
+            self.tokenized_line_count += 1;
+            let end_state = (parse_state, highlight_state);
+            if line < self.line_spans.len() {
+                self.line_spans[line] = spans;
+                // Past the edit, a line ending in the state cached before the edit means every
+                // following line is still right: stop there.
+                if line + 1 >= self.edited_until && self.line_states[line + 1] == end_state {
+                    self.verified_lines = self.line_spans.len();
+                    return;
+                }
+                self.line_states[line + 1] = end_state;
+            } else {
+                self.line_spans.push(spans);
+                self.line_states.push(end_state);
+            }
+            self.verified_lines = line + 1;
         }
     }
 }
@@ -127,8 +158,11 @@ fn spans_of<'a>(pieces: impl Iterator<Item = (Style, &'a str)>, default_style: S
 
 impl LineStyler for SyntaxHighlighter {
     fn style_line(&mut self, text: &Text, line: usize) -> Vec<StyledSpan> {
-        if line >= self.line_spans.len() {
+        if line >= self.verified_lines {
             self.tokenize_through(text, line);
+        }
+        if line >= self.verified_lines {
+            return Vec::new();
         }
         self.line_spans.get(line).cloned().unwrap_or_default()
     }
@@ -136,6 +170,30 @@ impl LineStyler for SyntaxHighlighter {
     fn invalidate_from(&mut self, first_changed_line: usize) {
         self.line_spans.truncate(first_changed_line);
         self.line_states.truncate(first_changed_line + 1);
+        self.verified_lines = self.verified_lines.min(first_changed_line);
+        self.edited_until = 0;
+    }
+
+    /// Replaces the edited lines' cache entries by placeholders and keeps the lines after them
+    /// (shifted), to be confirmed by the early stop in `tokenize_through`.
+    fn lines_edited(&mut self, edited: &rustext_core::EditedLines) {
+        let first_line = edited.first_line;
+        if edited.old_last_line >= self.line_spans.len() {
+            self.invalidate_from(first_line);
+            return;
+        }
+        let new_line_count = edited.new_last_line - first_line + 1;
+        let placeholder_state = self.line_states[first_line].clone();
+        self.line_spans.splice(first_line..=edited.old_last_line, std::iter::repeat_n(Vec::new(), new_line_count));
+        self.line_states
+            .splice(first_line + 1..=edited.old_last_line + 1, std::iter::repeat_n(placeholder_state, new_line_count));
+        let shifted_edited_until = if self.edited_until > edited.old_last_line {
+            self.edited_until.saturating_add_signed(edited.line_delta())
+        } else {
+            self.edited_until
+        };
+        self.edited_until = shifted_edited_until.max(edited.new_last_line + 1);
+        self.verified_lines = self.verified_lines.min(first_line);
     }
 
     fn is_catching_up(&self) -> bool {
@@ -196,6 +254,54 @@ mod tests {
         highlighter.invalidate_from(0);
 
         assert_eq!(colored_words(&mut highlighter, &after, 1), vec![("let b = 2;".to_string(), 0x6a)]);
+    }
+
+    #[test]
+    fn an_edit_re_tokenizes_only_until_the_states_agree_again() {
+        let mut highlighter = highlighter("main.rs");
+        let content: String = (0..1_000).map(|line| format!("let value_{line} = {line};\n")).collect();
+        let text = Text::new(&content);
+        highlighter.style_line(&text, 999);
+        let before_edit = highlighter.tokenized_line_count();
+
+        // Line 10 changes without changing the parser state at its end.
+        let edited_text = Text::new(&content.replacen("let value_10 = 10;", "let renamed = 10;", 1));
+        highlighter.lines_edited(&rustext_core::EditedLines { first_line: 10, old_last_line: 10, new_last_line: 10 });
+        let spans_at_end = highlighter.style_line(&edited_text, 999);
+
+        assert!(
+            highlighter.tokenized_line_count() - before_edit < 5,
+            "re-tokenized {}",
+            highlighter.tokenized_line_count() - before_edit
+        );
+        assert!(!spans_at_end.is_empty());
+    }
+
+    #[test]
+    fn an_edit_that_changes_the_state_re_tokenizes_what_follows() {
+        let mut highlighter = highlighter("main.rs");
+        let before = Text::new("let a = 1;\nlet b = 2;\nlet c = 3;\n");
+        highlighter.style_line(&before, 2);
+        let after = Text::new("/* let a = 1;\nlet b = 2;\nlet c = 3;\n");
+
+        highlighter.lines_edited(&rustext_core::EditedLines { first_line: 0, old_last_line: 0, new_last_line: 0 });
+
+        assert_eq!(colored_words(&mut highlighter, &after, 2), vec![("let c = 3;".to_string(), 0x6a)]);
+    }
+
+    #[test]
+    fn inserted_lines_shift_the_cache() {
+        let mut highlighter = highlighter("main.rs");
+        let content: String = (0..100).map(|line| format!("let v{line} = {line};\n")).collect();
+        highlighter.style_line(&Text::new(&content), 99);
+        let before_edit = highlighter.tokenized_line_count();
+        let edited = Text::new(&content.replacen("let v5 = 5;\n", "let v5 = 5;\nlet x = 0;\nlet y = 1;\n", 1));
+
+        highlighter.lines_edited(&rustext_core::EditedLines { first_line: 5, old_last_line: 5, new_last_line: 7 });
+        let last = colored_words(&mut highlighter, &edited, 101);
+
+        assert!(highlighter.tokenized_line_count() - before_edit < 6);
+        assert_eq!(last[0].0, "let");
     }
 
     #[test]

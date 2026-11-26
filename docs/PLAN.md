@@ -41,7 +41,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 
 ## M4. Syntax highlighting (`rustext-syntax`)
 - [x] Language detection by file name / extension / first line, via two-face grammars
-- [x] Incremental line tokenizer with cached states, re-tokenize from the edited line — lazily up to the painted lines; stopping early when states match is not done
+- [x] Incremental line tokenizer with cached states, re-tokenize from the edited line — the cache follows `EditedLines` and re-tokenizing stops where the end state matches the cached one
 - [x] Themes as values (D6): token rules + typed UI colors; built-in light, dark, high-contrast; gitgud's light and dark
 - [x] Load `.tmTheme` / VS Code JSON themes — `.tmTheme` and two-face's ~30 themes; VS Code JSON not yet
 - [x] Widget paints tokens; huge files: highlight visible part first, plain text past a limit
@@ -125,8 +125,6 @@ Last updated: 2026-11-26, end of the first session (continued).
    to say which spans are strings/comments.
 
 **Known gaps / debts**:
-- Tokenizer re-tokenizes from the edited line to the painted lines; Monaco stops when the end
-  state matches the cached one.
 - Folding is indentation-only; `foldingStrategy: 'auto'` needs language structure.
 - Folding is off when the application passes its own `DisplayLayout` (diffs).
 - Text from egui's TextEdit (find input) can't use rustext's keymap (Ctrl+D etc. there are
