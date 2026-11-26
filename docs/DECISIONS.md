@@ -155,6 +155,8 @@ choice is an enum (`LineNumbers::Relative`), no stringly types and no overloaded
   smart select, sticky scroll), the way Zed and Helix do it.
 - Rejected: writing a Monarch interpreter first (Monaco's format, but few grammars outside
   Monaco); tree-sitter first (one crate per language, harder to cover "any file" for diffs).
+- Since D22, TextMate grammars only highlight the languages without a bundled tree-sitter
+  grammar (`textmate.rs`).
 
 ## D14. Diff: `imara-diff` (Myers) for lines, our own refinement inside hunks
 
@@ -217,10 +219,12 @@ on explicit actions (fold all, replace all, a new diff) or behind a budget (the 
   extent. Indent guides cover the visible lines. `HiddenLines` are disjoint sorted ranges
   (binary search).
 - `crates/rustext-egui/tests/performance.rs` (ignored, run in release) measures a 100k-line
-  file: idle 0.3 ms, typing 0.3 ms, typing with 20 000 folds 0.5 ms, typing with the find
-  widget open on 20 000 matches 4.6 ms, fold all 38 ms, Ctrl+End 11 ms (the bracket line
-  states of 10 000 lines, the per-frame budget). Run it after touching anything per-frame; a
-  regression there is a bug.
+  file: idle 0.4 ms, typing 0.5 ms, typing at the end of the file 3.8 ms, typing with 20 000
+  folds 0.7 ms, typing with the find widget open on 20 000 matches 4.7 ms, fold all 37 ms,
+  Ctrl+End 12 ms (the bracket line states of 10 000 lines, the per-frame budget). Highlighted
+  with tree-sitter (D22): typing 1.2 ms, at the end 5 ms, Ctrl+End 15 ms; the first parse
+  (~450 ms) runs on its thread while frames take 0.4 ms. Run it after touching anything
+  per-frame; a regression there is a bug.
 
 ## D20. Word wrap: continuation rows, column-based breaking
 
@@ -254,6 +258,35 @@ string) from one line to the next.
   reads the states of earlier lines instead of guessing.
 - Accepted: raw strings (`r#"..."#`), nested comments and heredocs are not understood; a
   language-aware parser (tree-sitter, D13) can replace the lexer later.
+
+## D22. Tree-sitter where a grammar is bundled, TextMate grammars elsewhere
+
+`SyntaxHighlighter` stays the one type applications use; it parses with tree-sitter when the
+language has a bundled grammar (18 crates: Rust, Python, JS, TS/TSX, JSON, Go, C, C++, Bash,
+HTML, CSS, TOML, YAML, Java, C#, Ruby, Lua) and falls back to syntect (D13) for the ~200
+others, so diffs of any file stay highlighted.
+
+- Highlighting runs the grammar crate's `highlights.scm` over the lines being painted, in
+  blocks of 32 lines (one query per block, not per line). A smaller node wins over the node
+  holding it; of two patterns capturing one node, the first wins (tree-sitter-highlight's
+  rule). Capture names map to TextMate scopes (`function.method` → `entity.name.function`),
+  so every theme, built-in or `.tmTheme`, keeps working.
+- Parsing runs on a thread per highlighter: an incremental parse of a 3 MB Rust file takes
+  ~11 ms whatever the edit (measured in `crates/rustext-syntax/tests/performance.rs`), too
+  much for every keystroke's frame (D19). Until the new tree arrives, lines are highlighted
+  from the previous tree edited to match the text (`Tree::edit` shifts its nodes); edits made
+  while a parse runs are replayed on its tree. A frame waits up to 3 ms for a parse whose
+  previous run fit in that time, so small files are highlighted in the frame that edited them.
+- `LineStyler::text_edited` hands the styler each change set with the text before it, so it
+  can edit its tree; `LineStyler::enclosing_syntax_node` gives smart select the node holding
+  a selection. Both have defaults, so other stylers ignore them.
+- Queries come from the grammar crates (MIT). Helix's and nvim-treesitter's are richer but
+  MPL/Apache files with their own conventions (`#set!`, `inherits`); vendoring them is a later
+  choice. Injections (JS in HTML, code in Markdown) aren't run yet.
+- Rejected: `tree-house` (Helix's highlighter): it loads grammars as shared libraries at run
+  time and has its own bindings; the published grammar crates link statically with the
+  official `tree-sitter` crate. `tree-sitter-highlight`: it highlights a whole `&[u8]`, not
+  a range of a rope.
 
 ## D23. LSP messages are `lsp-types` values
 

@@ -1,9 +1,12 @@
 //! Languages: detecting them from a file name, and what each tells the editor (comments).
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use rustext_core::config::LanguageConfiguration;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
+
+use crate::tree::Grammar;
 
 /// A language: its grammar and its editing configuration.
 #[derive(Clone, Debug)]
@@ -24,12 +27,14 @@ impl Language {
 #[derive(Clone)]
 pub struct LanguageRegistry {
     pub(crate) syntaxes: Arc<SyntaxSet>,
+    /// Tree-sitter grammars compiled so far, by language name (`None`: no bundled grammar).
+    grammars: Arc<Mutex<HashMap<String, Option<Arc<Grammar>>>>>,
 }
 
 impl LanguageRegistry {
     /// Loads the bundled grammars (~200 languages). Takes a few milliseconds: do it once.
     pub fn new() -> Self {
-        Self { syntaxes: Arc::new(two_face::syntax::extra_newlines()) }
+        Self { syntaxes: Arc::new(two_face::syntax::extra_newlines()), grammars: Default::default() }
     }
 
     pub fn plain_text(&self) -> Language {
@@ -63,6 +68,16 @@ impl LanguageRegistry {
         names.sort_unstable_by_key(|name| name.to_lowercase());
         names.dedup();
         names
+    }
+
+    /// The tree-sitter grammar of `language_name`, compiled on first use (a few milliseconds);
+    /// `None` when none is bundled or its queries don't compile.
+    pub(crate) fn grammar(&self, language_name: &str) -> Option<Arc<Grammar>> {
+        let mut grammars = self.grammars.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        grammars
+            .entry(language_name.to_string())
+            .or_insert_with(|| Grammar::compile(language_name).ok().flatten().map(Arc::new))
+            .clone()
     }
 
     fn language(&self, syntax: &SyntaxReference) -> Language {

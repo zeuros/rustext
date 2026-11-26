@@ -1,6 +1,8 @@
 //! Styles as plain data, shared by highlighters and decorations (DECISIONS D11). The UI
 //! crate turns them into its own colors and fonts.
 
+use crate::change::ChangeSet;
+use crate::state::EditedLines;
 use crate::text::Text;
 
 /// An sRGB color with straight (not premultiplied) alpha.
@@ -56,8 +58,22 @@ pub trait LineStyler {
 
     /// An edit replaced some lines (D19): a styler keeping state per line can shift what
     /// follows instead of dropping it. Defaults to `invalidate_from`.
-    fn lines_edited(&mut self, edited: &crate::state::EditedLines) {
+    fn lines_edited(&mut self, edited: &EditedLines) {
         self.invalidate_from(edited.first_line);
+    }
+
+    /// An edit applied `changes` to `text_before`, touching `edited`: a styler keeping a syntax
+    /// tree edits it instead of parsing again. Defaults to `lines_edited`.
+    fn text_edited(&mut self, text_before: &Text, changes: &ChangeSet, edited: &EditedLines) {
+        let _ = (text_before, changes);
+        self.lines_edited(edited);
+    }
+
+    /// The char offsets of the smallest syntax node strictly containing `start..end`, for a
+    /// styler that parses the text (smart select). `None` when it doesn't know.
+    fn enclosing_syntax_node(&mut self, text: &Text, start: usize, end: usize) -> Option<(usize, usize)> {
+        let _ = (text, start, end);
+        None
     }
 
     /// Whether some lines were left unstyled to keep the frame fast: paint again soon.

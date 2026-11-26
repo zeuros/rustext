@@ -38,6 +38,41 @@ impl Text {
         Self { rope: Rope::from_str(content) }
     }
 
+    /// Length in UTF-8 bytes, for parsers that work in bytes (tree-sitter).
+    pub fn len_bytes(&self) -> usize {
+        self.rope.len_bytes()
+    }
+
+    /// The byte offset of char offset `char_offset`.
+    pub fn byte_of_char(&self, char_offset: usize) -> usize {
+        self.rope.char_to_byte(char_offset.min(self.len_chars()))
+    }
+
+    /// The char offset of the char holding byte `byte_offset`.
+    pub fn char_of_byte(&self, byte_offset: usize) -> usize {
+        self.rope.byte_to_char(byte_offset.min(self.len_bytes()))
+    }
+
+    /// The byte offset where `line` starts.
+    pub fn line_start_byte(&self, line: usize) -> usize {
+        self.rope.line_to_byte(line.min(self.line_count()))
+    }
+
+    /// The bytes from `byte_offset` to the end of the rope chunk holding it; empty at the end.
+    pub fn chunk_from_byte(&self, byte_offset: usize) -> &[u8] {
+        if byte_offset >= self.len_bytes() {
+            return &[];
+        }
+        let (chunk, chunk_start, _, _) = self.rope.chunk_at_byte(byte_offset);
+        &chunk.as_bytes()[byte_offset - chunk_start..]
+    }
+
+    /// The bytes `start..end`, chunk by chunk, without copying.
+    pub fn byte_chunks(&self, start: usize, end: usize) -> impl Iterator<Item = &[u8]> + '_ {
+        let end = end.min(self.len_bytes());
+        self.rope.byte_slice(start.min(end)..end).chunks().map(str::as_bytes)
+    }
+
     /// The rope itself, for the core's searches that read it in place.
     pub(crate) fn rope(&self) -> &Rope {
         &self.rope

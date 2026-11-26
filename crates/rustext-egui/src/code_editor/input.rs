@@ -473,8 +473,13 @@ impl CodeEditor<'_> {
 
     pub(super) fn after_outcome(&mut self, ui: &Ui, outcome: &Outcome) {
         if let Some(styler) = self.styler.as_deref_mut() {
-            for edited in &outcome.edited_lines {
-                styler.lines_edited(edited);
+            let edits = outcome.texts_before.iter().zip(&outcome.applied_changes).zip(&outcome.edited_lines);
+            if edits.len() == outcome.edited_lines.len() {
+                for ((text_before, changes), edited) in edits {
+                    styler.text_edited(text_before, changes, edited);
+                }
+            } else if let Some(first_line) = outcome.edited_lines.iter().map(|edited| edited.first_line).min() {
+                styler.invalidate_from(first_line);
             }
         }
         for changes in &outcome.applied_changes {

@@ -45,6 +45,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [x] Themes as values (D6): token rules + typed UI colors; built-in light, dark, high-contrast; gitgud's light and dark
 - [x] Load `.tmTheme` / VS Code JSON themes — `.tmTheme` and two-face's ~30 themes; VS Code JSON not yet
 - [x] Widget paints tokens; huge files: highlight visible part first, plain text past a limit
+- [x] Tree-sitter for the languages with a bundled grammar (D22): incremental, parsed on a thread, highlight queries mapped to TextMate scopes; smart select from its nodes
 
 ## M5. Diff core (`rustext-diff`)
 - [x] Line diff (histogram), `ignore_trim_whitespace`, size/time limits
@@ -110,10 +111,10 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 
 ## Where to resume
 
-Last updated: 2026-11-26, end of the first session (continued).
+Last updated: 2026-11-26, after moving to Helix's crates (D22–D24).
 
 **State**: M0–M10 done, M11 and M12 mostly done, M13 done (integration guide, performance).
-`scripts/check.sh` green; ~265 tests, including seeded random tests (`random_commands.rs`
+`scripts/check.sh` green; ~280 tests, including seeded random tests (`random_commands.rs`
 in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case counts or
 change their seeds locally to hunt for rarer bugs). Every feature is a commit on `main`.
 
@@ -127,7 +128,12 @@ change their seeds locally to hunt for rarer bugs). Every feature is a commit on
    AccessKit; an accessible diff viewer (`accessibleDiffViewerNext`).
 5. Bracket pair guides (`guides.bracketPairs`), from `BracketLineStarts`.
 
-Done since the last rewrite of this list: same-text services (diagnostics, rename, signature
+Done since: Helix's crates (D22–D24): tree-sitter highlighting for 18 languages, parsed on a
+thread; smart select (Shift+Alt+→/←); `lsp-types` messages, checked against a real
+rust-analyzer (`crates/rustext-lsp/tests/rust_analyzer.rs`, ignored); `nucleo` fuzzy matching;
+`regex-cursor` find over the rope.
+
+Done before that: same-text services (diagnostics, rename, signature
 help, document highlights, inlay hints, references on Shift+F12) with incremental LSP sync;
 brackets in strings and comments (D21); Up/Down by visual row when wrapping; snippets; ghost
 text; random tests.
@@ -139,6 +145,11 @@ text; random tests.
   egui's).
 - The bracket lexer (D21) doesn't know raw strings, nested comments or heredocs.
 - Find References isn't visible in the demo without `--lsp` (word completions answer none).
+- Typing at the end of a 100k-line file takes 3.8 ms a frame against 0.5 ms at its start,
+  with no highlighter: something per edit grows with the line number (not found yet).
+- Tree-sitter: folding, bracket matching and indentation could use the tree (D21's lexer and
+  indentation folding are still used); injections aren't run; highlight queries are the
+  grammar crates' own.
 
 **How to verify visually**: `scripts/screenshot.sh <png> [file] [--showcase | --find x |
 --page diff | --page merge | --inline | --diff old new | --blame | --wrap N | --complete |
