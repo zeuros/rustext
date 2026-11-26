@@ -195,6 +195,9 @@ pub struct Outcome {
     pub applied_changes: Vec<ChangeSet>,
     /// The lines each change set touched, one per change set.
     pub edited_lines: Vec<EditedLines>,
+    /// The text before each change set (O(1) clones): what positions in `applied_changes` are
+    /// relative to, for consumers that need lines and columns (an LSP server).
+    pub texts_before: Vec<Text>,
     pub selections_changed: bool,
     /// An editing command was rejected because the editor is read-only.
     pub rejected_read_only: bool,
@@ -211,6 +214,7 @@ impl Outcome {
     pub fn merged(mut self, later: Outcome) -> Outcome {
         self.applied_changes.extend(later.applied_changes);
         self.edited_lines.extend(later.edited_lines);
+        self.texts_before.extend(later.texts_before);
         self.selections_changed |= later.selections_changed;
         self.rejected_read_only |= later.rejected_read_only;
         self.clipboard = later.clipboard.or(self.clipboard);
@@ -458,12 +462,19 @@ impl EditorState {
         }
         let selections_changed = selections_after != self.selections;
         let edited_lines = EditedLines::of(&transaction.changes, &self.text, &new_text).into_iter().collect();
+        let text_before = self.text.clone();
         self.text_revision += 1;
         self.text = new_text;
         self.selections = selections_after;
         self.auto_closed_offsets = auto_closed_offsets;
         self.forget_auto_closed_away_from_cursors();
-        Outcome { applied_changes: vec![transaction.changes], edited_lines, selections_changed, ..Outcome::default() }
+        Outcome {
+            applied_changes: vec![transaction.changes],
+            edited_lines,
+            texts_before: vec![text_before],
+            selections_changed,
+            ..Outcome::default()
+        }
     }
 
     fn select(&mut self, selections: Selections) -> Outcome {
@@ -530,15 +541,22 @@ impl EditorState {
             return Outcome::default();
         };
         let mut edited_lines = Vec::with_capacity(replay.changes.len());
+        let mut texts_before = Vec::with_capacity(replay.changes.len());
         for changes in &replay.changes {
             let new_text = changes.apply(&self.text);
             edited_lines.extend(EditedLines::of(changes, &self.text, &new_text));
-            self.text = new_text;
+            texts_before.push(std::mem::replace(&mut self.text, new_text));
         }
         self.text_revision += 1;
         self.selections = replay.selections.clamped(&self.text);
         self.auto_closed_offsets.clear();
-        Outcome { applied_changes: replay.changes, edited_lines, selections_changed: true, ..Outcome::default() }
+        Outcome {
+            applied_changes: replay.changes,
+            edited_lines,
+            texts_before,
+            selections_changed: true,
+            ..Outcome::default()
+        }
     }
 
     /// Auto-closed chars only stay "typeable over" while a cursor is on their line.

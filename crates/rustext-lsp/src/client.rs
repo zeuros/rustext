@@ -40,6 +40,8 @@ pub struct LspServices {
     synced_revision: Option<u64>,
     document_version: i64,
     trigger_chars: Vec<char>,
+    /// The server takes incremental changes (`textDocumentSync.change == 2`).
+    syncs_incrementally: bool,
     request_ids: HashMap<RequestKey, u64>,
     results: HashMap<u64, Value>,
     /// The last `publishDiagnostics` for the document, not taken yet.
@@ -107,6 +109,8 @@ impl LspServices {
             .as_array()
             .map(|chars| chars.iter().filter_map(|value| value.as_str()?.chars().next()).collect())
             .unwrap_or_default();
+        let sync = &initialize_result["capabilities"]["textDocumentSync"];
+        let syncs_incrementally = sync.as_u64().or(sync["change"].as_u64()) == Some(2);
         connection.notify("initialized", json!({}))?;
         Ok(Self {
             connection,
@@ -115,6 +119,7 @@ impl LspServices {
             synced_revision: None,
             document_version: 0,
             trigger_chars,
+            syncs_incrementally,
             request_ids: HashMap::new(),
             results: HashMap::new(),
             published_diagnostics: None,
@@ -336,6 +341,35 @@ impl LanguageServices for LspServices {
             });
         let documentation = hover_text(&signature["documentation"]);
         Reply::Ready(Some(SignatureHelp { label, active_parameter, documentation }))
+    }
+
+    /// Sends the edits as ranges (in reverse order, so each is relative to the text after the
+    /// previous one) when the server takes them; otherwise the next request syncs in full.
+    fn text_changed(&mut self, texts_before: &[Text], changes: &[rustext_core::ChangeSet], text_revision_after: u64) {
+        if !self.syncs_incrementally || self.synced_revision.is_none() || texts_before.len() != changes.len() {
+            return;
+        }
+        let position = |text: &Text, offset: usize| {
+            let position = text.position(offset);
+            json!({ "line": position.line, "character": utf16_column(text, position.line, position.column) })
+        };
+        let content_changes: Vec<Value> = texts_before
+            .iter()
+            .zip(changes)
+            .flat_map(|(before, change_set)| {
+                change_set
+                    .changes()
+                    .iter()
+                    .rev()
+                    .map(|change| json!({ "range": { "start": position(before, change.start), "end": position(before, change.end) }, "text": change.insert }))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        self.document_version += 1;
+        let params = json!({ "textDocument": { "uri": self.document_uri, "version": self.document_version }, "contentChanges": content_changes });
+        if self.connection.notify("textDocument/didChange", params).is_ok() {
+            self.synced_revision = Some(text_revision_after);
+        }
     }
 
     fn completion_trigger_chars(&self) -> &[char] {

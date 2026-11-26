@@ -122,6 +122,16 @@ pub fn transaction_of_edits(text: &Text, edits: &[TextEdit]) -> Option<crate::ed
 /// What the editor asks about a text. `text_revision` identifies the text's version, so a
 /// service can drop answers computed for an older one.
 pub trait LanguageServices {
+    /// The text changed: `changes[i]` applied to `texts_before[i]`, leaving revision
+    /// `text_revision_after`. Lets a service follow edits instead of reading the whole text.
+    fn text_changed(
+        &mut self,
+        _texts_before: &[Text],
+        _changes: &[crate::change::ChangeSet],
+        _text_revision_after: u64,
+    ) {
+    }
+
     /// Completions at `position`; the editor filters and sorts them by the typed prefix.
     fn completions(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Vec<CompletionItem>> {
         Reply::Ready(Vec::new())

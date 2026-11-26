@@ -116,8 +116,8 @@ Last updated: 2026-11-26, end of the first session (continued).
 `scripts/check.sh` green; ~230 tests. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. LSP: incremental document sync (send our `ChangeSet`s instead of the whole text);
-   references and document highlights. (Done: diagnostics, rename, signature help.)
+1. LSP: references (a peek list) and document highlights. (Done: diagnostics, rename, signature
+   help, incremental sync through `LanguageServices::text_changed` and `Outcome::texts_before`.)
 2. (done since: snippets — `rustext_core::snippet`, `Command::InsertSnippet`; their tab stops aren't highlighted yet.)
 3. (done since: `DecorationKind::InjectedText`, ghost text.) Next: LSP `textDocument/inlayHint` → injected texts; code lens as a row above lines (a new `RowContent`).
 4. (done since: Up/Down by visual row when wrapping.)

@@ -480,6 +480,9 @@ impl CodeEditor<'_> {
         }
         if outcome.text_changed() {
             self.view.seen_text_revision = Some(self.state.text_revision());
+            if let Some(services) = self.services.as_deref_mut() {
+                services.text_changed(&outcome.texts_before, &outcome.applied_changes, self.state.text_revision());
+            }
         }
         if let [changes] = outcome.applied_changes.as_slice() {
             self.update_find_matches_after(changes);

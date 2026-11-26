@@ -37,7 +37,7 @@ fn completions_hover_and_definition_from_a_language_server() {
 
     // Char column 5 is after the emoji: UTF-16 column 6 for the server.
     let hover = until_ready(|| services.hover(&text, 1, Position::new(0, 5)));
-    assert_eq!(hover.as_deref(), Some("fake hover at 0:6"));
+    assert_eq!(hover.as_deref(), Some("fake hover at 0:6 on \"fn 😀ab() {}\""));
 
     let definition = until_ready(|| services.definition(&text, 1, Position::new(1, 0)));
     assert_eq!(definition, Some(Position::new(0, 3)));
@@ -80,4 +80,22 @@ fn rename_and_signature_help() {
     let help = until_ready(|| services.signature_help(&text, 1, Position::new(1, 3))).expect("a signature");
     assert_eq!(help.label, "fake(first: u8, second: u8)");
     assert_eq!(help.active_parameter, Some((16, 26)));
+}
+
+#[test]
+fn edits_reach_the_server_as_ranges() {
+    use rustext_core::{Change, ChangeSet};
+    let mut services = start();
+    let before = Text::new("one\ntwo 😀 three\n");
+    let _ = until_ready(|| services.hover(&before, 1, Position::new(0, 0)));
+
+    // Two edits in one change set, after an emoji (UTF-16 columns differ from char columns).
+    let changes = ChangeSet::new([Change::insert(before.offset(Position::new(1, 6)), "big "), Change::new(0, 3, "1")]);
+    let after = changes.apply(&before);
+    services.text_changed(std::slice::from_ref(&before), std::slice::from_ref(&changes), 2);
+
+    let hover = until_ready(|| services.hover(&after, 2, Position::new(1, 0)));
+    assert_eq!(hover.as_deref(), Some("fake hover at 1:0 on \"two 😀 big three\""));
+    let hover = until_ready(|| services.hover(&after, 2, Position::new(0, 0)));
+    assert_eq!(hover.as_deref(), Some("fake hover at 0:0 on \"1\""));
 }
