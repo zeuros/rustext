@@ -3,6 +3,7 @@
 
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, Vec2};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use rustext_core::{EditorState, Position, Selection};
 use rustext_egui::{CodeEditor, EditorGeometry, EditorTheme, EditorView, Keymap, ViewConfig};
 
@@ -223,4 +224,94 @@ fn enter_and_tab_keys_edit_instead_of_moving_focus() {
     type_text(&mut harness, "y");
 
     assert_eq!(content(&harness), "x\n    y");
+}
+
+fn selected_text(harness: &Harness<'_, Fixture>) -> String {
+    let state = &harness.state().state;
+    let primary = state.selections().primary();
+    state.text().slice(primary.start(), primary.end())
+}
+
+#[test]
+fn ctrl_f_seeds_the_word_and_enter_walks_the_matches() {
+    let mut harness = harness("alpha beta\nalpha gamma\nalpha");
+    click(&mut harness, 0, 1);
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+    assert!(harness.state().view.find.is_open);
+    assert_eq!(harness.state().view.find.query.pattern, "alpha");
+    assert_eq!(harness.state().view.find.matches().len(), 3);
+
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(1, 5));
+    assert_eq!(selected_text(&harness), "alpha");
+
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::Enter);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(0, 5));
+}
+
+#[test]
+fn typing_a_query_selects_the_first_match_after_the_cursor() {
+    let mut harness = harness("one two three two");
+    click(&mut harness, 0, 5);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+
+    harness.event(Event::Key {
+        key: Key::A,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::COMMAND,
+    });
+    type_text(&mut harness, "two");
+
+    assert_eq!(harness.state().state.selections().primary(), Selection::new(14, 17));
+}
+
+#[test]
+fn replace_all_from_the_find_widget_state() {
+    let mut harness = harness("x = 1; y = x + x;");
+    click(&mut harness, 0, 0);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::H);
+    harness.run();
+    harness.state_mut().view.find.replacement = "value".into();
+    harness.state_mut().view.find.query.whole_word = true;
+    harness.run();
+
+    harness.get_by_label("Replace all").click();
+    harness.run();
+
+    assert_eq!(content(&harness), "value = 1; y = value + value;");
+}
+
+#[test]
+fn escape_closes_the_find_widget() {
+    let mut harness = harness("abc");
+    click(&mut harness, 0, 1);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+
+    harness.key_press(Key::Escape);
+    harness.run();
+
+    assert!(!harness.state().view.find.is_open);
+}
+
+#[test]
+fn ctrl_g_goes_to_a_line_and_column() {
+    let mut harness = harness("a\nb\nccccc\nd");
+    click(&mut harness, 0, 0);
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    harness.run();
+    type_text(&mut harness, "3:4");
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    assert_eq!(head(&harness), Position::new(2, 3));
+    assert!(!harness.state().view.go_to_line.is_open);
 }

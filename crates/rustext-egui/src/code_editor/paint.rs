@@ -28,9 +28,15 @@ impl CodeEditor<'_> {
         let cursor_lines: Vec<usize> = selections.iter().map(|selection| text.line_of_offset(selection.head)).collect();
         let highlights_current_line = selections.iter().all(Selection::is_empty);
         let text_painter = painter.with_clip_rect(metrics.text_rect);
+        let visible_rows = self.visible_rows(metrics);
+        let visible_start = text.line_start(self.nearest_line(visible_rows.start));
+        let visible_end = text.line_content_end(
+            self.nearest_line(visible_rows.end.saturating_sub(1)).max(self.nearest_line(visible_rows.start)),
+        );
+        let find_decorations = self.find_decorations(visible_start, visible_end.max(visible_start));
 
         let mut rows = Vec::new();
-        for row in self.visible_rows(metrics) {
+        for row in visible_rows.clone() {
             let content = self.row_content(row);
             let layout = match content {
                 RowContent::Line(line) => Some(self.layout_line(ui, metrics, line)),
@@ -62,6 +68,7 @@ impl CodeEditor<'_> {
                         text_painter.rect_filled(row_rect, CornerRadius::ZERO, theme.current_line_background);
                     }
                     self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, self.decorations);
+                    self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, &find_decorations);
                     self.paint_selections(&text_painter, metrics, &text, line, layout, top, &selections, has_focus);
                     self.paint_galley(&text_painter, metrics, layout, top);
                 }
@@ -422,6 +429,11 @@ impl CodeEditor<'_> {
                     let mark = Rect::from_center_size(pos2(track.center().x, y), vec2(track.width() - 4.0, 3.0));
                     painter.rect_filled(mark, CornerRadius::ZERO, to_color(color));
                 }
+            }
+            let find_mark_color = theme.find_match_background.gamma_multiply(1.5);
+            for found in self.view.find.matches() {
+                let y = y_of_row(self.row_of_line(text.line_of_offset(found.start)));
+                painter.hline(track.x_range(), y, Stroke::new(2.0, find_mark_color));
             }
             for selection in selections.iter() {
                 let y = y_of_row(self.row_of_line(text.line_of_offset(selection.head)));

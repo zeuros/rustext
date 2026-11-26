@@ -8,6 +8,7 @@
 //! The editor paints display rows (DECISIONS D17): one per line by default, or the rows of a
 //! `DisplayLayout` (padding, collapsed and foreign rows, for diffs and folding).
 
+mod find;
 mod input;
 mod layout;
 mod paint;
@@ -21,6 +22,7 @@ use rustext_core::{EditorState, Outcome, Position, Text};
 use crate::keymap::{Action, KeyChord, Keymap};
 use crate::theme::EditorTheme;
 
+pub use find::{FindState, GoToLineState, parse_line_and_column};
 pub use layout::{to_color, to_rgba};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -140,6 +142,10 @@ pub struct EditorView {
     widest_line_px: f32,
     reveal_primary_cursor: bool,
     geometry: Option<EditorGeometry>,
+    /// The find / replace widget (Ctrl+F, Ctrl+H).
+    pub find: FindState,
+    /// The go-to-line box (Ctrl+G).
+    pub go_to_line: GoToLineState,
 }
 
 impl EditorView {
@@ -381,6 +387,10 @@ impl<'a> CodeEditor<'a> {
             self.handle_keyboard(ui, &metrics, &mut outcome, &mut unhandled_actions);
         }
         self.handle_scroll(ui, &response);
+        self.refresh_find_matches();
+        if self.show_find_widgets(ui, &metrics, id) {
+            response.request_focus();
+        }
         self.after_outcome(ui, &outcome);
         if self.view.reveal_primary_cursor {
             self.reveal_primary_cursor(ui, &metrics);

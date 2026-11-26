@@ -180,6 +180,7 @@ pub struct EditorState {
     auto_closed_offsets: Vec<usize>,
     /// The last copy, to know whether a paste of the same text is whole lines.
     last_copy: Option<ClipboardContent>,
+    text_revision: u64,
 }
 
 impl EditorState {
@@ -196,6 +197,7 @@ impl EditorState {
             language: LanguageConfiguration::default(),
             auto_closed_offsets: Vec::new(),
             last_copy: None,
+            text_revision: 0,
         }
     }
 
@@ -219,12 +221,19 @@ impl EditorState {
         &self.history
     }
 
+    /// Changes every time the text changes (edits, undo, redo, `set_text`): a cache key for
+    /// anything computed from the text (Monaco's `getVersionId`).
+    pub fn text_revision(&self) -> u64 {
+        self.text_revision
+    }
+
     /// Replaces the whole text (a file reloaded from disk): new history, cursor at the start.
     pub fn set_text(&mut self, text: Text) {
         self.text = text;
         self.selections = Selections::default();
         self.history = History::default();
         self.auto_closed_offsets.clear();
+        self.text_revision += 1;
     }
 
     pub fn context(&self) -> EditContext<'_> {
@@ -347,6 +356,7 @@ impl EditorState {
         auto_closed_offsets.dedup();
 
         let selections_changed = selections_after != self.selections;
+        self.text_revision += 1;
         self.text = new_text;
         self.selections = selections_after;
         self.auto_closed_offsets = auto_closed_offsets;
@@ -372,6 +382,7 @@ impl EditorState {
         for changes in &replay.changes {
             self.text = changes.apply(&self.text);
         }
+        self.text_revision += 1;
         self.selections = replay.selections.clamped(&self.text);
         self.auto_closed_offsets.clear();
         Outcome { applied_changes: replay.changes, selections_changed: true, ..Outcome::default() }

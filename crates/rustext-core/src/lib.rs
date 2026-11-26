@@ -8,6 +8,7 @@ pub mod cursors;
 pub mod decoration;
 pub mod display;
 pub mod edit;
+pub mod find;
 pub mod history;
 pub mod indentation;
 pub mod lines;

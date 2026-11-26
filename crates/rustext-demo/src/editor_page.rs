@@ -22,7 +22,13 @@ pub struct EditorPage {
 }
 
 impl EditorPage {
-    pub fn new(languages: &LanguageRegistry, theme_choice: &ThemeChoice, file_name: String, content: &str) -> Self {
+    pub fn new(
+        languages: &LanguageRegistry,
+        theme_choice: &ThemeChoice,
+        file_name: String,
+        content: &str,
+        find: Option<String>,
+    ) -> Self {
         let text = Text::new(content);
         let config = EditingConfig {
             indentation: Indentation::detect(&text, Indentation::default()),
@@ -30,10 +36,16 @@ impl EditorPage {
         };
         let language = languages.detect(&file_name, &text.line_content(0));
         let state = EditorState::with_text(text).with_config(config).with_language(language.configuration.clone());
+        let mut view = EditorView::default();
+        if let Some(pattern) = find {
+            view.find.is_open = true;
+            view.find.is_replace_shown = true;
+            view.find.query.pattern = pattern;
+        }
         Self {
             saved_version: state.history().version(),
             state,
-            view: EditorView::default(),
+            view,
             view_config: ViewConfig { rulers: vec![100], ..ViewConfig::default() },
             file_name,
             last_action: String::new(),

@@ -324,7 +324,7 @@ impl CodeEditor<'_> {
             Action::ZoomIn => self.view.font_size_delta += 1.0,
             Action::ZoomOut => self.view.font_size_delta -= 1.0,
             Action::ZoomReset => self.view.font_size_delta = 0.0,
-            other => unhandled_actions.push(other),
+            other => unhandled_actions.extend(self.run_find_action(other)),
         }
     }
 

@@ -3,7 +3,7 @@
 //!
 //! `rustext-demo [file]` opens a file (a sample when none is given);
 //! `rustext-demo --diff <old> <new>` opens a diff; `--page diff` starts on the diff page;
-//! `--inline` shows the diff inline.
+//! `--inline` shows the diff inline; `--find <pattern>` opens the find widget.
 
 mod diff_page;
 mod editor_page;
@@ -58,10 +58,11 @@ struct Arguments {
     diff_files: Option<(String, String)>,
     page: Page,
     inline: bool,
+    find: Option<String>,
 }
 
 fn parse_arguments() -> Arguments {
-    let mut arguments = Arguments { file: None, diff_files: None, page: Page::Editor, inline: false };
+    let mut arguments = Arguments { file: None, diff_files: None, page: Page::Editor, inline: false, find: None };
     let mut raw = std::env::args().skip(1);
     while let Some(argument) = raw.next() {
         match argument.as_str() {
@@ -71,6 +72,7 @@ fn parse_arguments() -> Arguments {
                     arguments.page = Page::Diff;
                 }
             }
+            "--find" => arguments.find = raw.next(),
             "--inline" => {
                 arguments.inline = true;
                 arguments.page = Page::Diff;
@@ -119,7 +121,7 @@ fn main() -> eframe::Result {
             let theme_choice = ThemeChoice::Dark;
             Ok(Box::new(Playground {
                 page: arguments.page,
-                editor_page: EditorPage::new(&languages, &theme_choice, file_name, &content),
+                editor_page: EditorPage::new(&languages, &theme_choice, file_name, &content, arguments.find),
                 diff_page: DiffPage::new(
                     &languages,
                     &theme_choice,
