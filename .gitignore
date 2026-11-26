@@ -2,3 +2,4 @@
 *.png.new
 *.diff.png
 .playwright-mcp/
+.claude/worktrees/
