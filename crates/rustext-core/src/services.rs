@@ -3,6 +3,9 @@
 //! ready yet (an LSP request in flight): the editor asks again on a later frame. Every method
 //! has a default answering "nothing", so a service implements only what it knows.
 
+use nucleo_matcher::pattern::{Atom, AtomKind, CaseMatching, Normalization};
+use nucleo_matcher::{Config, Matcher, Utf32Str};
+
 use crate::position::{Position, Range};
 use crate::text::Text;
 use crate::words::WordDefinition;
@@ -263,54 +266,46 @@ impl LanguageServices for WordCompletions {
     }
 }
 
-/// How well `query` matches `candidate` as a subsequence (VS Code's fuzzy matching), higher is
-/// better; `None` when it doesn't match. Case-insensitive; matches at the start, at word
-/// starts (`_x`, `camelCase` humps) and consecutive chars score more.
-pub fn fuzzy_score(query: &str, candidate: &str) -> Option<i64> {
-    if query.is_empty() {
-        return Some(0);
-    }
-    let candidate_chars: Vec<char> = candidate.chars().collect();
-    let mut score = 0i64;
-    let mut candidate_index = 0;
-    let mut previous_match: Option<usize> = None;
-    for query_char in query.chars() {
-        let query_lower = query_char.to_lowercase().next().unwrap_or(query_char);
-        let found = (candidate_index..candidate_chars.len())
-            .find(|&index| candidate_chars[index].to_lowercase().next() == Some(query_lower))?;
-        let character = candidate_chars[found];
-        let starts_word = found == 0
-            || !candidate_chars[found - 1].is_alphanumeric()
-            || (candidate_chars[found - 1].is_lowercase() && character.is_uppercase());
-        score += 1;
-        if found == 0 {
-            score += 8;
-        }
-        if starts_word {
-            score += 5;
-        }
-        if previous_match.is_some_and(|previous| previous + 1 == found) {
-            score += 4;
-        }
-        if character == query_char {
-            score += 1;
-        }
-        score -= (found - candidate_index) as i64 / 2;
-        previous_match = Some(found);
-        candidate_index = found + 1;
-    }
-    score -= (candidate_chars.len() as i64 - query.chars().count() as i64) / 4;
-    Some(score)
+/// A fuzzy query (nucleo, Helix's matcher): matches candidates as subsequences, ignoring case,
+/// scoring word starts, `camelCase` humps, consecutive chars and prefixes higher. Holds the
+/// matcher's buffers, so one query scores many candidates without allocating.
+pub struct FuzzyQuery {
+    atom: Atom,
+    matcher: Matcher,
+    candidate_chars: Vec<char>,
 }
 
-/// The items matching `query`, best first (ties keep their order).
+impl FuzzyQuery {
+    pub fn new(query: &str) -> Self {
+        let mut config = Config::DEFAULT;
+        config.prefer_prefix = true;
+        Self {
+            atom: Atom::new(query, CaseMatching::Ignore, Normalization::Smart, AtomKind::Fuzzy, false),
+            matcher: Matcher::new(config),
+            candidate_chars: Vec::new(),
+        }
+    }
+
+    /// How well the query matches `candidate`, higher is better; `None` when it doesn't match.
+    /// An empty query matches everything equally.
+    pub fn score(&mut self, candidate: &str) -> Option<u16> {
+        if self.atom.needle_text().is_empty() {
+            return Some(0);
+        }
+        self.atom.score(Utf32Str::new(candidate, &mut self.candidate_chars), &mut self.matcher)
+    }
+}
+
+/// The items matching `query`, best first; equal scores put the shorter label first, then keep
+/// their order.
 pub fn filter_completions(items: &[CompletionItem], query: &str) -> Vec<CompletionItem> {
-    let mut scored: Vec<(i64, usize)> = items
+    let mut fuzzy_query = FuzzyQuery::new(query);
+    let mut scored: Vec<(u16, usize)> = items
         .iter()
         .enumerate()
-        .filter_map(|(index, item)| fuzzy_score(query, &item.label).map(|score| (score, index)))
+        .filter_map(|(index, item)| fuzzy_query.score(&item.label).map(|score| (score, index)))
         .collect();
-    scored.sort_by_key(|&(score, index)| (std::cmp::Reverse(score), index));
+    scored.sort_by_key(|&(score, index)| (std::cmp::Reverse(score), items[index].label.chars().count(), index));
     scored.into_iter().map(|(_, index)| items[index].clone()).collect()
 }
 
@@ -320,10 +315,18 @@ mod tests {
 
     #[test]
     fn fuzzy_matches_subsequences_and_prefers_word_starts() {
-        assert!(fuzzy_score("gtl", "getLine").is_some());
-        assert!(fuzzy_score("xyz", "getLine").is_none());
-        assert!(fuzzy_score("gl", "getLine") > fuzzy_score("gl", "angle"));
-        assert!(fuzzy_score("len", "length") > fuzzy_score("len", "is_lenient"));
+        let score = |query: &str, candidate: &str| FuzzyQuery::new(query).score(candidate);
+
+        assert!(score("gtl", "getLine").is_some());
+        assert!(score("xyz", "getLine").is_none());
+        assert!(score("gl", "getLine") > score("gl", "angle"));
+        assert!(score("len", "length") > score("len", "is_lenient"));
+        assert!(score("GETL", "getLine").is_some());
+    }
+
+    #[test]
+    fn an_empty_fuzzy_query_matches_everything() {
+        assert_eq!(FuzzyQuery::new("").score("anything"), Some(0));
     }
 
     #[test]

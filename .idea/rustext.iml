@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="EMPTY_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-core/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-core/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-demo/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-diff/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-diff/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-egui/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-egui/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-lsp/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-lsp/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustext-syntax/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

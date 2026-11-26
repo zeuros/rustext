@@ -2,7 +2,7 @@
 //! with Enter. Names come from `Command::name()` and the widget actions (DECISIONS D8).
 
 use egui::{Align2, Area, Frame, Id, Key, Order, RichText, Ui, vec2};
-use rustext_core::services::fuzzy_score;
+use rustext_core::services::FuzzyQuery;
 
 use super::{CodeEditor, Metrics};
 use crate::keymap::{Action, KeyChord};
@@ -78,13 +78,14 @@ pub fn chords_label(chords: &[KeyChord]) -> String {
 impl CodeEditor<'_> {
     /// The entries matching the query: (label, key hint, action), best first, one per label.
     fn palette_entries(&self) -> Vec<(String, String, Action)> {
-        let mut entries: Vec<(i64, String, String, Action)> = Vec::new();
+        let mut fuzzy_query = FuzzyQuery::new(&self.view.palette.query);
+        let mut entries: Vec<(u16, String, String, Action)> = Vec::new();
         for binding in self.keymap.bindings.iter().rev() {
             let label = action_label(&binding.action);
             if entries.iter().any(|(_, existing, _, _)| *existing == label) {
                 continue;
             }
-            if let Some(score) = fuzzy_score(&self.view.palette.query, &label) {
+            if let Some(score) = fuzzy_query.score(&label) {
                 entries.push((score, label, chords_label(&binding.chords), binding.action.clone()));
             }
         }
