@@ -340,6 +340,18 @@ impl EditorState {
         self.snippet_session.is_some()
     }
 
+    /// The non-empty placeholders of the snippet being filled in (not its final `$0`), as
+    /// char offset ranges: where Tab goes next.
+    pub fn snippet_placeholders(&self) -> Vec<(usize, usize)> {
+        let Some(session) = &self.snippet_session else { return Vec::new() };
+        session
+            .stops
+            .iter()
+            .filter(|&&(index, start, end)| index != 0 && start < end)
+            .map(|&(_, start, end)| (start, end))
+            .collect()
+    }
+
     pub fn execute(&mut self, command: Command) -> Outcome {
         match (&command, self.snippet_session.is_some()) {
             (Command::Tab, true) => return self.jump_to_tab_stop(true),
@@ -806,6 +818,17 @@ mod tests {
         type_all(&mut state, "value");
 
         assert_eq!(state.text().to_string(), "let value = value;");
+    }
+
+    #[test]
+    fn snippet_placeholders_follow_typing_and_leave_out_the_final_stop() {
+        let mut state = editor("", 0);
+        state.execute(Command::InsertSnippet { snippet: "f(${1:a}, ${2:b})$0".into(), replaced_before_cursor: 0 });
+
+        type_all(&mut state, "xyz");
+
+        assert_eq!(state.text().to_string(), "f(xyz, b)");
+        assert_eq!(state.snippet_placeholders(), vec![(2, 5), (7, 8)]);
     }
 
     #[test]

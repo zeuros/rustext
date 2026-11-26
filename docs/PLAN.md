@@ -123,12 +123,11 @@ change their seeds locally to hunt for rarer bugs). Every feature is a commit on
    grammar is bundled (folding by syntax is done).
 2. Services across files: definitions and references in other documents need the application
    to open them (an `EditorResponse` request; gitgud decides).
-3. Snippet tab stops highlighted while the snippet session lasts.
-4. Accessibility beyond the name and cursor line: expose the visible text and the selection to
+3. Accessibility beyond the name and cursor line: expose the visible text and the selection to
    AccessKit; an accessible diff viewer (`accessibleDiffViewerNext`).
-5. Bracket pair guides (`guides.bracketPairs`), from `BracketLineStarts`.
+4. Bracket pair guides (`guides.bracketPairs`), from `BracketLineStarts`.
 
-Done since: folding by syntax tree (`FoldingStrategy`), Fold from inside a block moves the
+Done since: snippet placeholders highlighted; folding by syntax tree (`FoldingStrategy`), Fold from inside a block moves the
 cursor to its header; code lenses (D25, `--code-lens` in the demo); Helix's crates (D22–D24): tree-sitter highlighting for 18 languages, parsed on a
 thread; smart select (Shift+Alt+→/←); `lsp-types` messages, checked against a real
 rust-analyzer (`crates/rustext-lsp/tests/rust_analyzer.rs`, ignored); `nucleo` fuzzy matching;

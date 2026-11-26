@@ -251,6 +251,8 @@ pub struct EditorView {
     /// The signature help tooltip.
     pub signature: SignatureState,
     pub inlay_hints: assist::InlayHintsState,
+    /// The placeholders of the snippet being filled in, as decorations.
+    snippet_placeholders: Vec<Decoration>,
     pub document_highlights: assist::DocumentHighlightsState,
     /// The references list (Shift+F12).
     pub references: references::ReferencesState,
@@ -620,6 +622,13 @@ impl<'a> CodeEditor<'a> {
         }
         self.after_outcome(ui, &outcome);
         self.refresh_service_diagnostics();
+        let placeholder_background = to_rgba(self.theme.snippet_tab_stop_background);
+        self.view.snippet_placeholders = self
+            .state
+            .snippet_placeholders()
+            .into_iter()
+            .map(|(start, end)| Decoration::new(start, end, DecorationKind::Background(placeholder_background)))
+            .collect();
         if self.refresh_inlay_hints(&metrics) | self.refresh_document_highlights() | self.refresh_references() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
@@ -768,7 +777,11 @@ impl<'a> CodeEditor<'a> {
 
     /// The application's decorations and the language services' diagnostics and inlay hints.
     fn all_decorations(&self) -> impl Iterator<Item = &Decoration> {
-        self.decorations.iter().chain(self.view.service_diagnostics.iter()).chain(self.view.inlay_hints.decorations())
+        self.decorations
+            .iter()
+            .chain(self.view.service_diagnostics.iter())
+            .chain(self.view.inlay_hints.decorations())
+            .chain(self.view.snippet_placeholders.iter())
     }
 
     /// Asks for an inline completion after typing; drops a suggestion the cursor left.
