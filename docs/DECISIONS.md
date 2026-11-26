@@ -233,7 +233,9 @@ on explicit actions (fold all, replace all, a new diff) or behind a budget (the 
   font would need galley-measured breaks.
 - Breaks are cached per line and follow edits through `EditedLines` (D19): only edited lines
   are wrapped again; a width change wraps everything (an explicit, rare event).
-- Cursor moves stay per logical line (Up/Down move by line, not by visual row) for now.
+- Up/Down move by visual row when wrapping, as in VS Code: the widget handles them (it knows
+  the rows), keeping the visual column within the row in `Selection::preferred_visual_column`.
+  The core's line-based vertical motion stays for unwrapped views.
 
 ## Inspiration (read their code, don't copy it)
 

@@ -542,3 +542,21 @@ fn the_command_palette_runs_a_command_by_name() {
     assert_eq!(content(&harness), "a\nb\nc");
     assert!(!harness.state().view.palette.is_open);
 }
+
+#[test]
+fn up_and_down_move_by_visual_row_when_wrapping() {
+    // Rows: "alpha beta " / "gamma delta" / "end".
+    let mut harness = wrapping_harness("alpha beta gamma delta\nend", 12);
+    click(&mut harness, 0, 2);
+
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(0, 13));
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(1, 2));
+    harness.key_press(Key::ArrowUp);
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(0, 2));
+}

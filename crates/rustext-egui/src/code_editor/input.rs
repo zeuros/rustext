@@ -380,6 +380,13 @@ impl CodeEditor<'_> {
     ) {
         let lines_per_page =
             ((metrics.text_rect.height() / metrics.row_height).floor() as usize).saturating_sub(1).max(1);
+        if let Action::Edit(Command::Move { motion: motion @ (Motion::Up | Motion::Down), extend }) = action
+            && self.view.wraps.is_wrapping()
+        {
+            let moved = self.selections_moved_by_row(motion == Motion::Down, extend);
+            self.execute(outcome, Command::SetSelections(moved));
+            return;
+        }
         match action {
             Action::Edit(command) => self.execute(outcome, command),
             Action::MovePage { direction, extend } => {

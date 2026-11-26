@@ -67,3 +67,59 @@ impl WrapState {
         self.generation += 1;
     }
 }
+
+use rustext_core::{Selection, Selections};
+
+use super::CodeEditor;
+
+impl CodeEditor<'_> {
+    /// Visual column of char `column` within the row segment starting at `start_column`
+    /// (continuation rows start after their indent).
+    fn visual_column_in_row(&self, line: usize, start_column: usize, column: usize) -> usize {
+        let content = self.state.text().line_content(line);
+        let indentation = self.state.config.indentation;
+        let indent = if start_column > 0 {
+            rustext_core::wrap::continuation_indent(&content, self.view.wraps.width_columns(), indentation.tab_size)
+        } else {
+            0
+        };
+        let segment: String = content.chars().skip(start_column).collect();
+        indent + indentation.visual_column(&segment, column.saturating_sub(start_column))
+    }
+
+    /// Up / Down when wrapping: to the row above or below, at the same visual column.
+    pub(super) fn selections_moved_by_row(&self, down: bool, extend: bool) -> Selections {
+        let text = self.state.text();
+        let indentation = self.state.config.indentation;
+        self.state.selections().map_each(|selection| {
+            let head = text.position(selection.head);
+            let row = self.row_of_position(head.line, head.column);
+            let Some((line, start_column, _)) = self.row_segment(row) else { return *selection };
+            let visual_column = selection
+                .preferred_visual_column
+                .unwrap_or_else(|| self.visual_column_in_row(line, start_column, head.column));
+            let target_row = if down { (row + 1 < self.row_count()).then_some(row + 1) } else { row.checked_sub(1) };
+            let target = target_row.and_then(|target_row| self.row_segment(target_row));
+            let offset = match target {
+                Some((target_line, target_start, target_end)) => {
+                    let content = text.line_content(target_line);
+                    let line_len = content.chars().count();
+                    let segment_end = target_end.min(line_len);
+                    let is_last_segment = segment_end == line_len;
+                    let segment: String = content.chars().skip(target_start).take(segment_end - target_start).collect();
+                    let indent = self.visual_column_in_row(target_line, target_start, target_start);
+                    let column = indentation.column_at_visual(&segment, visual_column.saturating_sub(indent));
+                    let last_column = if is_last_segment {
+                        segment_end - target_start
+                    } else {
+                        (segment_end - target_start).saturating_sub(1)
+                    };
+                    text.offset(rustext_core::Position::new(target_line, target_start + column.min(last_column)))
+                }
+                None if down => text.len_chars(),
+                None => 0,
+            };
+            Selection { preferred_visual_column: Some(visual_column), ..selection.moved_to(offset, extend) }
+        })
+    }
+}
