@@ -192,6 +192,13 @@ impl EditorPage {
                 ("word_counts(\"the", Severity::Error, "mismatched types: expected `&str`, found `String` (made up)"),
                 ("counts", Severity::Hint, "variable `counts` is shadowed later"),
             ];
+            let hint_query = SearchQuery { match_case: true, ..SearchQuery::new("let shapes") };
+            if let Some(found) =
+                find_matches(text, &hint_query, None, 1).ok().and_then(|matches| matches.first().copied())
+            {
+                let hint_color = rustext_egui::code_editor::to_rgba(theme.hint);
+                decorations.push(Decoration::injected_text(found.end, ": Vec<Shape>", hint_color));
+            }
             for (pattern, severity, message) in examples {
                 let query = SearchQuery { match_case: true, ..SearchQuery::new(pattern) };
                 if let Some(found) =
