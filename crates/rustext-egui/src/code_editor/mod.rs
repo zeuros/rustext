@@ -12,6 +12,7 @@ mod find;
 mod input;
 mod layout;
 mod paint;
+mod structure;
 
 use egui::{CursorIcon, EventFilter, FontId, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 use rustext_core::decoration::Decoration;
@@ -24,6 +25,7 @@ use crate::theme::EditorTheme;
 
 pub use find::{FindState, GoToLineState, parse_line_and_column};
 pub use layout::{to_color, to_rgba};
+pub use structure::FoldState;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum LineNumbers {
@@ -40,6 +42,20 @@ pub enum CursorStyle {
     Line,
     Block,
     Underline,
+}
+
+/// Which whitespace chars get a visible mark (`·` for a space, `→` for a tab).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum WhitespaceRendering {
+    None,
+    /// Inside selections only.
+    #[default]
+    Selection,
+    /// At the end of lines only.
+    Trailing,
+    /// All but single spaces between words.
+    Boundary,
+    All,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -75,6 +91,17 @@ pub struct ViewConfig {
     pub mouse_wheel_zoom: bool,
     /// Draws the cursor positions and marks on the vertical scrollbar.
     pub overview_ruler: bool,
+    /// Indentation folding, with fold markers in the gutter.
+    pub folding: bool,
+    pub indent_guides: bool,
+    pub match_brackets: bool,
+    /// Highlights the other occurrences of the word at the cursor.
+    pub occurrences_highlight: bool,
+    /// Highlights the other occurrences of the selected text.
+    pub selection_highlight: bool,
+    pub render_whitespace: WhitespaceRendering,
+    /// Marks the `\r` of lines ending with `\r\n` (gitgud's visible CRLF).
+    pub show_carriage_returns: bool,
 }
 
 impl Default for ViewConfig {
@@ -95,6 +122,13 @@ impl Default for ViewConfig {
             fast_scroll_sensitivity: 5.0,
             mouse_wheel_zoom: true,
             overview_ruler: true,
+            folding: true,
+            indent_guides: true,
+            match_brackets: true,
+            occurrences_highlight: true,
+            selection_highlight: true,
+            render_whitespace: WhitespaceRendering::default(),
+            show_carriage_returns: false,
         }
     }
 }
@@ -146,6 +180,7 @@ pub struct EditorView {
     pub find: FindState,
     /// The go-to-line box (Ctrl+G).
     pub go_to_line: GoToLineState,
+    pub folds: FoldState,
 }
 
 impl EditorView {
@@ -222,6 +257,10 @@ pub enum MouseTarget {
     },
     /// A padding row.
     Padding,
+    /// The fold marker of a fold range's header line.
+    FoldMarker {
+        line: usize,
+    },
     Scrollbar,
 }
 
@@ -268,6 +307,7 @@ struct Metrics {
     glyph_margin_width: f32,
     line_numbers_width: f32,
     marker_width: f32,
+    fold_marker_width: f32,
     gutter_width: f32,
     text_rect: Rect,
     scrollbar_rect: Rect,
@@ -378,6 +418,7 @@ impl<'a> CodeEditor<'a> {
             ui.memory_mut(|memory| memory.set_focus_lock_filter(id, filter));
         }
 
+        self.refresh_folding();
         let mut outcome = Outcome::default();
         let mut unhandled_actions = Vec::new();
         let pointer_pos = ui.input(|input| input.pointer.hover_pos());
@@ -392,6 +433,7 @@ impl<'a> CodeEditor<'a> {
             response.request_focus();
         }
         self.after_outcome(ui, &outcome);
+        self.refresh_folding();
         if self.view.reveal_primary_cursor {
             self.reveal_primary_cursor(ui, &metrics);
             self.view.reveal_primary_cursor = false;
@@ -430,7 +472,9 @@ impl<'a> CodeEditor<'a> {
         };
         let glyph_margin_width = if self.glyph_margin { row_height } else { 0.0 };
         let marker_width = if self.markers { char_width * 2.0 } else { 0.0 };
-        let gutter_width = glyph_margin_width + line_numbers_width + marker_width + char_width;
+        let fold_marker_width =
+            if self.config.folding && self.display_layout.is_none() { char_width * 1.8 } else { 0.0 };
+        let gutter_width = glyph_margin_width + line_numbers_width + marker_width + fold_marker_width + char_width;
         let scrollbar_rect =
             Rect::from_min_max(pos2(rect.right() - self.config.scrollbar_width, rect.top()), rect.right_bottom());
         let text_rect = Rect::from_min_max(
@@ -444,6 +488,7 @@ impl<'a> CodeEditor<'a> {
             glyph_margin_width,
             line_numbers_width,
             marker_width,
+            fold_marker_width,
             gutter_width,
             text_rect,
             scrollbar_rect,
@@ -452,12 +497,17 @@ impl<'a> CodeEditor<'a> {
 
     // ---- rows ----
 
+    /// The rows painted: the application's layout, else the folding one, else one per line.
+    fn layout(&self) -> Option<&DisplayLayout> {
+        self.display_layout.or(self.view.folds.layout.as_ref())
+    }
+
     fn row_count(&self) -> usize {
-        self.display_layout.map_or(self.state.text().line_count(), DisplayLayout::row_count)
+        self.layout().map_or(self.state.text().line_count(), DisplayLayout::row_count)
     }
 
     fn row_content(&self, row: usize) -> RowContent {
-        match self.display_layout {
+        match self.layout() {
             Some(display_layout) => {
                 display_layout.row(row).map_or(RowContent::Padding, |display_row| display_row.content)
             }
@@ -466,18 +516,18 @@ impl<'a> CodeEditor<'a> {
     }
 
     fn row_style(&self, row: usize) -> (Option<Rgba>, Option<char>) {
-        self.display_layout
+        self.layout()
             .and_then(|display_layout| display_layout.row(row))
             .map_or((None, None), |display_row| (display_row.background, display_row.marker))
     }
 
     fn row_of_line(&self, line: usize) -> usize {
-        self.display_layout.map_or(line, |display_layout| display_layout.row_of_line(line))
+        self.layout().map_or(line, |display_layout| display_layout.row_of_line(line))
     }
 
     /// The text line a row stands for, or the nearest one for padding and foreign rows.
     fn nearest_line(&self, row: usize) -> usize {
-        match self.display_layout {
+        match self.layout() {
             Some(display_layout) => display_layout.nearest_line(row),
             None => row.min(self.state.text().last_line()),
         }

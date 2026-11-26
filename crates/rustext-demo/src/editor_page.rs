@@ -3,7 +3,7 @@
 use eframe::egui;
 use rustext_core::indentation::Indentation;
 use rustext_core::{EditingConfig, EditorState, Text};
-use rustext_egui::code_editor::{CursorStyle, LineNumbers};
+use rustext_egui::code_editor::{CursorStyle, LineNumbers, WhitespaceRendering};
 use rustext_egui::{CodeEditor, EditorView, Keymap, ViewConfig};
 use rustext_syntax::{LanguageRegistry, SyntaxHighlighter};
 
@@ -28,6 +28,7 @@ impl EditorPage {
         file_name: String,
         content: &str,
         find: Option<String>,
+        showcase: bool,
     ) -> Self {
         let text = Text::new(content);
         let config = EditingConfig {
@@ -35,8 +36,16 @@ impl EditorPage {
             ..EditingConfig::default()
         };
         let language = languages.detect(&file_name, &text.line_content(0));
-        let state = EditorState::with_text(text).with_config(config).with_language(language.configuration.clone());
+        let mut state = EditorState::with_text(text).with_config(config).with_language(language.configuration.clone());
         let mut view = EditorView::default();
+        let mut view_config = ViewConfig { rulers: vec![100], ..ViewConfig::default() };
+        if showcase {
+            let text = state.text().clone();
+            let bracket_offset = text.offset(rustext_core::Position::new(5, 57));
+            state.execute(rustext_core::Command::SetSelections(rustext_core::Selections::cursor(bracket_offset)));
+            view.folds.fold_at(text.line_start(19));
+            view_config.render_whitespace = WhitespaceRendering::All;
+        }
         if let Some(pattern) = find {
             view.find.is_open = true;
             view.find.is_replace_shown = true;
@@ -46,7 +55,7 @@ impl EditorPage {
             saved_version: state.history().version(),
             state,
             view,
-            view_config: ViewConfig { rulers: vec![100], ..ViewConfig::default() },
+            view_config,
             file_name,
             last_action: String::new(),
             highlighter: SyntaxHighlighter::new(languages, language, theme_choice.syntax_theme()),
@@ -105,6 +114,24 @@ impl EditorPage {
                 }
             },
         );
+        egui::ComboBox::from_label("Whitespace")
+            .selected_text(format!("{:?}", self.view_config.render_whitespace))
+            .show_ui(ui, |ui| {
+                for mode in [
+                    WhitespaceRendering::None,
+                    WhitespaceRendering::Selection,
+                    WhitespaceRendering::Boundary,
+                    WhitespaceRendering::Trailing,
+                    WhitespaceRendering::All,
+                ] {
+                    ui.selectable_value(&mut self.view_config.render_whitespace, mode, format!("{mode:?}"));
+                }
+            });
+        ui.checkbox(&mut self.view_config.show_carriage_returns, "Show CR of CRLF lines");
+        ui.checkbox(&mut self.view_config.folding, "Folding");
+        ui.checkbox(&mut self.view_config.indent_guides, "Indent guides");
+        ui.checkbox(&mut self.view_config.match_brackets, "Match brackets");
+        ui.checkbox(&mut self.view_config.occurrences_highlight, "Highlight occurrences");
         ui.checkbox(&mut self.view_config.cursor_blinking, "Cursor blinking");
         ui.checkbox(&mut self.view_config.scroll_beyond_last_line, "Scroll beyond last line");
         ui.checkbox(&mut self.state.config.read_only, "Read-only");

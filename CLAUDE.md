@@ -11,7 +11,7 @@ Start here, in this order:
 
 ## Commands
 
-- `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all`: CI runs all three.
+- `scripts/check.sh`: what CI runs (fmt check, clippy `-D warnings`, tests), stopping at the first failure. Run it before every commit; `cargo fmt --all` fixes formatting.
 - `cargo run -p rustext-demo --release`: the playground app. `-- <file>` opens a file; `-- --diff <old> <new>` a diff.
 - Screenshots without touching the desktop: run the demo on a private Xvfb
   (`scripts/screenshot.sh <out.png> [demo args…]`), then read the PNG.

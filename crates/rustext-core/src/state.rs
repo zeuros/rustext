@@ -8,7 +8,7 @@ use crate::cursors::{self, VerticalDirection};
 use crate::edit::{self, ClipboardContent, DeleteUnit, EditContext, Transaction};
 use crate::history::History;
 use crate::lines::{self, CaseTransform, LinesRewrite};
-use crate::motion::{Motion, apply_motion};
+use crate::motion::{HiddenLines, Motion, apply_motion_over};
 use crate::position::Position;
 use crate::selection::Selections;
 use crate::text::Text;
@@ -181,6 +181,8 @@ pub struct EditorState {
     /// The last copy, to know whether a paste of the same text is whole lines.
     last_copy: Option<ClipboardContent>,
     text_revision: u64,
+    /// Lines the view hides (folds): vertical moves step over them.
+    pub hidden_lines: HiddenLines,
 }
 
 impl EditorState {
@@ -198,6 +200,7 @@ impl EditorState {
             auto_closed_offsets: Vec::new(),
             last_copy: None,
             text_revision: 0,
+            hidden_lines: HiddenLines::default(),
         }
     }
 
@@ -263,7 +266,7 @@ impl EditorState {
         let transaction = match command {
             Command::Move { motion, extend } => {
                 let moved = selections.map_each(|selection| {
-                    let moved = apply_motion(text, config, selection, motion, extend);
+                    let moved = apply_motion_over(text, config, &self.hidden_lines, selection, motion, extend);
                     if motion.is_vertical() { moved } else { moved.with_preferred_visual_column(None) }
                 });
                 return self.select(moved);

@@ -40,6 +40,11 @@ impl CodeEditor<'_> {
         if pos.x < gutter_left + metrics.glyph_margin_width {
             return MouseTarget::GlyphMargin { line };
         }
+        let fold_column_right = metrics.text_rect.left() - metrics.char_width;
+        let is_in_fold_column = (fold_column_right - metrics.fold_marker_width..fold_column_right).contains(&pos.x);
+        if is_in_fold_column && self.fold_range_at(line).is_some() {
+            return MouseTarget::FoldMarker { line };
+        }
         if pos.x < metrics.text_rect.left() {
             return MouseTarget::LineNumber { line };
         }
@@ -120,6 +125,7 @@ impl CodeEditor<'_> {
                 self.view.drag = Some(Drag::VerticalScrollbar { grab_offset_y });
             }
             MouseTarget::Collapsed { .. } | MouseTarget::Foreign { .. } | MouseTarget::Padding => {}
+            MouseTarget::FoldMarker { line } => self.toggle_fold(line),
             MouseTarget::LineNumber { line } | MouseTarget::GlyphMargin { line } => {
                 let (start, end) = whole_line(&text, line);
                 self.view.drag = Some(Drag::Selecting {
@@ -324,7 +330,21 @@ impl CodeEditor<'_> {
             Action::ZoomIn => self.view.font_size_delta += 1.0,
             Action::ZoomOut => self.view.font_size_delta -= 1.0,
             Action::ZoomReset => self.view.font_size_delta = 0.0,
-            other => unhandled_actions.extend(self.run_find_action(other)),
+            Action::JumpToBracket => {
+                let head = self.state.selections().primary().head;
+                let pair = rustext_core::structure::matching_bracket_pair(
+                    self.state.text(),
+                    head,
+                    &self.state.language.brackets,
+                );
+                if let Some((open, close)) = pair {
+                    let target = if head == open || head == open + 1 { close } else { open };
+                    self.execute(outcome, Command::SetSelections(Selections::cursor(target)));
+                }
+            }
+            other => {
+                unhandled_actions.extend(self.run_find_action(other).and_then(|other| self.run_fold_action(other)))
+            }
         }
     }
 
@@ -358,6 +378,9 @@ impl CodeEditor<'_> {
             .filter_map(|changes| changes.changes().first())
             .map(|change| change.start)
             .min();
+        for changes in &outcome.applied_changes {
+            self.view.folds.map_through(changes);
+        }
         if let (Some(styler), Some(first_changed_offset)) = (self.styler.as_deref_mut(), first_changed_offset) {
             styler.invalidate_from(self.state.text().line_of_offset(first_changed_offset));
         }

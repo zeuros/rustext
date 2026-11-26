@@ -315,3 +315,73 @@ fn ctrl_g_goes_to_a_line_and_column() {
     assert_eq!(head(&harness), Position::new(2, 3));
     assert!(!harness.state().view.go_to_line.is_open);
 }
+
+const FOLDABLE: &str = "fn a() {\n    one();\n    two();\n}\nfn b() {\n    three();\n}\n";
+
+fn chord(harness: &mut Harness<'_, Fixture>, second_key: Key) {
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    harness.key_press_modifiers(Modifiers::COMMAND, second_key);
+    harness.run();
+}
+
+#[test]
+fn fold_all_hides_blocks_and_the_cursor_steps_over_them() {
+    let mut harness = harness(FOLDABLE);
+    click(&mut harness, 0, 0);
+
+    chord(&mut harness, Key::Num0);
+    assert_eq!(harness.state().view.folds.folded_header_count(), 2);
+
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    assert_eq!(head(&harness).line, 3);
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    assert_eq!(head(&harness).line, 4);
+
+    chord(&mut harness, Key::J);
+    assert_eq!(harness.state().view.folds.folded_header_count(), 0);
+}
+
+#[test]
+fn moving_the_cursor_into_a_fold_unfolds_it() {
+    let mut harness = harness(FOLDABLE);
+    click(&mut harness, 0, 0);
+    chord(&mut harness, Key::Num0);
+
+    harness.state_mut().state.execute(rustext_core::Command::SetSelections(rustext_core::Selections::cursor(15)));
+    harness.run();
+
+    assert_eq!(harness.state().view.folds.folded_header_count(), 1);
+}
+
+#[test]
+fn clicking_the_fold_marker_toggles_the_fold() {
+    let mut harness = harness(FOLDABLE);
+    let geometry = geometry(&harness);
+    let marker = Pos2::new(
+        geometry.text_rect.left() - geometry.char_width * 1.9,
+        geometry.row_top(0) + geometry.row_height / 2.0,
+    );
+
+    press_at(&mut harness, marker, Modifiers::NONE);
+    assert_eq!(harness.state().view.folds.folded_header_count(), 1);
+
+    // Folded: line 3 ("}") now sits on row 1.
+    click(&mut harness, 1, 0);
+    assert_eq!(head(&harness).line, 3);
+}
+
+#[test]
+fn ctrl_shift_backslash_jumps_to_the_matching_bracket() {
+    let mut harness = harness("f(a, (b))");
+    click(&mut harness, 0, 1);
+
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Backslash);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(0, 8));
+
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Backslash);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(0, 1));
+}

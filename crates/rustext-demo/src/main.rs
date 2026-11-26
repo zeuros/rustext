@@ -3,7 +3,8 @@
 //!
 //! `rustext-demo [file]` opens a file (a sample when none is given);
 //! `rustext-demo --diff <old> <new>` opens a diff; `--page diff` starts on the diff page;
-//! `--inline` shows the diff inline; `--find <pattern>` opens the find widget.
+//! `--inline` shows the diff inline; `--find <pattern>` opens the find widget;
+//! `--showcase` folds a block, shows whitespace and puts the cursor on a bracket.
 
 mod diff_page;
 mod editor_page;
@@ -59,10 +60,12 @@ struct Arguments {
     page: Page,
     inline: bool,
     find: Option<String>,
+    showcase: bool,
 }
 
 fn parse_arguments() -> Arguments {
-    let mut arguments = Arguments { file: None, diff_files: None, page: Page::Editor, inline: false, find: None };
+    let mut arguments =
+        Arguments { file: None, diff_files: None, page: Page::Editor, inline: false, find: None, showcase: false };
     let mut raw = std::env::args().skip(1);
     while let Some(argument) = raw.next() {
         match argument.as_str() {
@@ -73,6 +76,7 @@ fn parse_arguments() -> Arguments {
                 }
             }
             "--find" => arguments.find = raw.next(),
+            "--showcase" => arguments.showcase = true,
             "--inline" => {
                 arguments.inline = true;
                 arguments.page = Page::Diff;
@@ -121,7 +125,14 @@ fn main() -> eframe::Result {
             let theme_choice = ThemeChoice::Dark;
             Ok(Box::new(Playground {
                 page: arguments.page,
-                editor_page: EditorPage::new(&languages, &theme_choice, file_name, &content, arguments.find),
+                editor_page: EditorPage::new(
+                    &languages,
+                    &theme_choice,
+                    file_name,
+                    &content,
+                    arguments.find,
+                    arguments.showcase,
+                ),
                 diff_page: DiffPage::new(
                     &languages,
                     &theme_choice,

@@ -6,8 +6,19 @@ use rustext_core::display::RowContent;
 use rustext_core::{Position, Selection, Selections, Text};
 
 use super::layout::{LineLayout, to_color};
-use super::{CodeEditor, CurrentLineHighlight, CursorStyle, Drag, LineNumbers, Metrics};
+use super::structure::folded_header_lines;
+use super::{CodeEditor, CurrentLineHighlight, CursorStyle, Drag, LineNumbers, Metrics, WhitespaceRendering};
 use crate::theme::EditorTheme;
+
+/// What the gutter needs to know about the cursors and folds.
+struct GutterContext {
+    cursor_lines: Vec<usize>,
+    primary_head: Position,
+    highlights_current_line: bool,
+    fold_header_lines: Vec<usize>,
+    folded_header_lines: Vec<usize>,
+    is_hovered: bool,
+}
 
 /// A visible row with its laid-out text, when it shows a line.
 struct PaintedRow {
@@ -34,6 +45,11 @@ impl CodeEditor<'_> {
             self.nearest_line(visible_rows.end.saturating_sub(1)).max(self.nearest_line(visible_rows.start)),
         );
         let find_decorations = self.find_decorations(visible_start, visible_end.max(visible_start));
+        let mut structure_decorations = self.occurrence_decorations(visible_start, visible_end.max(visible_start));
+        structure_decorations.extend(self.bracket_decorations());
+        let indent_levels = if self.config.indent_guides { self.indent_levels() } else { Vec::new() };
+        let active_guide = rustext_core::structure::active_indent_guide(&indent_levels, primary_head.line);
+        let folded_headers = folded_header_lines(&text, &self.view.folds);
 
         let mut rows = Vec::new();
         for row in visible_rows.clone() {
@@ -69,8 +85,29 @@ impl CodeEditor<'_> {
                     }
                     self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, self.decorations);
                     self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, &find_decorations);
+                    self.paint_line_decorations(
+                        &text_painter,
+                        metrics,
+                        &text,
+                        line,
+                        layout,
+                        top,
+                        &structure_decorations,
+                    );
                     self.paint_selections(&text_painter, metrics, &text, line, layout, top, &selections, has_focus);
+                    if let Some(&level) = indent_levels.get(line) {
+                        self.paint_indent_guides(&text_painter, metrics, line, level, top, active_guide);
+                    }
                     self.paint_galley(&text_painter, metrics, layout, top);
+                    self.paint_whitespace(&text_painter, metrics, &text, line, layout, top, &selections);
+                    if self.config.show_carriage_returns
+                        && text.line_ending_of(line) == Some(rustext_core::LineEnding::CrLf)
+                    {
+                        self.paint_end_of_line_label(&text_painter, metrics, layout, top, "CR", theme.whitespace);
+                    }
+                    if folded_headers.contains(&line) {
+                        self.paint_end_of_line_label(&text_painter, metrics, layout, top, "⋯", theme.foreground);
+                    }
                 }
                 (RowContent::Foreign(line), Some(layout)) => {
                     if let Some(foreign) = &self.foreign {
@@ -137,21 +174,131 @@ impl CodeEditor<'_> {
 
         let paints_gutter_line =
             matches!(self.config.current_line_highlight, CurrentLineHighlight::Gutter | CurrentLineHighlight::All);
-        self.paint_gutter(
-            &painter,
-            metrics,
-            &text,
-            &rows,
-            &cursor_lines,
+        let fold_header_lines = if metrics.fold_marker_width > 0.0 {
+            self.fold_ranges().iter().map(|range| range.header_line).collect()
+        } else {
+            Vec::new()
+        };
+        let is_hovered =
+            ui.input(|input| input.pointer.hover_pos()).is_some_and(|pos| metrics.gutter_rect().contains(pos));
+        let gutter_context = GutterContext {
+            cursor_lines,
             primary_head,
-            paints_gutter_line && highlights_current_line,
-        );
+            highlights_current_line: paints_gutter_line && highlights_current_line,
+            fold_header_lines,
+            folded_header_lines: folded_headers,
+            is_hovered,
+        };
+        self.paint_gutter(&painter, metrics, &text, &rows, &gutter_context);
         self.paint_scrollbar(ui, &painter, metrics, &text, &selections);
     }
 
     fn paint_galley(&self, painter: &Painter, metrics: &Metrics, layout: &LineLayout, top: f32) {
         let text_top = top + (metrics.row_height - layout.galley.size().y) / 2.0;
         painter.galley(pos2(self.text_left(metrics), text_top), layout.galley.clone(), self.theme.foreground);
+    }
+
+    /// Vertical lines at each indentation level of the line; the guide of the cursor's block
+    /// (`active_guide`: level, first line, last line) in a brighter color.
+    fn paint_indent_guides(
+        &self,
+        painter: &Painter,
+        metrics: &Metrics,
+        line: usize,
+        level: usize,
+        top: f32,
+        active_guide: Option<(usize, usize, usize)>,
+    ) {
+        let indent_width = self.state.config.indentation.tab_size as f32 * metrics.char_width;
+        let text_left = self.text_left(metrics);
+        for guide in 0..level {
+            let x = (text_left + guide as f32 * indent_width).round() + 0.5;
+            let is_active = active_guide.is_some_and(|(active_level, first_line, last_line)| {
+                active_level == guide && (first_line..=last_line).contains(&line)
+            });
+            let color = if is_active { self.theme.active_indent_guide } else { self.theme.indent_guide };
+            painter.vline(x, top..=top + metrics.row_height, Stroke::new(1.0, color));
+        }
+    }
+
+    /// `·` on spaces and `→` on tabs, where the whitespace rendering mode wants them.
+    #[allow(clippy::too_many_arguments)]
+    fn paint_whitespace(
+        &self,
+        painter: &Painter,
+        metrics: &Metrics,
+        text: &Text,
+        line: usize,
+        layout: &LineLayout,
+        top: f32,
+        selections: &Selections,
+    ) {
+        let mode = self.config.render_whitespace;
+        if mode == WhitespaceRendering::None {
+            return;
+        }
+        let chars: Vec<char> = text.line_content(line).chars().collect();
+        let line_start = text.line_start(line);
+        let trailing_start = chars.iter().rposition(|character| !character.is_whitespace()).map_or(0, |last| last + 1);
+        let is_whitespace =
+            |column: usize| chars.get(column).is_some_and(|character| *character == ' ' || *character == '\t');
+        let text_left = self.text_left(metrics);
+        let center_y = top + metrics.row_height / 2.0;
+        for (column, &character) in chars.iter().enumerate().take(self.config.max_rendered_line_chars) {
+            if character != ' ' && character != '\t' {
+                continue;
+            }
+            let is_shown = match mode {
+                WhitespaceRendering::None => false,
+                WhitespaceRendering::All => true,
+                WhitespaceRendering::Trailing => column >= trailing_start,
+                WhitespaceRendering::Boundary => {
+                    character == '\t'
+                        || column == 0
+                        || column >= trailing_start
+                        || is_whitespace(column + 1)
+                        || is_whitespace(column.wrapping_sub(1))
+                }
+                WhitespaceRendering::Selection => {
+                    let offset = line_start + column;
+                    selections.iter().any(|selection| selection.start() <= offset && offset < selection.end())
+                }
+            };
+            if !is_shown {
+                continue;
+            }
+            let left = text_left + layout.x_of_column(column);
+            let right = text_left + layout.x_of_column(column + 1);
+            if character == '\t' {
+                let start = pos2(left + metrics.char_width * 0.2, center_y);
+                let end = pos2((right - metrics.char_width * 0.2).max(start.x + 2.0), center_y);
+                painter.arrow(start, end - start, Stroke::new(1.0, self.theme.whitespace));
+            } else {
+                painter.circle_filled(pos2((left + right) / 2.0, center_y), 1.2, self.theme.whitespace);
+            }
+        }
+    }
+
+    /// A small label after the line's text: `CR` for a `\r\n` line, `⋯` for a folded line.
+    fn paint_end_of_line_label(
+        &self,
+        painter: &Painter,
+        metrics: &Metrics,
+        layout: &LineLayout,
+        top: f32,
+        label: &str,
+        color: Color32,
+    ) {
+        let font_id = egui::FontId::monospace(metrics.font_size * if label == "⋯" { 1.0 } else { 0.7 });
+        let galley = painter.layout_no_wrap(label.to_string(), font_id, color);
+        let left = self.text_left(metrics) + layout.width() + metrics.char_width * 0.5;
+        let padding = vec2(3.0, 1.0);
+        let rect = Rect::from_min_size(
+            pos2(left, top + (metrics.row_height - galley.size().y) / 2.0 - padding.y),
+            galley.size() + padding * 2.0,
+        );
+        painter.rect_filled(rect, CornerRadius::same(3), self.theme.fold_placeholder_background);
+        painter.galley(rect.min + padding, galley, color);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -308,17 +455,15 @@ impl CodeEditor<'_> {
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn paint_gutter(
         &self,
         painter: &Painter,
         metrics: &Metrics,
         text: &Text,
         rows: &[PaintedRow],
-        cursor_lines: &[usize],
-        primary_head: Position,
-        highlights_current_line: bool,
+        context: &GutterContext,
     ) {
+        let (cursor_lines, primary_head) = (&context.cursor_lines, context.primary_head);
         let theme = self.theme;
         let gutter_rect = metrics.gutter_rect();
         let gutter_painter = painter.with_clip_rect(gutter_rect);
@@ -366,8 +511,20 @@ impl CodeEditor<'_> {
                 RowContent::Padding | RowContent::Foreign(_) => continue,
             };
             let is_cursor_line = cursor_lines.contains(&line);
-            if highlights_current_line && is_cursor_line {
+            if context.highlights_current_line && is_cursor_line {
                 gutter_painter.rect_filled(row_rect, CornerRadius::ZERO, theme.current_line_background);
+            }
+            let is_folded = context.folded_header_lines.contains(&line);
+            if context.fold_header_lines.contains(&line) && (is_folded || context.is_hovered) {
+                let marker_x = metrics.text_rect.left() - metrics.char_width - metrics.fold_marker_width / 2.0;
+                let symbol = if is_folded { "▸" } else { "▾" };
+                gutter_painter.text(
+                    pos2(marker_x, center_y),
+                    Align2::CENTER_CENTER,
+                    symbol,
+                    font_id.clone(),
+                    theme.fold_marker,
+                );
             }
             let mut line_number_color = None;
             for decoration in self.decorations.iter().filter(|decoration| decoration.covers_line(text, line)) {
@@ -412,7 +569,7 @@ impl CodeEditor<'_> {
             let row_count = self.row_count().max(1) as f32;
             let y_of_row = |row: usize| track.top() + (row as f32 + 0.5) / row_count * track.height();
             let mark_height = (track.height() / row_count).max(2.0);
-            if let Some(display_layout) = self.display_layout {
+            if let Some(display_layout) = self.layout() {
                 for (row, display_row) in display_layout.rows().iter().enumerate() {
                     if let (Some(background), Some(_)) = (display_row.background, display_row.marker) {
                         let mark = Rect::from_center_size(

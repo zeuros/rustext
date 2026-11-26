@@ -126,7 +126,8 @@ impl CodeEditor<'_> {
         if !find.is_open {
             return;
         }
-        let key = MatchesKey { query: find.query.clone(), scope: find.scope, text_revision: self.state.text_revision() };
+        let key =
+            MatchesKey { query: find.query.clone(), scope: find.scope, text_revision: self.state.text_revision() };
         if find.matches_key.as_ref() == Some(&key) {
             return;
         }

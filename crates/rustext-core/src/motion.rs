@@ -38,11 +38,59 @@ impl Motion {
     }
 }
 
+/// Lines a view hides (folded regions), as inclusive ranges: vertical moves step over them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HiddenLines {
+    ranges: Vec<(usize, usize)>,
+}
+
+impl HiddenLines {
+    pub fn new(mut ranges: Vec<(usize, usize)>) -> Self {
+        ranges.sort_unstable();
+        Self { ranges }
+    }
+
+    pub fn ranges(&self) -> &[(usize, usize)] {
+        &self.ranges
+    }
+
+    pub fn is_hidden(&self, line: usize) -> bool {
+        self.ranges.iter().any(|&(first_line, last_line)| (first_line..=last_line).contains(&line))
+    }
+
+    /// The line `line_delta` shown lines away from `line`, or `None` past the text's edges.
+    fn shown_line_after(&self, line: usize, line_delta: isize, last_line: usize) -> Option<usize> {
+        let step: isize = if line_delta < 0 { -1 } else { 1 };
+        let mut current = line;
+        for _ in 0..line_delta.unsigned_abs() {
+            loop {
+                current = current.checked_add_signed(step).filter(|&next| next <= last_line)?;
+                if !self.is_hidden(current) {
+                    break;
+                }
+            }
+        }
+        Some(current)
+    }
+}
+
 /// The selection after moving its head by `motion`. Without `extend`, a non-empty selection
 /// collapses to its start on Left and to its end on Right, as in every editor.
 pub fn apply_motion(
     text: &Text,
     config: &EditingConfig,
+    selection: &Selection,
+    motion: Motion,
+    extend: bool,
+) -> Selection {
+    apply_motion_over(text, config, &HiddenLines::default(), selection, motion, extend)
+}
+
+/// `apply_motion` for a view hiding some lines: vertical moves step over them.
+pub fn apply_motion_over(
+    text: &Text,
+    config: &EditingConfig,
+    hidden_lines: &HiddenLines,
     selection: &Selection,
     motion: Motion,
     extend: bool,
@@ -56,10 +104,10 @@ pub fn apply_motion(
     }
 
     match motion {
-        Motion::Up => vertical(text, config, selection, -1, extend),
-        Motion::Down => vertical(text, config, selection, 1, extend),
-        Motion::PageUp { lines } => vertical(text, config, selection, -(lines.max(1) as isize), extend),
-        Motion::PageDown { lines } => vertical(text, config, selection, lines.max(1) as isize, extend),
+        Motion::Up => vertical(text, config, hidden_lines, selection, -1, extend),
+        Motion::Down => vertical(text, config, hidden_lines, selection, 1, extend),
+        Motion::PageUp { lines } => vertical(text, config, hidden_lines, selection, -(lines.max(1) as isize), extend),
+        Motion::PageDown { lines } => vertical(text, config, hidden_lines, selection, lines.max(1) as isize, extend),
         _ => selection.moved_to(horizontal_head(text, config, selection.head, motion), extend),
     }
 }
@@ -137,22 +185,27 @@ fn horizontal_head(text: &Text, config: &EditingConfig, head: usize, motion: Mot
 /// Moves the head `line_delta` lines, keeping the visual column the cursor had when the
 /// vertical moves started. Moving up from the first line goes to its start, down from the last
 /// line to its end.
-fn vertical(text: &Text, config: &EditingConfig, selection: &Selection, line_delta: isize, extend: bool) -> Selection {
+fn vertical(
+    text: &Text,
+    config: &EditingConfig,
+    hidden_lines: &HiddenLines,
+    selection: &Selection,
+    line_delta: isize,
+    extend: bool,
+) -> Selection {
     let position = text.position(selection.head);
     let indentation = config.indentation;
     let preferred_visual_column = selection
         .preferred_visual_column
         .unwrap_or_else(|| indentation.visual_column(&text.line_content(position.line), position.column));
-    let target_line = position.line as isize + line_delta;
 
-    let head = if target_line < 0 {
-        0
-    } else if target_line as usize > text.last_line() {
-        text.len_chars()
-    } else {
-        let target_line = target_line as usize;
-        let column = indentation.column_at_visual(&text.line_content(target_line), preferred_visual_column);
-        text.line_start(target_line) + column
+    let head = match hidden_lines.shown_line_after(position.line, line_delta, text.last_line()) {
+        Some(target_line) => {
+            let column = indentation.column_at_visual(&text.line_content(target_line), preferred_visual_column);
+            text.line_start(target_line) + column
+        }
+        None if line_delta < 0 => 0,
+        None => text.len_chars(),
     };
     selection.moved_to(head, extend).with_preferred_visual_column(Some(preferred_visual_column))
 }
@@ -199,6 +252,18 @@ mod tests {
         assert_eq!(moved("    abc", Position::new(0, 6), Motion::LineStart), Position::new(0, 4));
         assert_eq!(moved("    abc", Position::new(0, 4), Motion::LineStart), Position::new(0, 0));
         assert_eq!(moved("    abc", Position::new(0, 0), Motion::LineStart), Position::new(0, 4));
+    }
+
+    #[test]
+    fn vertical_moves_step_over_hidden_lines() {
+        let text = Text::new("a\nb\nc\nd");
+        let hidden_lines = HiddenLines::new(vec![(1, 2)]);
+        let config = EditingConfig::default();
+
+        let down = apply_motion_over(&text, &config, &hidden_lines, &Selection::cursor(0), Motion::Down, false);
+        assert_eq!(text.position(down.head), Position::new(3, 0));
+        let up = apply_motion_over(&text, &config, &hidden_lines, &down, Motion::Up, false);
+        assert_eq!(text.position(up.head), Position::new(0, 0));
     }
 
     #[test]
