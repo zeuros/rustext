@@ -11,7 +11,7 @@ use rustext_core::indentation::Indentation;
 use rustext_core::motion::HiddenLines;
 use rustext_core::structure::{
     EnclosingBracketPair, FoldRange, active_indent_guide, enclosing_bracket_pair, fold_range_at, indent_level,
-    matching_bracket_pair,
+    indentation_fold_ranges, matching_bracket_pair,
 };
 use rustext_core::style::LineStyler;
 use rustext_core::{Selections, Text};
@@ -123,6 +123,11 @@ fn fold_range_of<'styler>(
 }
 
 impl CodeEditor<'_> {
+    fn folds_by_syntax(&self) -> bool {
+        self.config.folding_strategy == FoldingStrategy::Auto
+            && self.styler.as_deref().is_some_and(|styler| styler.folds_by_syntax())
+    }
+
     fn fold_range_at_line(&mut self, line: usize) -> Option<FoldRange> {
         let (text, indentation) = (self.state.text(), &self.state.config.indentation);
         fold_range_of(self.styler.as_deref_mut(), self.config.folding_strategy, text, indentation, line)
@@ -210,8 +215,11 @@ impl CodeEditor<'_> {
                 }
             }
             Action::FoldAll => {
-                let ranges: Vec<FoldRange> =
-                    (0..text.line_count()).filter_map(|line| self.fold_range_at_line(line)).collect();
+                let ranges: Vec<FoldRange> = if self.folds_by_syntax() {
+                    (0..text.line_count()).filter_map(|line| self.fold_range_at_line(line)).collect()
+                } else {
+                    indentation_fold_ranges(&text, &self.state.config.indentation)
+                };
                 self.view.folds.blocks = ranges
                     .iter()
                     .map(|range| FoldedBlock {
