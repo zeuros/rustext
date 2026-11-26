@@ -319,6 +319,7 @@ impl CodeEditor<'_> {
 
         Area::new(editor_id.with("find-widget"))
             .order(Order::Foreground)
+            .fade_in(false)
             .fixed_pos(anchor)
             .pivot(Align2::RIGHT_TOP)
             .show(ui.ctx(), |ui| {
@@ -458,6 +459,7 @@ impl CodeEditor<'_> {
         let go_to_line = &mut self.view.go_to_line;
         Area::new(editor_id.with("go-to-line"))
             .order(Order::Foreground)
+            .fade_in(false)
             .fixed_pos(anchor)
             .pivot(Align2::CENTER_TOP)
             .show(ui.ctx(), |ui| {

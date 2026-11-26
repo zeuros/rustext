@@ -15,6 +15,7 @@ pub mod lines;
 pub mod motion;
 pub mod position;
 pub mod selection;
+pub mod services;
 pub mod state;
 pub mod structure;
 pub mod style;

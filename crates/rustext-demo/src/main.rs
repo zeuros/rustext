@@ -5,7 +5,8 @@
 //! `rustext-demo --diff <old> <new>` opens a diff; `--page diff` starts on the diff page;
 //! `--inline` shows the diff inline; `--find <pattern>` opens the find widget;
 //! `--showcase` folds a block, shows whitespace and puts the cursor on a bracket; `--blame`
-//! turns the blame demo on; `--wrap <columns>` wraps lines.
+//! turns the blame demo on; `--wrap <columns>` wraps lines;
+//! `--complete` opens the completion list.
 
 mod diff_page;
 mod editor_page;
@@ -70,6 +71,7 @@ struct Arguments {
     showcase: bool,
     blame: bool,
     wrap_columns: Option<usize>,
+    complete: bool,
 }
 
 fn parse_arguments() -> Arguments {
@@ -82,6 +84,7 @@ fn parse_arguments() -> Arguments {
         showcase: false,
         blame: false,
         wrap_columns: None,
+        complete: false,
     };
     let mut raw = std::env::args().skip(1);
     while let Some(argument) = raw.next() {
@@ -95,6 +98,7 @@ fn parse_arguments() -> Arguments {
             "--find" => arguments.find = raw.next(),
             "--showcase" => arguments.showcase = true,
             "--blame" => arguments.blame = true,
+            "--complete" => arguments.complete = true,
             "--wrap" => arguments.wrap_columns = raw.next().and_then(|columns| columns.parse().ok()),
             "--inline" => {
                 arguments.inline = true;
@@ -154,6 +158,9 @@ fn main() -> eframe::Result {
                         arguments.showcase,
                     );
                     editor_page.shows_blame = arguments.blame;
+                    if arguments.complete {
+                        editor_page.open_completion_after(30, "shapes.it");
+                    }
                     if let Some(columns) = arguments.wrap_columns {
                         editor_page.set_word_wrap(rustext_egui::code_editor::WordWrap::Column(columns));
                     }

@@ -160,8 +160,14 @@ impl CodeEditor<'_> {
                 self.execute(outcome, Command::SetSelections(Selections::single(Selection::new(start, end))));
             }
             MouseTarget::Text { .. } | MouseTarget::Empty { .. } => {
+                self.view.completion.close();
                 let (position, _) = self.position_at(ui, metrics, pos);
                 let offset = text.offset(position);
+                let is_definition_click = modifiers.command && !modifiers.shift && !modifiers.alt;
+                if let Some(definition) = is_definition_click.then(|| self.definition_of(position)).flatten() {
+                    self.execute(outcome, Command::SetSelections(Selections::cursor(text.offset(definition))));
+                    return;
+                }
                 if modifiers.shift && modifiers.alt {
                     let anchor = text.position(self.state.selections().primary().anchor);
                     self.view.drag = Some(Drag::Column { anchor });
@@ -287,6 +293,7 @@ impl CodeEditor<'_> {
                 Event::Text(typed) => {
                     let printable: String = typed.chars().filter(|character| !character.is_control()).collect();
                     if !printable.is_empty() && self.view.pending_chords.is_empty() {
+                        self.typed_this_frame.push_str(&printable);
                         self.execute(outcome, Command::Type(printable));
                     }
                 }
@@ -326,6 +333,15 @@ impl CodeEditor<'_> {
         outcome: &mut Outcome,
         unhandled_actions: &mut Vec<Action>,
     ) {
+        if modifiers.is_none() && self.completion_key(key, outcome) {
+            return;
+        }
+        let has_open_widget = self.view.find.is_open || self.view.go_to_line.is_open;
+        if key == Key::Escape && modifiers.is_none() && has_open_widget {
+            self.close_find();
+            self.view.go_to_line.is_open = false;
+            return;
+        }
         match self.keymap.resolve(&self.view.pending_chords, modifiers, key) {
             KeyResolution::Pending => self.view.pending_chords.push(Keymap::chord(modifiers, key)),
             KeyResolution::Unbound => self.view.pending_chords.clear(),
@@ -363,6 +379,13 @@ impl CodeEditor<'_> {
             Action::ZoomIn => self.view.font_size_delta += 1.0,
             Action::ZoomOut => self.view.font_size_delta -= 1.0,
             Action::ZoomReset => self.view.font_size_delta = 0.0,
+            Action::TriggerSuggest => self.view.completion.request(),
+            Action::GoToDefinition => {
+                let text = self.state.text().clone();
+                if let Some(definition) = self.definition_of(text.position(self.state.selections().primary().head)) {
+                    self.execute(outcome, Command::SetSelections(Selections::cursor(text.offset(definition))));
+                }
+            }
             Action::NextProblem | Action::PreviousProblem => {
                 if let Some(start) = self.go_to_problem(action == Action::NextProblem) {
                     self.execute(outcome, Command::SetSelections(Selections::cursor(start)));

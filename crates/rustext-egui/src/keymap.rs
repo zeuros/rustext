@@ -39,6 +39,10 @@ pub enum Action {
     /// The next / previous diagnostic squiggle (F8 / Shift+F8).
     NextProblem,
     PreviousProblem,
+    /// Opens the completion list (Ctrl+Space).
+    TriggerSuggest,
+    /// Moves to the definition of the symbol at the cursor (F12).
+    GoToDefinition,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -226,6 +230,8 @@ impl Keymap {
             (chord(command_shift, Key::Backslash), Action::JumpToBracket),
             (chord(none, Key::F7), Action::NextChange),
             (chord(none, Key::F8), Action::NextProblem),
+            (chord(command, Key::Space), Action::TriggerSuggest),
+            (chord(none, Key::F12), Action::GoToDefinition),
             (chord(shift, Key::F8), Action::PreviousProblem),
             (chord(shift, Key::F7), Action::PreviousChange),
         ];

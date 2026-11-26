@@ -93,9 +93,9 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [x] Widget: two inputs + result, accept ours / theirs / both per conflict, accept all of a side
 
 ## M11. Language services (D9)
-- [ ] `LanguageServices` trait, versioned async results
-- [ ] Completion widget (fuzzy filter, details, snippets with tab stops)
-- [ ] Hover, signature help, go to definition (Ctrl+click), document highlights, rename
+- [x] `LanguageServices` trait, versioned async results — `Reply::Pending` makes the editor ask again on the next frames
+- [x] Completion widget (fuzzy filter, details, snippets with tab stops) — no snippets / tab stops yet; word-based completions built in
+- [x] Hover, signature help, go to definition (Ctrl+click), document highlights, rename — hover and definition (F12, Ctrl+click, same text) done; signature help, rename not yet
 - [ ] LSP client implementation (stdio)
 
 ## M12. Extras
@@ -119,7 +119,7 @@ green. Every milestone is a commit on `main` (`git log --oneline`).
 1. (done since: diagnostics with hover and F8, the blame demo, the merge editor checked
    against `git merge-file`.)
 2. (done since: bracket pair colorization, word wrap — D20, performance work — D19.)
-5. M11 language services trait + completion widget; M12 minimap, sticky scroll.
+5. M11: an LSP client implementing `LanguageServices` (stdio JSON-RPC, positions converted to UTF-16 at that boundary — D5); snippets. M12: minimap, sticky scroll, command palette.
 
 **Known gaps / debts**:
 - Tokenizer re-tokenizes from the edited line to the painted lines; Monaco stops when the

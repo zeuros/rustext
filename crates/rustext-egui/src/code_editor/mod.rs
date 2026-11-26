@@ -8,6 +8,7 @@
 //! The editor paints display rows (DECISIONS D17): one per line by default, or the rows of a
 //! `DisplayLayout` (padding, collapsed and foreign rows, for diffs and folding).
 
+mod completion;
 mod find;
 mod input;
 mod layout;
@@ -24,6 +25,7 @@ use rustext_core::{EditorState, Outcome, Position, Text};
 use crate::keymap::{Action, KeyChord, Keymap};
 use crate::theme::EditorTheme;
 
+pub use completion::CompletionState;
 pub use find::{FindState, GoToLineState, parse_line_and_column};
 pub use layout::{to_color, to_rgba};
 pub use structure::FoldState;
@@ -203,6 +205,8 @@ pub struct EditorView {
     /// The go-to-line box (Ctrl+G).
     pub go_to_line: GoToLineState,
     pub folds: FoldState,
+    /// The completion list (Ctrl+Space, typing).
+    pub completion: CompletionState,
     wraps: wrapping::WrapState,
     bracket_depths: rustext_core::structure::BracketDepths,
     /// The text revision the view's caches follow; another one means the text changed outside
@@ -358,6 +362,9 @@ pub struct CodeEditor<'a> {
     /// Lines of bracket depths this frame may still compute (D19); when it runs out, the next
     /// frame continues.
     bracket_budget_lines: usize,
+    services: Option<&'a mut dyn rustext_core::services::LanguageServices>,
+    /// What was typed this frame, for completion triggers.
+    typed_this_frame: String,
 }
 
 /// Sizes of one frame's layout.
@@ -420,6 +427,8 @@ impl<'a> CodeEditor<'a> {
             id_salt: None,
             tracked_outcome: Outcome::default(),
             bracket_budget_lines: Self::BRACKET_BUDGET_LINES_PER_FRAME,
+            services: None,
+            typed_this_frame: String::new(),
         }
     }
 
@@ -430,6 +439,12 @@ impl<'a> CodeEditor<'a> {
 
     pub fn decorations(mut self, decorations: &'a [Decoration]) -> Self {
         self.decorations = decorations;
+        self
+    }
+
+    /// Completion, hover and definitions for the text (DECISIONS D9).
+    pub fn services(mut self, services: &'a mut dyn rustext_core::services::LanguageServices) -> Self {
+        self.services = Some(services);
         self
     }
 
@@ -500,12 +515,19 @@ impl<'a> CodeEditor<'a> {
             self.handle_keyboard(ui, &metrics, &mut outcome, &mut unhandled_actions);
         }
         self.after_outcome(ui, &outcome);
+        let typed = std::mem::take(&mut self.typed_this_frame);
+        self.refresh_completion(&typed);
+        if self.view.completion.is_waiting() {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        }
         self.handle_scroll(ui, &response);
         self.refresh_find_matches();
         if self.show_find_widgets(ui, &metrics, id) {
             response.request_focus();
         }
-        let widget_outcome = std::mem::take(&mut self.tracked_outcome);
+        let mut completion_outcome = Outcome::default();
+        self.show_completion(ui, &metrics, id, &mut completion_outcome);
+        let widget_outcome = std::mem::take(&mut self.tracked_outcome).merged(completion_outcome);
         self.after_outcome(ui, &widget_outcome);
         let outcome = outcome.merged(widget_outcome);
         self.refresh_rows(&metrics);
@@ -524,7 +546,15 @@ impl<'a> CodeEditor<'a> {
         let hovered_char = pointer_pos
             .filter(|pos| metrics.text_rect.contains(*pos))
             .and_then(|pos| self.char_under(ui, &metrics, pos));
-        let hover_messages = hovered.map(|target| self.hover_messages(target, hovered_char)).unwrap_or_default();
+        let mut hover_messages = hovered.map(|target| self.hover_messages(target, hovered_char)).unwrap_or_default();
+        if let (Some(offset), Some(services)) = (hovered_char, self.services.as_deref_mut()) {
+            let (text, revision) = (self.state.text(), self.state.text_revision());
+            if let rustext_core::services::Reply::Ready(Some(message)) =
+                services.hover(text, revision, text.position(offset))
+            {
+                hover_messages.push(message);
+            }
+        }
         let response = if hover_messages.is_empty() {
             response
         } else {
@@ -616,6 +646,15 @@ impl<'a> CodeEditor<'a> {
             _ => Vec::new(),
         };
         hovered.into_iter().filter_map(|decoration| decoration.hover_message.clone()).collect()
+    }
+
+    /// The definition of the symbol at `position`, from the services.
+    fn definition_of(&mut self, position: Position) -> Option<Position> {
+        let services = self.services.as_deref_mut()?;
+        match services.definition(self.state.text(), self.state.text_revision(), position) {
+            rustext_core::services::Reply::Ready(definition) => definition,
+            rustext_core::services::Reply::Pending => None,
+        }
     }
 
     /// Moves the cursor to the next (or previous) squiggle, wrapping around (F8).

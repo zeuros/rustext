@@ -21,11 +21,27 @@ pub struct EditorPage {
     highlighted_theme: ThemeChoice,
     shows_diagnostics: bool,
     pub shows_blame: bool,
+    word_completions: rustext_core::services::WordCompletions,
 }
 
 impl EditorPage {
     pub fn set_word_wrap(&mut self, word_wrap: WordWrap) {
         self.view_config.word_wrap = word_wrap;
+    }
+
+    /// Puts the cursor after `prefix` on `line` and opens the completion list (screenshots).
+    pub fn open_completion_after(&mut self, line: usize, prefix: &str) {
+        let text = self.state.text().clone();
+        let Some(column) = text
+            .line_content(line)
+            .find(prefix)
+            .map(|byte| text.line_content(line)[..byte + prefix.len()].chars().count())
+        else {
+            return;
+        };
+        let offset = text.offset(rustext_core::Position::new(line, column));
+        self.state.execute(rustext_core::Command::SetSelections(rustext_core::Selections::cursor(offset)));
+        self.view.completion.request();
     }
 }
 
@@ -94,6 +110,7 @@ impl EditorPage {
             highlighted_theme: *theme_choice,
             shows_diagnostics: showcase,
             shows_blame: false,
+            word_completions: rustext_core::services::WordCompletions::default(),
         }
     }
 
@@ -109,6 +126,7 @@ impl EditorPage {
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
             let response = CodeEditor::new(&mut self.state, &mut self.view, &self.view_config, &theme, keymap)
                 .decorations(&decorations)
+                .services(&mut self.word_completions)
                 .glyph_margin(self.shows_blame)
                 .styler(&mut self.highlighter)
                 .show(ui);
