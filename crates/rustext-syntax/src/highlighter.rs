@@ -55,6 +55,14 @@ impl SyntaxHighlighter {
         matches!(self.engine, Engine::Tree(_))
     }
 
+    /// Waits until `text` is parsed (tree-sitter parses on a thread): for tests and actions
+    /// that need the exact tree. Does nothing with a TextMate grammar.
+    pub fn wait_until_parsed(&mut self, text: &Text) {
+        if let Engine::Tree(highlighter) = &mut self.engine {
+            highlighter.wait_until_parsed(text);
+        }
+    }
+
     fn styler(&mut self) -> &mut dyn LineStyler {
         match &mut self.engine {
             Engine::Tree(highlighter) => highlighter.as_mut(),

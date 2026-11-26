@@ -24,7 +24,7 @@ fn harness(folding_strategy: FoldingStrategy) -> Harness<'static, Fixture> {
     let languages = LanguageRegistry::new();
     let mut state = EditorState::new(JSON);
     state.execute(Command::SetSelections(Selections::cursor(state.text().line_start(1))));
-    let fixture = Fixture {
+    let mut fixture = Fixture {
         state,
         view: EditorView::default(),
         config: ViewConfig { folding_strategy, ..ViewConfig::default() },
@@ -32,6 +32,7 @@ fn harness(folding_strategy: FoldingStrategy) -> Harness<'static, Fixture> {
         keymap: Keymap::vscode(),
         highlighter: SyntaxHighlighter::new(&languages, languages.detect("a.json", ""), SyntaxTheme::dark_modern()),
     };
+    fixture.highlighter.wait_until_parsed(fixture.state.text());
     let mut harness = Harness::builder().with_size(Vec2::new(600.0, 300.0)).build_ui_state(
         |ui, fixture: &mut Fixture| {
             let response = CodeEditor::new(

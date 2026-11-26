@@ -23,7 +23,7 @@ fn harness(content: &str, cursor: usize, file_name: Option<&str>) -> Harness<'st
     });
     let mut state = EditorState::new(content);
     state.execute(rustext_core::Command::SetSelections(Selections::cursor(cursor)));
-    let fixture = Fixture {
+    let mut fixture = Fixture {
         state,
         view: EditorView::default(),
         config: ViewConfig::default(),
@@ -31,6 +31,9 @@ fn harness(content: &str, cursor: usize, file_name: Option<&str>) -> Harness<'st
         keymap: Keymap::vscode(),
         highlighter,
     };
+    if let Some(highlighter) = fixture.highlighter.as_mut() {
+        highlighter.wait_until_parsed(fixture.state.text());
+    }
     let mut harness = Harness::builder().with_size(Vec2::new(800.0, 400.0)).build_ui_state(
         |ui, fixture: &mut Fixture| {
             let editor = CodeEditor::new(
