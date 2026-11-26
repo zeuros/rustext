@@ -43,6 +43,8 @@ pub enum Action {
     TriggerSuggest,
     /// Moves to the definition of the symbol at the cursor (F12).
     GoToDefinition,
+    /// Lists every command to run one (F1, Ctrl+Shift+P).
+    CommandPalette,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -232,6 +234,8 @@ impl Keymap {
             (chord(none, Key::F8), Action::NextProblem),
             (chord(command, Key::Space), Action::TriggerSuggest),
             (chord(none, Key::F12), Action::GoToDefinition),
+            (chord(none, Key::F1), Action::CommandPalette),
+            (chord(command_shift, Key::P), Action::CommandPalette),
             (chord(shift, Key::F8), Action::PreviousProblem),
             (chord(shift, Key::F7), Action::PreviousChange),
         ];

@@ -13,6 +13,7 @@ mod find;
 mod input;
 mod layout;
 mod paint;
+mod palette;
 mod structure;
 mod wrapping;
 
@@ -28,6 +29,7 @@ use crate::theme::EditorTheme;
 pub use completion::CompletionState;
 pub use find::{FindState, GoToLineState, parse_line_and_column};
 pub use layout::{to_color, to_rgba};
+pub use palette::PaletteState;
 pub use structure::FoldState;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -216,6 +218,8 @@ pub struct EditorView {
     pub folds: FoldState,
     /// The completion list (Ctrl+Space, typing).
     pub completion: CompletionState,
+    /// The command palette (F1, Ctrl+Shift+P).
+    pub palette: PaletteState,
     wraps: wrapping::WrapState,
     /// Lines pinned at the top by sticky scroll in the last frame.
     sticky_lines: Vec<usize>,
@@ -555,6 +559,13 @@ impl<'a> CodeEditor<'a> {
         }
         let mut completion_outcome = Outcome::default();
         self.show_completion(ui, &metrics, id, &mut completion_outcome);
+        let (picked_action, palette_closed) = self.show_palette(ui, &metrics, id);
+        if palette_closed {
+            response.request_focus();
+        }
+        if let Some(action) = picked_action {
+            self.run_action(&metrics, action, &mut completion_outcome, &mut unhandled_actions);
+        }
         let widget_outcome = std::mem::take(&mut self.tracked_outcome).merged(completion_outcome);
         self.after_outcome(ui, &widget_outcome);
         let outcome = outcome.merged(widget_outcome);

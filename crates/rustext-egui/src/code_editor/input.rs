@@ -371,7 +371,7 @@ impl CodeEditor<'_> {
         }
     }
 
-    fn run_action(
+    pub(super) fn run_action(
         &mut self,
         metrics: &Metrics,
         action: Action,
@@ -399,6 +399,7 @@ impl CodeEditor<'_> {
             Action::ZoomOut => self.view.font_size_delta -= 1.0,
             Action::ZoomReset => self.view.font_size_delta = 0.0,
             Action::TriggerSuggest => self.view.completion.request(),
+            Action::CommandPalette => self.view.palette.open(),
             Action::GoToDefinition => {
                 let text = self.state.text().clone();
                 if let Some(definition) = self.definition_of(text.position(self.state.selections().primary().head)) {

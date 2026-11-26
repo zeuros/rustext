@@ -523,3 +523,22 @@ fn sticky_scroll_pins_the_enclosing_header_and_a_click_goes_back_to_it() {
     assert!(harness.state().view.sticky_lines().is_empty());
     assert!(harness.state().view.scroll_offset.y < row_height);
 }
+
+#[test]
+fn the_command_palette_runs_a_command_by_name() {
+    let mut harness = harness("b\na\nc");
+    click(&mut harness, 0, 0);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+
+    harness.key_press(Key::F1);
+    harness.run();
+    assert!(harness.state().view.palette.is_open);
+    harness.event(Event::Text("sort asc".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    assert_eq!(content(&harness), "a\nb\nc");
+    assert!(!harness.state().view.palette.is_open);
+}

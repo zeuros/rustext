@@ -101,7 +101,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 ## M12. Extras
 - [x] Minimap (token-colored runs, viewport slider, click or drag to scroll; off by default)
 - [x] Sticky scroll (indentation headers, up to 5 pinned; click to go back)
-- [ ] Command palette
+- [x] Command palette (F1, Ctrl+Shift+P; every keymap binding by name with its keys)
 - [ ] Inlay hints, code lens, inline completions (ghost text)
 
 ## M13. Gitgud integration
