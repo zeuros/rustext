@@ -13,6 +13,7 @@ mod input;
 mod layout;
 mod paint;
 mod structure;
+mod wrapping;
 
 use egui::{CursorIcon, EventFilter, FontId, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 use rustext_core::decoration::{Decoration, DecorationKind};
@@ -42,6 +43,19 @@ pub enum CursorStyle {
     Line,
     Block,
     Underline,
+}
+
+/// When lines wrap (Monaco's `wordWrap`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum WordWrap {
+    #[default]
+    Off,
+    /// At the editor's width.
+    Viewport,
+    /// At this many columns.
+    Column(usize),
+    /// At the smaller of the editor's width and this many columns.
+    Bounded(usize),
 }
 
 /// Which whitespace chars get a visible mark (`·` for a space, `→` for a tab).
@@ -104,6 +118,7 @@ pub struct ViewConfig {
     pub show_carriage_returns: bool,
     /// Colors brackets by nesting depth.
     pub bracket_pair_colorization: bool,
+    pub word_wrap: WordWrap,
 }
 
 impl Default for ViewConfig {
@@ -132,6 +147,7 @@ impl Default for ViewConfig {
             render_whitespace: WhitespaceRendering::default(),
             show_carriage_returns: false,
             bracket_pair_colorization: true,
+            word_wrap: WordWrap::default(),
         }
     }
 }
@@ -184,6 +200,7 @@ pub struct EditorView {
     /// The go-to-line box (Ctrl+G).
     pub go_to_line: GoToLineState,
     pub folds: FoldState,
+    wraps: wrapping::WrapState,
     bracket_depths: rustext_core::structure::BracketDepths,
     /// The text revision the view's caches follow; another one means the text changed outside
     /// the widget (`set_text`, an application command) and the caches start over.
@@ -468,7 +485,7 @@ impl<'a> CodeEditor<'a> {
                 styler.invalidate_from(0);
             }
         }
-        self.refresh_folding();
+        self.refresh_rows(&metrics);
         let mut outcome = Outcome::default();
         let mut unhandled_actions = Vec::new();
         let pointer_pos = ui.input(|input| input.pointer.hover_pos());
@@ -486,7 +503,7 @@ impl<'a> CodeEditor<'a> {
         let widget_outcome = std::mem::take(&mut self.tracked_outcome);
         self.after_outcome(ui, &widget_outcome);
         let outcome = outcome.merged(widget_outcome);
-        self.refresh_folding();
+        self.refresh_rows(&metrics);
         if self.view.reveal_primary_cursor {
             self.reveal_primary_cursor(ui, &metrics);
             self.view.reveal_primary_cursor = false;
@@ -644,6 +661,39 @@ impl<'a> CodeEditor<'a> {
         self.layout().map_or(line, |display_layout| display_layout.row_of_line(line))
     }
 
+    /// The line and columns a row paints: `None` for rows that don't show the editor's text.
+    fn row_segment(&self, row: usize) -> Option<(usize, usize, usize)> {
+        let (line, start_column) = match self.row_content(row) {
+            RowContent::Line(line) => (line, 0),
+            RowContent::Wrapped { line, start_column } => (line, start_column),
+            _ => return None,
+        };
+        let end_column =
+            self.view.wraps.points(line).iter().copied().find(|&point| point > start_column).unwrap_or(usize::MAX);
+        Some((line, start_column, end_column))
+    }
+
+    /// The row showing column `column` of `line` (the later row at a wrap point).
+    fn row_of_position(&self, line: usize, column: usize) -> usize {
+        let segment_index = self.view.wraps.points(line).iter().take_while(|&&point| point <= column).count();
+        self.row_of_line(line) + segment_index
+    }
+
+    /// The width rows wrap at, in columns (0: no wrapping).
+    fn wrap_width_columns(&self, metrics: &Metrics) -> usize {
+        if self.display_layout.is_some() {
+            return 0;
+        }
+        let viewport_columns =
+            ((metrics.text_rect.width() / metrics.char_width).floor() as usize).saturating_sub(1).max(10);
+        match self.config.word_wrap {
+            WordWrap::Off => 0,
+            WordWrap::Viewport => viewport_columns,
+            WordWrap::Column(columns) => columns.max(1),
+            WordWrap::Bounded(columns) => columns.max(1).min(viewport_columns),
+        }
+    }
+
     /// The text line a row stands for, or the nearest one for padding and foreign rows.
     fn nearest_line(&self, row: usize) -> usize {
         match self.layout() {
@@ -689,7 +739,11 @@ impl<'a> CodeEditor<'a> {
     }
 
     fn clamp_scroll(&mut self, metrics: &Metrics) {
-        let max_scroll_x = (self.view.widest_line_px + metrics.char_width * 4.0 - metrics.text_rect.width()).max(0.0);
+        let max_scroll_x = if self.view.wraps.is_wrapping() {
+            0.0
+        } else {
+            (self.view.widest_line_px + metrics.char_width * 4.0 - metrics.text_rect.width()).max(0.0)
+        };
         self.view.scroll_offset.x = self.view.scroll_offset.x.clamp(0.0, max_scroll_x);
         self.view.scroll_offset.y = self.view.scroll_offset.y.clamp(0.0, self.max_scroll_y(metrics));
     }
@@ -698,7 +752,8 @@ impl<'a> CodeEditor<'a> {
         let text = self.state.text().clone();
         let head = text.position(self.state.selections().primary().head);
         let margin = self.config.cursor_surrounding_lines as f32 * metrics.row_height;
-        let cursor_top = self.config.padding_top + self.row_of_line(head.line) as f32 * metrics.row_height;
+        let cursor_top =
+            self.config.padding_top + self.row_of_position(head.line, head.column) as f32 * metrics.row_height;
         let viewport_height = metrics.text_rect.height();
         let top_limit = cursor_top - margin;
         let bottom_limit = cursor_top + metrics.row_height + margin - viewport_height;

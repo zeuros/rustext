@@ -60,7 +60,11 @@ impl CodeEditor<'_> {
         for row in visible_rows.clone() {
             let content = self.row_content(row);
             let layout = match content {
-                RowContent::Line(line) => Some(self.layout_line(ui, metrics, line)),
+                RowContent::Line(_) | RowContent::Wrapped { .. } => {
+                    self.row_segment(row).map(|(line, start_column, end_column)| {
+                        self.layout_segment(ui, metrics, line, start_column, end_column)
+                    })
+                }
                 RowContent::Foreign(line) => self.layout_foreign_line(ui, metrics, line),
                 RowContent::Padding | RowContent::Collapsed { .. } => None,
             };
@@ -78,7 +82,7 @@ impl CodeEditor<'_> {
             );
             let paints_current_line =
                 matches!(self.config.current_line_highlight, CurrentLineHighlight::Line | CurrentLineHighlight::All);
-            let is_cursor_row = matches!(painted.content, RowContent::Line(line) if cursor_lines.contains(&line));
+            let is_cursor_row = matches!(painted.content, RowContent::Line(line) | RowContent::Wrapped { line, .. } if cursor_lines.contains(&line));
             if paints_current_line && highlights_current_line && is_cursor_row {
                 text_painter.rect_filled(row_rect, CornerRadius::ZERO, theme.current_line_background);
             }
@@ -86,7 +90,9 @@ impl CodeEditor<'_> {
                 text_painter.rect_filled(row_rect, CornerRadius::ZERO, to_color(background));
             }
             match (painted.content, &painted.layout) {
-                (RowContent::Line(line), Some(layout)) => {
+                (RowContent::Line(line) | RowContent::Wrapped { line, .. }, Some(layout)) => {
+                    let is_first_segment = matches!(painted.content, RowContent::Line(_));
+                    let is_last_segment = layout.end_column() >= text.line_len(line);
                     self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, self.decorations);
                     self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, &find_decorations);
                     self.paint_line_decorations(
@@ -99,19 +105,19 @@ impl CodeEditor<'_> {
                         &structure_decorations,
                     );
                     self.paint_selections(&text_painter, metrics, &text, line, layout, top, &selections, has_focus);
-                    if let Some(&level) =
-                        line.checked_sub(first_visible_line).and_then(|index| indent_levels.get(index))
-                    {
+                    let level = line.checked_sub(first_visible_line).and_then(|index| indent_levels.get(index));
+                    if let Some(&level) = level.filter(|_| is_first_segment) {
                         self.paint_indent_guides(&text_painter, metrics, line, level, top, active_guide);
                     }
                     self.paint_galley(&text_painter, metrics, layout, top);
                     self.paint_whitespace(&text_painter, metrics, &text, line, layout, top, &selections);
-                    if self.config.show_carriage_returns
+                    if is_last_segment
+                        && self.config.show_carriage_returns
                         && text.line_ending_of(line) == Some(rustext_core::LineEnding::CrLf)
                     {
                         self.paint_end_of_line_label(&text_painter, metrics, layout, top, "CR", theme.whitespace);
                     }
-                    if folded_headers.binary_search(&line).is_ok() {
+                    if is_last_segment && folded_headers.binary_search(&line).is_ok() {
                         self.paint_end_of_line_label(&text_painter, metrics, layout, top, "⋯", theme.foreground);
                     }
                 }
@@ -153,15 +159,19 @@ impl CodeEditor<'_> {
 
         let now = ui.input(|input| input.time);
         let blink_on = !self.config.cursor_blinking || ((now - self.view.last_interaction_time) % 1.0) < 0.55;
-        let layout_of_line = |line: usize| {
+        // The row showing a position: the one whose segment holds its column (the later one at
+        // a wrap point).
+        let row_of_position = |position: Position| {
             rows.iter()
-                .find(|painted| painted.content == RowContent::Line(line))
-                .and_then(|painted| painted.layout.as_ref().map(|layout| (painted.row, layout)))
+                .filter(|painted| matches!(painted.content, RowContent::Line(line) | RowContent::Wrapped { line, .. } if line == position.line))
+                .filter_map(|painted| painted.layout.as_ref().map(|layout| (painted.row, layout)))
+                .take_while(|(_, layout)| layout.first_column <= position.column)
+                .last()
         };
         if has_focus && blink_on {
             for selection in selections.iter() {
                 let head = text.position(selection.head);
-                if let Some((row, layout)) = layout_of_line(head.line) {
+                if let Some((row, layout)) = row_of_position(head) {
                     self.paint_cursor(&text_painter, metrics, row, layout, head, &theme);
                 }
             }
@@ -170,7 +180,7 @@ impl CodeEditor<'_> {
             if self.config.cursor_blinking {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
             }
-            if let Some((row, layout)) = layout_of_line(primary_head.line) {
+            if let Some((row, layout)) = row_of_position(primary_head) {
                 self.paint_ime(ui, &text_painter, metrics, row, layout, primary_head, &theme);
             }
         }
@@ -254,8 +264,9 @@ impl CodeEditor<'_> {
             |column: usize| chars.get(column).is_some_and(|character| *character == ' ' || *character == '\t');
         let text_left = self.text_left(metrics);
         let center_y = top + metrics.row_height / 2.0;
+        let segment_columns = layout.first_column..layout.end_column();
         for (column, &character) in chars.iter().enumerate().take(self.config.max_rendered_line_chars) {
-            if character != ' ' && character != '\t' {
+            if !segment_columns.contains(&column) || (character != ' ' && character != '\t') {
                 continue;
             }
             let is_shown = match mode {
@@ -332,7 +343,7 @@ impl CodeEditor<'_> {
                 continue;
             }
             let (start, end) = (selection.start().max(line_start), selection.end().min(line_end));
-            let continues_past_line = selection.end() > line_end;
+            let continues_past_line = selection.end() > line_end && layout.end_column() >= line_end - line_start;
             if start == end && !continues_past_line {
                 continue;
             }
@@ -518,6 +529,7 @@ impl CodeEditor<'_> {
                     gutter_painter.rect_filled(row_rect, CornerRadius::ZERO, theme.widget_background);
                     continue;
                 }
+                RowContent::Wrapped { .. } => continue,
                 RowContent::Padding | RowContent::Foreign(_) => continue,
             };
             let is_cursor_line = cursor_lines.contains(&line);

@@ -221,6 +221,20 @@ on explicit actions (fold all, replace all, a new diff) or behind a budget (the 
   widget open on 20 000 matches 4.6 ms, fold all 38 ms. Run it after touching anything
   per-frame; a regression there is a bug.
 
+## D20. Word wrap: continuation rows, column-based breaking
+
+- A wrapped line is one `RowContent::Line(line)` row for its first segment and one
+  `RowContent::Wrapped { line, start_column }` row per continuation. Everything that already
+  works on rows (folding, padding, scrolling, the gutter) keeps working; a row paints the
+  segment of its line from its start column to the next row's.
+- Breaking counts visual columns (tabs to tab stops, East Asian wide chars as two), breaking
+  after the last whitespace or separator that fits, else inside the word, like Monaco's
+  `wordWrapBreakAfterCharacters`. It assumes the editor's monospace font; a proportional
+  font would need galley-measured breaks.
+- Breaks are cached per line and follow edits through `EditedLines` (D19): only edited lines
+  are wrapped again; a width change wraps everything (an explicit, rare event).
+- Cursor moves stay per logical line (Up/Down move by line, not by visual row) for now.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

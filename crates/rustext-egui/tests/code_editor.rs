@@ -441,3 +441,36 @@ fn folds_below_an_edit_shift_with_it() {
 
     assert_eq!(harness.state().view.folds.folded_header_lines(), vec![2, 6]);
 }
+
+fn wrapping_harness(content: &str, columns: usize) -> Harness<'static, Fixture> {
+    let mut harness = harness(content);
+    harness.state_mut().config.word_wrap = rustext_egui::code_editor::WordWrap::Column(columns);
+    harness.run();
+    harness
+}
+
+#[test]
+fn long_lines_wrap_into_continuation_rows() {
+    // "alpha beta gamma delta" wraps at 12 columns after "alpha beta " and "gamma delta".
+    let mut harness = wrapping_harness("alpha beta gamma delta\nend", 12);
+
+    // Row 1 is the continuation "gamma delta"; its column 2 is the line's column 13.
+    click(&mut harness, 1, 2);
+    assert_eq!(head(&harness), Position::new(0, 13));
+
+    // Row 2 is line 1.
+    click(&mut harness, 2, 1);
+    assert_eq!(head(&harness), Position::new(1, 1));
+}
+
+#[test]
+fn editing_rewraps_the_edited_line() {
+    let mut harness = wrapping_harness("short\nend", 12);
+    click(&mut harness, 0, 5);
+
+    type_text(&mut harness, " and now much longer");
+
+    // The line wraps: "end" moved down from row 1.
+    click(&mut harness, 3, 1);
+    assert_eq!(head(&harness), Position::new(1, 1));
+}

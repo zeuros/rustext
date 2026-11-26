@@ -18,25 +18,40 @@ pub fn to_rgba(color: Color32) -> Rgba {
     Rgba { red, green, blue, alpha }
 }
 
-/// One laid-out line: its galley and where each char column lands in it (tabs expanded).
+/// One laid-out line, or segment of a wrapped line from `first_column`: its galley and where
+/// each char column lands in it (tabs expanded). Columns are the line's; columns outside the
+/// segment clamp to its edges, so range painters need no wrap logic.
 pub(super) struct LineLayout {
     pub galley: Arc<Galley>,
     display_index_of_column: Vec<usize>,
+    pub first_column: usize,
 }
 
 impl LineLayout {
     pub fn x_of_column(&self, column: usize) -> f32 {
-        let index =
-            self.display_index_of_column.get(column).or(self.display_index_of_column.last()).copied().unwrap_or(0);
+        let local_column = column.saturating_sub(self.first_column);
+        let index = self
+            .display_index_of_column
+            .get(local_column)
+            .or(self.display_index_of_column.last())
+            .copied()
+            .unwrap_or(0);
         self.galley.pos_from_cursor(CCursor::new(index)).min.x
     }
 
     pub fn column_at_x(&self, x: f32) -> usize {
         let display_index = self.galley.cursor_from_pos(vec2(x, self.galley.size().y / 2.0)).index.0;
-        self.display_index_of_column
+        let local_column = self
+            .display_index_of_column
             .iter()
             .position(|&index| index >= display_index)
-            .unwrap_or(self.display_index_of_column.len() - 1)
+            .unwrap_or(self.display_index_of_column.len() - 1);
+        self.first_column + local_column
+    }
+
+    /// The column after the segment's last char.
+    pub fn end_column(&self) -> usize {
+        self.first_column + self.display_index_of_column.len() - 1
     }
 
     pub fn width(&self) -> f32 {
@@ -45,7 +60,20 @@ impl LineLayout {
 }
 
 impl CodeEditor<'_> {
+    /// The whole line (or its first segment's columns onward when it wraps, see `layout_segment`).
     pub(super) fn layout_line(&mut self, ui: &Ui, metrics: &Metrics, line: usize) -> LineLayout {
+        self.layout_segment(ui, metrics, line, 0, usize::MAX)
+    }
+
+    /// Columns `start_column..end_column` of a line (clamped to the line).
+    pub(super) fn layout_segment(
+        &mut self,
+        ui: &Ui,
+        metrics: &Metrics,
+        line: usize,
+        start_column: usize,
+        end_column: usize,
+    ) -> LineLayout {
         let text = self.state.text();
         let spans = self.styler.as_deref_mut().map(|styler| styler.style_line(text, line)).unwrap_or_default();
         let content = text.line_content(line);
@@ -62,7 +90,29 @@ impl CodeEditor<'_> {
                 .collect(),
             None => Vec::new(),
         };
-        self.layout_content(ui, metrics, &content, &spans, &bracket_colors)
+        if start_column == 0 && end_column >= content.chars().count() {
+            return self.layout_content(ui, metrics, &content, &spans, &bracket_colors);
+        }
+        let segment: String =
+            content.chars().skip(start_column).take(end_column.saturating_sub(start_column)).collect();
+        let segment_end = start_column + segment.chars().count();
+        let segment_spans: Vec<StyledSpan> = spans
+            .iter()
+            .filter(|span| span.end_column > start_column && span.start_column < segment_end)
+            .map(|span| StyledSpan {
+                start_column: span.start_column.max(start_column) - start_column,
+                end_column: span.end_column.min(segment_end) - start_column,
+                style: span.style,
+            })
+            .collect();
+        let segment_colors: Vec<(usize, Color32)> = bracket_colors
+            .iter()
+            .filter(|(column, _)| (start_column..segment_end).contains(column))
+            .map(|&(column, color)| (column - start_column, color))
+            .collect();
+        let mut layout = self.layout_content(ui, metrics, &segment, &segment_spans, &segment_colors);
+        layout.first_column = start_column;
+        layout
     }
 
     pub(super) fn layout_foreign_line(&mut self, ui: &Ui, metrics: &Metrics, line: usize) -> Option<LineLayout> {
@@ -94,7 +144,7 @@ impl CodeEditor<'_> {
             self.config.max_rendered_line_chars,
         );
         let galley = ui.ctx().fonts_mut(|fonts| fonts.layout_job(job));
-        LineLayout { galley, display_index_of_column }
+        LineLayout { galley, display_index_of_column, first_column: 0 }
     }
 }
 

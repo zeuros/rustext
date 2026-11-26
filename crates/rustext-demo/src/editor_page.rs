@@ -3,7 +3,7 @@
 use eframe::egui;
 use rustext_core::indentation::Indentation;
 use rustext_core::{EditingConfig, EditorState, Text};
-use rustext_egui::code_editor::{CursorStyle, LineNumbers, WhitespaceRendering};
+use rustext_egui::code_editor::{CursorStyle, LineNumbers, WhitespaceRendering, WordWrap};
 use rustext_egui::{CodeEditor, EditorView, Keymap, ViewConfig};
 use rustext_syntax::{LanguageRegistry, SyntaxHighlighter};
 
@@ -21,6 +21,12 @@ pub struct EditorPage {
     highlighted_theme: ThemeChoice,
     shows_diagnostics: bool,
     pub shows_blame: bool,
+}
+
+impl EditorPage {
+    pub fn set_word_wrap(&mut self, word_wrap: WordWrap) {
+        self.view_config.word_wrap = word_wrap;
+    }
 }
 
 /// A made-up commit, for the blame demo.
@@ -216,6 +222,14 @@ impl EditorPage {
                     ui.selectable_value(&mut self.view_config.render_whitespace, mode, format!("{mode:?}"));
                 }
             });
+        egui::ComboBox::from_label("Word wrap").selected_text(format!("{:?}", self.view_config.word_wrap)).show_ui(
+            ui,
+            |ui| {
+                for word_wrap in [WordWrap::Off, WordWrap::Viewport, WordWrap::Column(80), WordWrap::Bounded(100)] {
+                    ui.selectable_value(&mut self.view_config.word_wrap, word_wrap, format!("{word_wrap:?}"));
+                }
+            },
+        );
         ui.checkbox(&mut self.view_config.show_carriage_returns, "Show CR of CRLF lines");
         ui.checkbox(&mut self.view_config.folding, "Folding");
         ui.checkbox(&mut self.view_config.indent_guides, "Indent guides");

@@ -13,12 +13,11 @@ impl CodeEditor<'_> {
     /// The text position nearest to `pos`, and whether `pos` is past the end of its line.
     fn position_at(&mut self, ui: &Ui, metrics: &Metrics, pos: Pos2) -> (Position, bool) {
         let row = self.row_at_y(metrics, pos.y);
-        let line = self.nearest_line(row);
-        if self.row_content(row) != RowContent::Line(line) {
-            return (Position::new(line, 0), true);
-        }
+        let Some((line, start_column, end_column)) = self.row_segment(row) else {
+            return (Position::new(self.nearest_line(row), 0), true);
+        };
         let is_below_text = pos.y > self.row_top(metrics, row) + metrics.row_height;
-        let layout = self.layout_line(ui, metrics, line);
+        let layout = self.layout_segment(ui, metrics, line, start_column, end_column);
         let x = pos.x - self.text_left(metrics);
         let column = layout.column_at_x(x);
         (Position::new(line, column), x > layout.width() || is_below_text)
@@ -27,8 +26,8 @@ impl CodeEditor<'_> {
     /// Char offset of the char under `pos` (not the nearest boundary), if `pos` is over text.
     pub(super) fn char_under(&mut self, ui: &Ui, metrics: &Metrics, pos: Pos2) -> Option<usize> {
         let row = self.row_at_y(metrics, pos.y);
-        let RowContent::Line(line) = self.row_content(row) else { return None };
-        let layout = self.layout_line(ui, metrics, line);
+        let (line, start_column, end_column) = self.row_segment(row)?;
+        let layout = self.layout_segment(ui, metrics, line, start_column, end_column);
         let x = pos.x - self.text_left(metrics);
         let nearest_column = layout.column_at_x(x);
         let column = if nearest_column > 0 && x < layout.x_of_column(nearest_column) {
@@ -48,7 +47,7 @@ impl CodeEditor<'_> {
             RowContent::Collapsed { first_line, last_line } => return MouseTarget::Collapsed { first_line, last_line },
             RowContent::Foreign(line) => return MouseTarget::Foreign { line },
             RowContent::Padding => return MouseTarget::Padding,
-            RowContent::Line(_) => {}
+            RowContent::Line(_) | RowContent::Wrapped { .. } => {}
         }
         let line = self.nearest_line(row);
         let gutter_left = metrics.gutter_rect().left();
@@ -400,6 +399,7 @@ impl CodeEditor<'_> {
             .min();
         for edited in &outcome.edited_lines {
             self.view.folds.follow_edit(edited);
+            self.view.wraps.follow_edit(edited, self.state.text());
             self.view.bracket_depths.invalidate_from(edited.first_line);
         }
         if outcome.text_changed() {

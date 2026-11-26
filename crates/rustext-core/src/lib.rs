@@ -20,6 +20,7 @@ pub mod structure;
 pub mod style;
 pub mod text;
 pub mod words;
+pub mod wrap;
 
 pub use change::{Bias, Change, ChangeSet};
 pub use config::{EditingConfig, LanguageConfiguration};

@@ -37,8 +37,9 @@ struct FoldedBlock {
 pub struct FoldState {
     /// Sorted by header line, one per header.
     blocks: Vec<FoldedBlock>,
-    /// The rows when something is folded, and the line count and ranges they were built for.
-    layout_key: Option<(usize, Vec<FoldRange>)>,
+    /// The rows when something is folded or wrapped, and the line count, folded ranges and wrap
+    /// generation they were built for.
+    layout_key: Option<(usize, Vec<FoldRange>, u64)>,
     pub(super) layout: Option<DisplayLayout>,
 }
 
@@ -195,14 +196,17 @@ impl CodeEditor<'_> {
         None
     }
 
-    /// Unfolds what hides a cursor, then (when the folds changed) rebuilds the folded rows.
-    pub(super) fn refresh_folding(&mut self) {
-        if !self.config.folding || self.display_layout.is_some() {
+    /// Unfolds what hides a cursor, wraps lines, then (when folds or wraps changed) rebuilds
+    /// the rows.
+    pub(super) fn refresh_rows(&mut self, metrics: &super::Metrics) {
+        let text = self.state.text().clone();
+        let wrap_width_columns = self.wrap_width_columns(metrics);
+        self.view.wraps.ensure(&text, wrap_width_columns, self.state.config.indentation.tab_size);
+        if self.display_layout.is_some() || (!self.config.folding && !self.view.wraps.is_wrapping()) {
             self.view.folds.layout = None;
             self.state.hidden_lines = HiddenLines::default();
             return;
         }
-        let text = self.state.text().clone();
         let cursor_lines: Vec<usize> =
             self.state.selections().iter().map(|selection| text.line_of_offset(selection.head)).collect();
         for range in self.folded_ranges() {
@@ -210,15 +214,15 @@ impl CodeEditor<'_> {
                 self.unfold(range.header_line);
             }
         }
-        let folded = self.folded_ranges();
+        let folded = if self.config.folding { self.folded_ranges() } else { Vec::new() };
         let folds = &mut self.view.folds;
-        if folded.is_empty() {
+        if folded.is_empty() && !self.view.wraps.is_wrapping() {
             folds.layout = None;
             folds.layout_key = None;
             self.state.hidden_lines = HiddenLines::default();
             return;
         }
-        let key = (text.line_count(), folded);
+        let key = (text.line_count(), folded, self.view.wraps.generation());
         if folds.layout.is_some() && folds.layout_key.as_ref() == Some(&key) {
             return;
         }
@@ -226,8 +230,17 @@ impl CodeEditor<'_> {
 
         let hidden_lines =
             HiddenLines::new(folded.iter().map(|range| (range.first_hidden_line(), range.last_hidden_line)).collect());
-        let rows =
-            hidden_lines.shown_lines(text.line_count()).map(|line| DisplayRow::new(RowContent::Line(line))).collect();
+        let wraps = &self.view.wraps;
+        let rows = hidden_lines
+            .shown_lines(text.line_count())
+            .flat_map(|line| {
+                let continuations = wraps
+                    .points(line)
+                    .iter()
+                    .map(move |&start_column| DisplayRow::new(RowContent::Wrapped { line, start_column }));
+                std::iter::once(DisplayRow::new(RowContent::Line(line))).chain(continuations)
+            })
+            .collect();
         folds.layout = Some(DisplayLayout::new(rows, text.line_count()));
         folds.layout_key = Some(key);
         self.state.hidden_lines = hidden_lines;

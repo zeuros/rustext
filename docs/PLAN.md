@@ -85,7 +85,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [x] Rulers, indent guides with active guide
 - [x] Matching bracket highlight, jump to bracket; bracket pair colorization — brackets inside strings and comments are colored too (needs token scopes from the styler)
 - [x] Selection and word occurrence highlights
-- [ ] Word wrap (off, viewport, column, bounded) with wrapping indent, in the display map
+- [x] Word wrap (off, viewport, column, bounded) with wrapping indent, in the display map — continuation rows start at column 0 (no `wrappingIndent: same` yet); Up/Down move by line, not by visual row (D20)
 - [ ] View zones (blocks between lines) in the display map
 
 ## M10. Merge editor
@@ -118,10 +118,7 @@ green. Every milestone is a commit on `main` (`git log --oneline`).
 **Next, in order** (each a commit):
 1. (done since: diagnostics with hover and F8, the blame demo, the merge editor checked
    against `git merge-file`.)
-2. M9 bracket pair colorization (override bracket chars' colors in `line_layout_job` with a
-   depth computed per line, cached by text revision) and word wrap (a `DisplayLayout` with
-   several rows per line: needs `RowContent::Line` to carry a column range — design it in
-   DECISIONS first).
+2. (done since: bracket pair colorization, word wrap — D20, performance work — D19.)
 5. M11 language services trait + completion widget; M12 minimap, sticky scroll.
 
 **Known gaps / debts**:

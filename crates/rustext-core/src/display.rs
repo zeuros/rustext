@@ -6,8 +6,10 @@ use crate::style::Rgba;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RowContent {
-    /// A line of the editor's own text.
+    /// A line of the editor's own text (its first row when it wraps).
     Line(usize),
+    /// A continuation row of a wrapped line, from `start_column` to the next row's start.
+    Wrapped { line: usize, start_column: usize },
     /// An empty row.
     Padding,
     /// One row standing for the hidden lines `first_line..=last_line` of the editor's text.
@@ -103,7 +105,7 @@ impl DisplayLayout {
     /// below a padding or foreign row (the previous one at the end).
     pub fn nearest_line(&self, row: usize) -> usize {
         let line_at = |row: &DisplayRow| match row.content {
-            RowContent::Line(line) => Some(line),
+            RowContent::Line(line) | RowContent::Wrapped { line, .. } => Some(line),
             RowContent::Collapsed { first_line, .. } => Some(first_line),
             RowContent::Padding | RowContent::Foreign(_) => None,
         };
