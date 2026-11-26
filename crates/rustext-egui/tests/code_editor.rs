@@ -504,3 +504,22 @@ fn dragging_the_horizontal_scrollbar_scrolls_long_lines() {
     assert!(harness.state().view.scroll_offset.x > 1000.0, "scrolled to {}", harness.state().view.scroll_offset.x);
     assert_eq!(head(&harness), Position::new(0, 0), "the drag must not move the cursor");
 }
+
+#[test]
+fn sticky_scroll_pins_the_enclosing_header_and_a_click_goes_back_to_it() {
+    let body: String = (0..60).map(|index| format!("    line({index});\n")).collect();
+    let mut harness = harness(&format!("fn long() {{\n{body}}}\nfn next() {{}}\n"));
+    let row_height = geometry(&harness).row_height;
+
+    harness.state_mut().view.scroll_offset.y = 20.0 * row_height;
+    harness.run();
+    assert_eq!(harness.state().view.sticky_lines(), &[0]);
+
+    let geometry = geometry(&harness);
+    let pinned_row = Pos2::new(geometry.text_rect.left() + 20.0, geometry.text_rect.top() + row_height / 2.0);
+    press_at(&mut harness, pinned_row, Modifiers::NONE);
+
+    assert_eq!(head(&harness), Position::new(0, 0));
+    assert!(harness.state().view.sticky_lines().is_empty());
+    assert!(harness.state().view.scroll_offset.y < row_height);
+}

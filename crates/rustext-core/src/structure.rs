@@ -266,6 +266,36 @@ pub fn enclosing_fold_range(text: &Text, indentation: &Indentation, line: usize)
     None
 }
 
+/// Header lines of the folds enclosing `line` (its header above it, that header's header…),
+/// outermost first, at most `max_headers`, looking at most `max_lines` up (sticky scroll).
+pub fn enclosing_headers(
+    text: &Text,
+    indentation: &Indentation,
+    line: usize,
+    max_headers: usize,
+    max_lines: usize,
+) -> Vec<usize> {
+    let mut indent =
+        line_indent(text, indentation, line).unwrap_or_else(|| nearest_indent(text, indentation, (0..line).rev()));
+    let mut headers = Vec::new();
+    for candidate in (line.saturating_sub(max_lines)..line).rev() {
+        if indent == 0 {
+            break;
+        }
+        let Some(candidate_indent) = line_indent(text, indentation, candidate) else { continue };
+        if candidate_indent < indent {
+            indent = candidate_indent;
+            if is_fold_header(text, indentation, candidate) {
+                headers.push(candidate);
+            }
+        }
+    }
+    headers.reverse();
+    let skipped = headers.len().saturating_sub(max_headers);
+    headers.drain(..skipped);
+    headers
+}
+
 /// Every indentation fold of the text, sorted by header line (for "fold all").
 pub fn indentation_fold_ranges(text: &Text, indentation: &Indentation) -> Vec<FoldRange> {
     let mut ranges = Vec::new();
@@ -381,6 +411,19 @@ mod tests {
             Some(FoldRange { header_line: 0, last_hidden_line: 5 })
         );
         assert_eq!(enclosing_fold_range(&text, &indentation, 7), None);
+    }
+
+    #[test]
+    fn enclosing_headers_are_outermost_first() {
+        let text = Text::new(
+            "impl A {\n    fn b() {\n        if c {\n            d();\n\n            e();\n        }\n    }\n}",
+        );
+        let indentation = Indentation::default();
+
+        assert_eq!(enclosing_headers(&text, &indentation, 5, 10, 100), vec![0, 1, 2]);
+        assert_eq!(enclosing_headers(&text, &indentation, 4, 10, 100), vec![0, 1, 2]);
+        assert_eq!(enclosing_headers(&text, &indentation, 5, 2, 100), vec![1, 2]);
+        assert_eq!(enclosing_headers(&text, &indentation, 0, 10, 100), Vec::<usize>::new());
     }
 
     #[test]

@@ -29,6 +29,11 @@ impl EditorPage {
         self.view_config.word_wrap = word_wrap;
     }
 
+    /// Scrolls so `line` is at the top (screenshots).
+    pub fn scroll_to_line(&mut self, line: usize) {
+        self.view.scroll_offset.y = line as f32 * 19.0;
+    }
+
     /// Puts the cursor after `prefix` on `line` and opens the completion list (screenshots).
     pub fn open_completion_after(&mut self, line: usize, prefix: &str) {
         let text = self.state.text().clone();

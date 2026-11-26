@@ -6,7 +6,7 @@
 //! `--inline` shows the diff inline; `--find <pattern>` opens the find widget;
 //! `--showcase` folds a block, shows whitespace and puts the cursor on a bracket; `--blame`
 //! turns the blame demo on; `--wrap <columns>` wraps lines;
-//! `--complete` opens the completion list.
+//! `--complete` opens the completion list; `--scroll <lines>` scrolls down.
 
 mod diff_page;
 mod editor_page;
@@ -72,6 +72,7 @@ struct Arguments {
     blame: bool,
     wrap_columns: Option<usize>,
     complete: bool,
+    scroll_lines: Option<usize>,
 }
 
 fn parse_arguments() -> Arguments {
@@ -85,6 +86,7 @@ fn parse_arguments() -> Arguments {
         blame: false,
         wrap_columns: None,
         complete: false,
+        scroll_lines: None,
     };
     let mut raw = std::env::args().skip(1);
     while let Some(argument) = raw.next() {
@@ -99,6 +101,7 @@ fn parse_arguments() -> Arguments {
             "--showcase" => arguments.showcase = true,
             "--blame" => arguments.blame = true,
             "--complete" => arguments.complete = true,
+            "--scroll" => arguments.scroll_lines = raw.next().and_then(|lines| lines.parse().ok()),
             "--wrap" => arguments.wrap_columns = raw.next().and_then(|columns| columns.parse().ok()),
             "--inline" => {
                 arguments.inline = true;
@@ -158,6 +161,9 @@ fn main() -> eframe::Result {
                         arguments.showcase,
                     );
                     editor_page.shows_blame = arguments.blame;
+                    if let Some(lines) = arguments.scroll_lines {
+                        editor_page.scroll_to_line(lines);
+                    }
                     if arguments.complete {
                         editor_page.open_completion_after(30, "shapes.it");
                     }

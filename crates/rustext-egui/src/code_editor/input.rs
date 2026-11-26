@@ -45,6 +45,12 @@ impl CodeEditor<'_> {
         if self.horizontal_scrollbar_track(metrics).is_some_and(|track| track.contains(pos)) {
             return MouseTarget::HorizontalScrollbar;
         }
+        let sticky_slot = ((pos.y - metrics.text_rect.top()) / metrics.row_height).floor();
+        let sticky_line =
+            (sticky_slot >= 0.0).then(|| self.view.sticky_lines.get(sticky_slot as usize).copied()).flatten();
+        if let Some(line) = sticky_line {
+            return MouseTarget::StickyLine { line };
+        }
         let row = self.row_at_y(metrics, pos.y);
         match self.row_content(row) {
             RowContent::Collapsed { first_line, last_line } => return MouseTarget::Collapsed { first_line, last_line },
@@ -149,6 +155,11 @@ impl CodeEditor<'_> {
             }
             MouseTarget::Collapsed { .. } | MouseTarget::Foreign { .. } | MouseTarget::Padding => {}
             MouseTarget::FoldMarker { line } => self.toggle_fold(line),
+            MouseTarget::StickyLine { line } => {
+                self.view.scroll_offset.y = self.row_of_line(line) as f32 * metrics.row_height;
+                self.execute(outcome, Command::SetSelections(Selections::cursor(text.line_start(line))));
+                self.view.sticky_lines.clear();
+            }
             MouseTarget::LineNumber { line } | MouseTarget::GlyphMargin { line } => {
                 let (start, end) = whole_line(&text, line);
                 self.view.drag = Some(Drag::Selecting {

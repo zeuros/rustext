@@ -100,7 +100,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 
 ## M12. Extras
 - [ ] Minimap
-- [ ] Sticky scroll
+- [x] Sticky scroll (indentation headers, up to 5 pinned; click to go back)
 - [ ] Command palette
 - [ ] Inlay hints, code lens, inline completions (ghost text)
 

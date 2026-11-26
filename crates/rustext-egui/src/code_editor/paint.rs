@@ -210,7 +210,37 @@ impl CodeEditor<'_> {
             is_hovered,
         };
         self.paint_gutter(&painter, metrics, &text, &rows, &gutter_context);
+        self.view.sticky_lines = self.compute_sticky_lines(metrics);
+        self.paint_sticky_lines(ui, &painter, metrics, primary_head.line);
         self.paint_scrollbar(ui, &painter, metrics, &text, &selections);
+    }
+
+    /// The pinned headers over the top rows, gutter included, with a line under them.
+    fn paint_sticky_lines(&mut self, ui: &Ui, painter: &Painter, metrics: &Metrics, cursor_line: usize) {
+        if self.view.sticky_lines.is_empty() {
+            return;
+        }
+        let theme = self.theme.clone();
+        let full_left = metrics.gutter_rect().left();
+        let text_painter = painter.with_clip_rect(metrics.text_rect);
+        let numbers_right = full_left + metrics.glyph_margin_width + metrics.line_numbers_width;
+        let lines = self.view.sticky_lines.clone();
+        for (slot, line) in lines.iter().enumerate() {
+            let top = metrics.text_rect.top() + slot as f32 * metrics.row_height;
+            let row_rect =
+                Rect::from_min_max(pos2(full_left, top), pos2(metrics.text_rect.right(), top + metrics.row_height));
+            painter.rect_filled(row_rect, CornerRadius::ZERO, theme.background);
+            let layout = self.layout_line(ui, metrics, *line);
+            let text_top = top + (metrics.row_height - layout.galley.size().y) / 2.0;
+            text_painter.galley(pos2(self.text_left(metrics), text_top), layout.galley.clone(), theme.foreground);
+            if self.config.line_numbers != LineNumbers::Off {
+                let color = if *line == cursor_line { theme.active_line_number } else { theme.line_number };
+                let number_pos = pos2(numbers_right, top + metrics.row_height / 2.0);
+                painter.text(number_pos, Align2::RIGHT_CENTER, (line + 1).to_string(), metrics.font_id(), color);
+            }
+        }
+        let bottom = metrics.text_rect.top() + lines.len() as f32 * metrics.row_height;
+        painter.hline(full_left..=metrics.text_rect.right(), bottom, Stroke::new(1.0, theme.widget_border));
     }
 
     fn paint_galley(&self, painter: &Painter, metrics: &Metrics, layout: &LineLayout, top: f32) {

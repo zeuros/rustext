@@ -121,6 +121,9 @@ pub struct ViewConfig {
     /// Colors brackets by nesting depth.
     pub bracket_pair_colorization: bool,
     pub word_wrap: WordWrap,
+    /// Pins the headers of the blocks enclosing the top line (Monaco's `stickyScroll`).
+    pub sticky_scroll: bool,
+    pub sticky_scroll_max_lines: usize,
 }
 
 impl Default for ViewConfig {
@@ -150,6 +153,8 @@ impl Default for ViewConfig {
             show_carriage_returns: false,
             bracket_pair_colorization: true,
             word_wrap: WordWrap::default(),
+            sticky_scroll: true,
+            sticky_scroll_max_lines: 5,
         }
     }
 }
@@ -208,6 +213,8 @@ pub struct EditorView {
     /// The completion list (Ctrl+Space, typing).
     pub completion: CompletionState,
     wraps: wrapping::WrapState,
+    /// Lines pinned at the top by sticky scroll in the last frame.
+    sticky_lines: Vec<usize>,
     bracket_depths: rustext_core::structure::BracketDepths,
     /// The text revision the view's caches follow; another one means the text changed outside
     /// the widget (`set_text`, an application command) and the caches start over.
@@ -222,6 +229,11 @@ impl EditorView {
 
     pub fn pending_chords(&self) -> &[KeyChord] {
         &self.pending_chords
+    }
+
+    /// Lines pinned at the top by sticky scroll in the last frame.
+    pub fn sticky_lines(&self) -> &[usize] {
+        &self.sticky_lines
     }
 
     /// Geometry of the last frame; `None` before the first one.
@@ -292,6 +304,10 @@ pub enum MouseTarget {
     Padding,
     /// The fold marker of a fold range's header line.
     FoldMarker {
+        line: usize,
+    },
+    /// A header pinned at the top by sticky scroll.
+    StickyLine {
         line: usize,
     },
     Scrollbar,
@@ -721,6 +737,35 @@ impl<'a> CodeEditor<'a> {
     fn row_of_position(&self, line: usize, column: usize) -> usize {
         let segment_index = self.view.wraps.points(line).iter().take_while(|&&point| point <= column).count();
         self.row_of_line(line) + segment_index
+    }
+
+    /// Headers to pin at the top: those enclosing the line under the pinned area, scrolled
+    /// above their place in it.
+    fn compute_sticky_lines(&self, metrics: &Metrics) -> Vec<usize> {
+        const MAX_SCANNED_LINES: usize = 10_000;
+        if !self.config.sticky_scroll || self.display_layout.is_some() || self.view.scroll_offset.y <= 0.0 {
+            return Vec::new();
+        }
+        let (text, indentation, max_lines) =
+            (self.state.text(), &self.state.config.indentation, self.config.sticky_scroll_max_lines);
+        let first_row = self.row_at_y(metrics, metrics.text_rect.top());
+        let headers_at = |row: usize| {
+            rustext_core::structure::enclosing_headers(
+                text,
+                indentation,
+                self.nearest_line(row),
+                max_lines,
+                MAX_SCANNED_LINES,
+            )
+        };
+        let headers = headers_at(first_row);
+        let headers = headers_at(first_row + headers.len());
+        headers
+            .into_iter()
+            .enumerate()
+            .take_while(|&(slot, line)| self.row_of_line(line) < first_row + slot + 1)
+            .map(|(_, line)| line)
+            .collect()
     }
 
     /// The width rows wrap at, in columns (0: no wrapping).
