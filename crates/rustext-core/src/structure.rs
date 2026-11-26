@@ -54,6 +54,75 @@ fn find_opening(text: &Text, close_offset: usize, open: char, close: char) -> Op
     None
 }
 
+/// Bracket nesting depth at the start of each line, computed lazily and kept across frames:
+/// an edit drops the depths after its first line, painting extends them to the painted lines
+/// (at most `max_lines_per_call` lines per call, like the highlighter).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BracketDepths {
+    /// `depths[line]`: open brackets before `line` (never negative: extra closers are ignored).
+    depths: Vec<usize>,
+}
+
+impl BracketDepths {
+    /// The text changed from `first_changed_line` on.
+    pub fn invalidate_from(&mut self, first_changed_line: usize) {
+        self.depths.truncate(first_changed_line + 1);
+    }
+
+    /// Depth at the start of `line`, `None` if it would take more than `max_lines` lines of
+    /// work to know.
+    pub fn depth_at(&mut self, text: &Text, brackets: &[(char, char)], line: usize, max_lines: usize) -> Option<usize> {
+        if self.depths.is_empty() {
+            self.depths.push(0);
+        }
+        let target = line.min(text.last_line());
+        if target + 1 > self.depths.len() + max_lines {
+            for _ in 0..max_lines {
+                self.extend_one(text, brackets);
+            }
+            return None;
+        }
+        while self.depths.len() <= target {
+            self.extend_one(text, brackets);
+        }
+        Some(self.depths[target])
+    }
+
+    fn extend_one(&mut self, text: &Text, brackets: &[(char, char)]) {
+        let line = self.depths.len() - 1;
+        let mut depth = self.depths[line];
+        for character in text.chars_from(text.line_start(line)).take_while(|&character| character != '\n') {
+            if brackets.iter().any(|(open, _)| *open == character) {
+                depth += 1;
+            } else if brackets.iter().any(|(_, close)| *close == character) {
+                depth = depth.saturating_sub(1);
+            }
+        }
+        self.depths.push(depth);
+    }
+}
+
+/// Columns of the brackets of `line` with their nesting depth (the depth inside an opening
+/// bracket's pair, which its closing bracket shares).
+pub fn bracket_columns(
+    line_content: &str,
+    depth_at_line_start: usize,
+    brackets: &[(char, char)],
+) -> Vec<(usize, usize)> {
+    let mut depth = depth_at_line_start;
+    let mut columns = Vec::new();
+    for (column, character) in line_content.chars().enumerate() {
+        if brackets.iter().any(|(open, _)| *open == character) {
+            columns.push((column, depth));
+            depth += 1;
+        } else if brackets.iter().any(|(_, close)| *close == character) {
+            depth = depth.saturating_sub(1);
+            columns.push((column, depth));
+        }
+    }
+    columns
+}
+
 /// Visual width of the indentation of `line`, `None` for a blank line. Reads only the
 /// line's leading whitespace, without allocating.
 pub fn line_indent(text: &Text, indentation: &Indentation, line: usize) -> Option<usize> {
@@ -237,6 +306,29 @@ mod tests {
         assert_eq!(matching_bracket_pair(&text, 4, BRACKETS), Some((3, 5)));
         assert_eq!(matching_bracket_pair(&text, 2, BRACKETS), Some((1, 11)));
         assert_eq!(matching_bracket_pair(&Text::new("ab"), 1, BRACKETS), None);
+    }
+
+    #[test]
+    fn bracket_depths_follow_nesting_across_lines() {
+        let text = Text::new("f(a, {\n  [b]\n})");
+        let mut depths = BracketDepths::default();
+
+        assert_eq!(depths.depth_at(&text, BRACKETS, 1, 100), Some(2));
+        assert_eq!(bracket_columns("  [b]", 2, BRACKETS), vec![(2, 2), (4, 2)]);
+        assert_eq!(depths.depth_at(&text, BRACKETS, 2, 100), Some(2));
+        assert_eq!(bracket_columns("})", 2, BRACKETS), vec![(0, 1), (1, 0)]);
+    }
+
+    #[test]
+    fn bracket_depths_have_a_budget_and_recompute_after_edits() {
+        let text = Text::new(&"(\n".repeat(50));
+        let mut depths = BracketDepths::default();
+
+        assert_eq!(depths.depth_at(&text, BRACKETS, 40, 10), None);
+        assert_eq!(depths.depth_at(&text, BRACKETS, 40, 100), Some(40));
+        depths.invalidate_from(5);
+        let edited = Text::new(&")\n".repeat(50));
+        assert_eq!(depths.depth_at(&edited, BRACKETS, 7, 100), Some(3));
     }
 
     #[test]

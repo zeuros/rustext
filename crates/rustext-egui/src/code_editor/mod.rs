@@ -102,6 +102,8 @@ pub struct ViewConfig {
     pub render_whitespace: WhitespaceRendering,
     /// Marks the `\r` of lines ending with `\r\n` (gitgud's visible CRLF).
     pub show_carriage_returns: bool,
+    /// Colors brackets by nesting depth.
+    pub bracket_pair_colorization: bool,
 }
 
 impl Default for ViewConfig {
@@ -129,6 +131,7 @@ impl Default for ViewConfig {
             selection_highlight: true,
             render_whitespace: WhitespaceRendering::default(),
             show_carriage_returns: false,
+            bracket_pair_colorization: true,
         }
     }
 }
@@ -181,6 +184,10 @@ pub struct EditorView {
     /// The go-to-line box (Ctrl+G).
     pub go_to_line: GoToLineState,
     pub folds: FoldState,
+    bracket_depths: rustext_core::structure::BracketDepths,
+    /// The text revision the view's caches follow; another one means the text changed outside
+    /// the widget (`set_text`, an application command) and the caches start over.
+    seen_text_revision: Option<u64>,
 }
 
 impl EditorView {
@@ -449,6 +456,12 @@ impl<'a> CodeEditor<'a> {
             ui.memory_mut(|memory| memory.set_focus_lock_filter(id, filter));
         }
 
+        if self.view.seen_text_revision != Some(self.state.text_revision()) {
+            self.view.bracket_depths = Default::default();
+            if let Some(styler) = self.styler.as_deref_mut() {
+                styler.invalidate_from(0);
+            }
+        }
         self.refresh_folding();
         let mut outcome = Outcome::default();
         let mut unhandled_actions = Vec::new();
@@ -494,6 +507,7 @@ impl<'a> CodeEditor<'a> {
             })
         };
         self.paint(ui, &metrics, response.has_focus());
+        self.view.seen_text_revision = Some(self.state.text_revision());
         self.view.geometry = Some(EditorGeometry {
             text_rect: metrics.text_rect,
             row_height: metrics.row_height,

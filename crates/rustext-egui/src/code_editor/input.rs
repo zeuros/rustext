@@ -400,6 +400,10 @@ impl CodeEditor<'_> {
             .min();
         for edited in &outcome.edited_lines {
             self.view.folds.follow_edit(edited);
+            self.view.bracket_depths.invalidate_from(edited.first_line);
+        }
+        if outcome.text_changed() {
+            self.view.seen_text_revision = Some(self.state.text_revision());
         }
         if let [changes] = outcome.applied_changes.as_slice() {
             self.update_find_matches_after(changes);

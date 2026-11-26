@@ -83,7 +83,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 ## M9. Rendering extras
 - [x] Whitespace rendering modes, control characters, visible `␍`
 - [x] Rulers, indent guides with active guide
-- [x] Matching bracket highlight, jump to bracket; bracket pair colorization — colorization not done
+- [x] Matching bracket highlight, jump to bracket; bracket pair colorization — brackets inside strings and comments are colored too (needs token scopes from the styler)
 - [x] Selection and word occurrence highlights
 - [ ] Word wrap (off, viewport, column, bounded) with wrapping indent, in the display map
 - [ ] View zones (blocks between lines) in the display map

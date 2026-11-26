@@ -46,9 +46,25 @@ impl LineLayout {
 
 impl CodeEditor<'_> {
     pub(super) fn layout_line(&mut self, ui: &Ui, metrics: &Metrics, line: usize) -> LineLayout {
+        /// Lines of bracket depths computed at most per line laid out (keeps far jumps cheap).
+        const MAX_BRACKET_DEPTH_LINES: usize = 20_000;
         let text = self.state.text();
         let spans = self.styler.as_deref_mut().map(|styler| styler.style_line(text, line)).unwrap_or_default();
-        self.layout_content(ui, metrics, &text.line_content(line), &spans)
+        let content = text.line_content(line);
+        let colors = &self.theme.bracket_pair_colors;
+        let brackets = &self.state.language.brackets;
+        let colorizes = self.config.bracket_pair_colorization && !colors.is_empty();
+        let depth = colorizes
+            .then(|| self.view.bracket_depths.depth_at(text, brackets, line, MAX_BRACKET_DEPTH_LINES))
+            .flatten();
+        let bracket_colors: Vec<(usize, Color32)> = match depth {
+            Some(depth) => rustext_core::structure::bracket_columns(&content, depth, brackets)
+                .into_iter()
+                .map(|(column, depth)| (column, colors[depth % colors.len()]))
+                .collect(),
+            None => Vec::new(),
+        };
+        self.layout_content(ui, metrics, &content, &spans, &bracket_colors)
     }
 
     pub(super) fn layout_foreign_line(&mut self, ui: &Ui, metrics: &Metrics, line: usize) -> Option<LineLayout> {
@@ -58,14 +74,22 @@ impl CodeEditor<'_> {
             None => Vec::new(),
         };
         let content = foreign.text.line_content(line);
-        Some(self.layout_content(ui, metrics, &content, &spans))
+        Some(self.layout_content(ui, metrics, &content, &spans, &[]))
     }
 
-    fn layout_content(&self, ui: &Ui, metrics: &Metrics, content: &str, spans: &[StyledSpan]) -> LineLayout {
+    fn layout_content(
+        &self,
+        ui: &Ui,
+        metrics: &Metrics,
+        content: &str,
+        spans: &[StyledSpan],
+        color_overrides: &[(usize, Color32)],
+    ) -> LineLayout {
         let tab_size = self.state.config.indentation.tab_size;
         let (job, display_index_of_column) = line_layout_job(
             content,
             spans,
+            color_overrides,
             metrics.font_id(),
             self.theme.foreground,
             tab_size,
@@ -76,11 +100,13 @@ impl CodeEditor<'_> {
     }
 }
 
-/// Builds the layout job of a line: tabs expanded to spaces, spans colored. Returns the job
-/// and, for each char column (plus the end), its char index in the job's text.
+/// Builds the layout job of a line: tabs expanded to spaces, spans colored, then the colors of
+/// `color_overrides` (sorted by column) on their chars. Returns the job and, for each char
+/// column (plus the end), its char index in the job's text.
 pub(super) fn line_layout_job(
     content: &str,
     spans: &[StyledSpan],
+    color_overrides: &[(usize, Color32)],
     font_id: FontId,
     default_color: Color32,
     tab_size: usize,
@@ -98,10 +124,13 @@ pub(super) fn line_layout_job(
         while spans.get(span_index).is_some_and(|span| span.end_column <= column) {
             span_index += 1;
         }
-        let format = match spans.get(span_index).filter(|span| span.start_column <= column) {
+        let mut format = match spans.get(span_index).filter(|span| span.start_column <= column) {
             Some(span) => text_format(&span.style, &font_id, default_color),
             None => default_format.clone(),
         };
+        if let Ok(index) = color_overrides.binary_search_by_key(&column, |(override_column, _)| *override_column) {
+            format.color = color_overrides[index].1;
+        }
         let byte_start = job.text.len();
         if character == '\t' {
             let spaces = tab_size - display_len % tab_size;
