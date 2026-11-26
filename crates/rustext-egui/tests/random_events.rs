@@ -28,6 +28,7 @@ struct Fixture {
     config: ViewConfig,
     theme: EditorTheme,
     keymap: Keymap,
+    services: rustext_core::services::WordCompletions,
 }
 
 const PIECES: &[&str] = &[
@@ -67,6 +68,7 @@ const KEYS: &[Key] = &[
     Key::Space,
     Key::F2,
     Key::F3,
+    Key::F12,
     Key::F7,
     Key::F8,
     Key::OpenBracket,
@@ -99,6 +101,7 @@ fn random_input_never_panics_and_keeps_selections_valid() {
             config: random_config(&mut random),
             theme: EditorTheme::dark(),
             keymap: Keymap::vscode(),
+            services: rustext_core::services::WordCompletions::default(),
         };
         let mut harness =
             Harness::builder().with_size(Vec2::new(500.0, 300.0)).with_step_dt(1.0 / 60.0).build_ui_state(
@@ -110,6 +113,7 @@ fn random_input_never_panics_and_keeps_selections_valid() {
                         &fixture.theme,
                         &fixture.keymap,
                     )
+                    .services(&mut fixture.services)
                     .show(ui);
                 },
                 fixture,
