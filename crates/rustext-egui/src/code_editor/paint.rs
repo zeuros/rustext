@@ -215,7 +215,11 @@ impl CodeEditor<'_> {
 
     fn paint_galley(&self, painter: &Painter, metrics: &Metrics, layout: &LineLayout, top: f32) {
         let text_top = top + (metrics.row_height - layout.galley.size().y) / 2.0;
-        painter.galley(pos2(self.text_left(metrics), text_top), layout.galley.clone(), self.theme.foreground);
+        painter.galley(
+            pos2(self.text_left(metrics) + layout.indent_px, text_top),
+            layout.galley.clone(),
+            self.theme.foreground,
+        );
     }
 
     /// Vertical lines at each indentation level of the line; the guide of the cursor's block

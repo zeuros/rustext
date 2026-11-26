@@ -85,7 +85,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [x] Rulers, indent guides with active guide
 - [x] Matching bracket highlight, jump to bracket; bracket pair colorization — brackets inside strings and comments are colored too (needs token scopes from the styler)
 - [x] Selection and word occurrence highlights
-- [x] Word wrap (off, viewport, column, bounded) with wrapping indent, in the display map — continuation rows start at column 0 (no `wrappingIndent: same` yet); Up/Down move by line, not by visual row (D20)
+- [x] Word wrap (off, viewport, column, bounded) with wrapping indent, in the display map — continuation rows indented like their line (`wrappingIndent: same`); Up/Down move by line, not by visual row (D20)
 - [ ] View zones (blocks between lines) in the display map
 
 ## M10. Merge editor

@@ -25,6 +25,8 @@ pub(super) struct LineLayout {
     pub galley: Arc<Galley>,
     display_index_of_column: Vec<usize>,
     pub first_column: usize,
+    /// Space before the text: a wrapped line's continuation rows are indented like the line.
+    pub indent_px: f32,
 }
 
 impl LineLayout {
@@ -36,11 +38,11 @@ impl LineLayout {
             .or(self.display_index_of_column.last())
             .copied()
             .unwrap_or(0);
-        self.galley.pos_from_cursor(CCursor::new(index)).min.x
+        self.indent_px + self.galley.pos_from_cursor(CCursor::new(index)).min.x
     }
 
     pub fn column_at_x(&self, x: f32) -> usize {
-        let display_index = self.galley.cursor_from_pos(vec2(x, self.galley.size().y / 2.0)).index.0;
+        let display_index = self.galley.cursor_from_pos(vec2(x - self.indent_px, self.galley.size().y / 2.0)).index.0;
         let local_column = self
             .display_index_of_column
             .iter()
@@ -55,7 +57,7 @@ impl LineLayout {
     }
 
     pub fn width(&self) -> f32 {
-        self.galley.size().x
+        self.indent_px + self.galley.size().x
     }
 }
 
@@ -112,6 +114,14 @@ impl CodeEditor<'_> {
             .collect();
         let mut layout = self.layout_content(ui, metrics, &segment, &segment_spans, &segment_colors);
         layout.first_column = start_column;
+        if start_column > 0 {
+            let indent_columns = rustext_core::wrap::continuation_indent(
+                &content,
+                self.view.wraps.width_columns(),
+                self.state.config.indentation.tab_size,
+            );
+            layout.indent_px = indent_columns as f32 * metrics.char_width;
+        }
         layout
     }
 
@@ -144,7 +154,7 @@ impl CodeEditor<'_> {
             self.config.max_rendered_line_chars,
         );
         let galley = ui.ctx().fonts_mut(|fonts| fonts.layout_job(job));
-        LineLayout { galley, display_index_of_column, first_column: 0 }
+        LineLayout { galley, display_index_of_column, first_column: 0, indent_px: 0.0 }
     }
 }
 

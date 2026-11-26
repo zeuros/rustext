@@ -19,6 +19,10 @@ impl WrapState {
         self.width_columns > 0
     }
 
+    pub fn width_columns(&self) -> usize {
+        self.width_columns
+    }
+
     pub fn generation(&self) -> u64 {
         self.generation
     }

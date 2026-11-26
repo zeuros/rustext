@@ -16,11 +16,24 @@ fn breaks_after(character: char) -> bool {
     character.is_whitespace() || " \t})]?|/&.,;¢°′″‰℃、。｡､￠，．：；？！％・･ゝゞヽヾーァィゥェォッャュョヮヵヶぁぃぅぇぉっゃゅょゎゕゖㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿ々〻ｧｨｩｪｫｬｭｮｯｰ”〉》」』】〕）］｝｣".contains(character)
 }
 
+/// The visual width continuation rows are indented by (Monaco's `wrappingIndent: same`): the
+/// line's indentation, unless it would leave less than half the row.
+pub fn continuation_indent(content: &str, width_columns: usize, tab_size: usize) -> usize {
+    let tab_size = tab_size.max(1);
+    let indent =
+        content.chars().take_while(|character| *character == ' ' || *character == '\t').fold(0, |visual, character| {
+            if character == '\t' { (visual / tab_size + 1) * tab_size } else { visual + 1 }
+        });
+    if indent * 2 > width_columns { 0 } else { indent }
+}
+
 /// The char columns where the continuation rows of `content` start when rows are
-/// `width_columns` wide (empty when the line fits). Breaks after the last whitespace or
-/// separator that fits, else inside the word.
+/// `width_columns` wide (empty when the line fits); continuation rows are narrower by
+/// `continuation_indent`. Breaks after the last whitespace or separator that fits, else inside
+/// the word.
 pub fn wrap_points(content: &str, width_columns: usize, tab_size: usize) -> Vec<usize> {
     let width_columns = width_columns.max(1);
+    let continuation_width = width_columns - continuation_indent(content, width_columns, tab_size);
     let tab_size = tab_size.max(1);
     let mut points = Vec::new();
     let mut row_start_visual = 0;
@@ -29,7 +42,8 @@ pub fn wrap_points(content: &str, width_columns: usize, tab_size: usize) -> Vec<
     let mut last_break_visual = 0;
     for (column, character) in content.chars().enumerate() {
         let width = if character == '\t' { tab_size - visual % tab_size } else { char_columns(character) };
-        if visual + width - row_start_visual > width_columns && column > points.last().copied().unwrap_or(0) {
+        let row_width = if points.is_empty() { width_columns } else { continuation_width };
+        if visual + width - row_start_visual > row_width && column > points.last().copied().unwrap_or(0) {
             let (break_column, break_visual) = match last_break_column {
                 Some(break_column) if break_column > points.last().copied().unwrap_or(0) => {
                     (break_column, last_break_visual)
@@ -80,6 +94,14 @@ mod tests {
         assert_eq!(wrap_points("\tab", 5, 4), vec![1]);
         assert_eq!(wrap_points("\tabc", 6, 4), vec![1]);
         assert_eq!(wrap_points("x\tyz", 5, 4), vec![2]);
+    }
+
+    #[test]
+    fn continuation_rows_are_narrower_by_the_indentation() {
+        // First row: 12 columns; continuations: 12 - 4.
+        assert_eq!(wrap_points("    aaa bbb ccc ddd eee", 12, 4), vec![12, 20]);
+        assert_eq!(continuation_indent("        x", 20, 4), 8);
+        assert_eq!(continuation_indent("          x", 12, 4), 0);
     }
 
     #[test]
