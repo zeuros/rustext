@@ -61,6 +61,10 @@ impl DiffPage {
         }
     }
 
+    pub fn set_word_wrap(&mut self, word_wrap: rustext_egui::code_editor::WordWrap) {
+        self.view_config.word_wrap = word_wrap;
+    }
+
     pub fn show(&mut self, ui: &mut egui::Ui, theme_choice: &ThemeChoice, keymap: &Keymap) {
         if self.highlighted_theme != *theme_choice {
             self.old_highlighter.set_theme(theme_choice.syntax_theme());

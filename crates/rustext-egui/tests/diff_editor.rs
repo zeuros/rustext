@@ -40,6 +40,26 @@ fn harness(old: &str, new: &str, config: DiffViewConfig) -> Harness<'static, Fix
     harness
 }
 
+#[test]
+fn wrapped_lines_stay_aligned_with_the_other_side() {
+    let config =
+        DiffViewConfig { mode: DiffViewMode::SideBySide, inline_below_width: 0.0, ..DiffViewConfig::default() };
+    let mut harness = harness("aaaa bbbb cccc dddd\nsame\n", "short\nsame\n", config);
+    harness.state_mut().view_config.word_wrap = rustext_egui::code_editor::WordWrap::Column(10);
+    harness.run();
+
+    // The old line wraps into rows 0..=1: the new side pads row 1, so `same` is on row 2 on both.
+    let new_same = harness.state().document.new_view.geometry().unwrap().cell_center(2, 1);
+    click(&mut harness, new_same);
+    let new = &harness.state().document.new;
+    assert_eq!(new.text().position(new.selections().primary().head).line, 1);
+
+    let old_continuation = harness.state().document.old_view.geometry().unwrap().cell_center(1, 1);
+    click(&mut harness, old_continuation);
+    let old = &harness.state().document.old;
+    assert_eq!(old.text().position(old.selections().primary().head).line, 0);
+}
+
 fn click(harness: &mut Harness<'_, Fixture>, pos: Pos2) {
     harness.event(Event::PointerMoved(pos));
     harness.event(Event::PointerButton {

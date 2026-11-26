@@ -13,8 +13,8 @@ use rustext_core::display::DisplayLayout;
 use rustext_core::style::LineStyler;
 use rustext_core::{Command, EditingConfig, EditorState, Selection, Selections, Text};
 use rustext_diff::{
-    CollapseOptions, Collapsing, DiffColors, DiffOptions, LineDiff, LineSelection, RowKind, diff_lines, inline_layout,
-    inner_change_decorations, side_by_side_layouts, side_by_side_rows,
+    CollapseOptions, Collapsing, DiffColors, DiffOptions, LineDiff, LineSelection, RowKind, WrapPoints, diff_lines,
+    inline_layout, inner_change_decorations, side_by_side_layouts, side_by_side_rows,
 };
 
 use crate::code_editor::{CodeEditor, EditorResponse, EditorView, Foreign, MouseTarget, ViewConfig, to_rgba};
@@ -65,7 +65,9 @@ impl Default for DiffViewConfig {
 
 /// Rows and decorations derived from the diff, rebuilt when the diff or how it is shown changes.
 struct DiffDisplay {
-    key: (DiffViewMode, Vec<usize>, Option<CollapseOptions>, DiffColors),
+    /// What the layouts were built from: the mode, the expanded regions, the collapsing, the
+    /// colors, and the wrap generations of both sides.
+    key: (DiffViewMode, Vec<usize>, Option<CollapseOptions>, DiffColors, (u64, u64)),
     old_layout: DisplayLayout,
     new_layout: DisplayLayout,
     inline_layout: DisplayLayout,
@@ -272,7 +274,8 @@ impl<'a> DiffEditor<'a> {
     fn ensure_display(&mut self, mode: DiffViewMode) {
         let colors = self.colors();
         let document = &mut *self.document;
-        let key = (mode, document.expanded_old_lines.clone(), self.config.collapse_unchanged, colors);
+        let wrap_generations = (document.old_view.wraps.generation(), document.new_view.wraps.generation());
+        let key = (mode, document.expanded_old_lines.clone(), self.config.collapse_unchanged, colors, wrap_generations);
         if document.display.as_ref().is_some_and(|display| display.key == key) {
             return;
         }
@@ -281,8 +284,10 @@ impl<'a> DiffEditor<'a> {
             expanded_old_lines: document.expanded_old_lines.clone(),
         };
         let (old_text, new_text) = (document.old.text(), document.new.text());
-        let (old_layout, new_layout) = side_by_side_layouts(&document.diff, old_text, new_text, &collapsing, &colors);
-        let inline = inline_layout(&document.diff, new_text, &collapsing, &colors);
+        let wraps = WrapPoints { old: document.old_view.wraps.all_points(), new: document.new_view.wraps.all_points() };
+        let (old_layout, new_layout) =
+            side_by_side_layouts(&document.diff, old_text, new_text, &collapsing, &colors, &wraps);
+        let inline = inline_layout(&document.diff, new_text, &collapsing, &colors, wraps.new);
         let (old_decorations, new_decorations) = inner_change_decorations(&document.diff, old_text, new_text, &colors);
         document.display =
             Some(DiffDisplay { key, old_layout, new_layout, inline_layout: inline, old_decorations, new_decorations });
@@ -303,6 +308,12 @@ impl<'a> DiffEditor<'a> {
             DiffViewMode::SideBySide => self.show_side_by_side(ui, rect),
             DiffViewMode::Inline => self.show_inline(ui, rect),
         };
+        // The editors wrapped their lines (again) this frame: lay the rows out with it next frame.
+        let document = &*self.document;
+        let wrap_generations = (document.old_view.wraps.generation(), document.new_view.wraps.generation());
+        if document.display.as_ref().is_some_and(|display| display.key.4 != wrap_generations) {
+            ui.ctx().request_repaint();
+        }
         ui.advance_cursor_after_rect(rect);
         response
     }
@@ -336,6 +347,7 @@ impl<'a> DiffEditor<'a> {
                 )
                 .id_salt("rustext-diff-old")
                 .aria_label("Original")
+                .wrap_under_given_layout()
                 .display_layout(&display.old_layout)
                 .decorations(&display.old_decorations)
                 .markers(true);
@@ -360,6 +372,7 @@ impl<'a> DiffEditor<'a> {
                 )
                 .id_salt("rustext-diff-new")
                 .aria_label("Modified")
+                .wrap_under_given_layout()
                 .display_layout(&display.new_layout)
                 .decorations(&display.new_decorations)
                 .markers(true);
@@ -413,6 +426,7 @@ impl<'a> DiffEditor<'a> {
                 )
                 .id_salt("rustext-diff-new")
                 .aria_label("Modified")
+                .wrap_under_given_layout()
                 .display_layout(&display.inline_layout)
                 .decorations(&display.new_decorations)
                 .foreign(foreign)

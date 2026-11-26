@@ -242,6 +242,11 @@ on explicit actions (fold all, replace all, a new diff) or behind a budget (the 
   font would need galley-measured breaks.
 - Breaks are cached per line and follow edits through `EditedLines` (D19): only edited lines
   are wrapped again; a width change wraps everything (an explicit, rare event).
+- Diffs wrap too (Monaco's `diffWordWrap: 'inherit'`): each side's editor wraps its lines
+  under the layout it is given (`wrap_under_given_layout`), and the diff editor lays the
+  rows out from those points the next frame: an aligned pair of lines takes the rows of the
+  longer one, the other side padded. Removed lines of an inline view are the old text's,
+  painted as foreign rows: they don't wrap.
 - Up/Down move by visual row when wrapping, as in VS Code: the widget handles them (it knows
   the rows), keeping the visual column within the row in `Selection::preferred_visual_column`.
   The core's line-based vertical motion stays for unwrapped views.

@@ -237,7 +237,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Navigate changes (F7 / Shift+F7) | `goToDiff('next'|'previous')`, `revealFirstDiff` | P0 | done |
 | Original side editable | `originalEditable` | P2 | done (`DiffViewConfig::old_editable`) |
 | Moved code detection | `experimental.showMoves` | P2 | todo |
-| Diff word wrap | `diffWordWrap` | P1 | todo |
+| Diff word wrap | `diffWordWrap` | P1 | done (`inherit`: the diff wraps when the `ViewConfig` does; sides stay aligned with padding; removed lines of an inline view don't wrap) |
 | Accessible diff viewer | `accessibleDiffViewerNext` | P3 | todo |
 | Size / time limits | `maxComputationTime`, `maxFileSize` | P0 | done |
 | Multi-file diff | `createMultiFileDiffEditor` | P2 | todo |

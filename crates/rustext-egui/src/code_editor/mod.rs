@@ -20,7 +20,7 @@ mod paint;
 mod palette;
 mod smart_select;
 mod structure;
-mod wrapping;
+pub(crate) mod wrapping;
 
 use egui::{CursorIcon, EventFilter, FontId, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 use rustext_core::decoration::{Decoration, DecorationKind};
@@ -268,7 +268,7 @@ pub struct EditorView {
     definition_request: Option<(u64, Position)>,
     /// Smart select's history (Shift+Alt+Right / Left).
     pub smart_select: smart_select::SmartSelectState,
-    wraps: wrapping::WrapState,
+    pub(crate) wraps: wrapping::WrapState,
     /// Lines pinned at the top by sticky scroll in the last frame.
     sticky_lines: Vec<usize>,
     /// The language services' latest diagnostics, as decorations that follow edits.
@@ -450,6 +450,9 @@ pub struct CodeEditor<'a> {
     /// The char under the pointer while Ctrl is held (its link is drawn active).
     ctrl_hovered_char: Option<usize>,
     display_layout: Option<&'a DisplayLayout>,
+    /// Wraps lines even with a given layout: its builder (the diff editor) reads the wrap
+    /// points and lays the rows out with them.
+    wraps_under_given_layout: bool,
     foreign: Option<Foreign<'a>>,
     glyph_margin: bool,
     markers: bool,
@@ -531,6 +534,7 @@ impl<'a> CodeEditor<'a> {
             open_request: None,
             ctrl_hovered_char: None,
             display_layout: None,
+            wraps_under_given_layout: false,
             foreign: None,
             glyph_margin: false,
             markers: false,
@@ -562,6 +566,12 @@ impl<'a> CodeEditor<'a> {
     /// Labels in a row above their lines; a click on one is `EditorResponse::clicked_code_lens`.
     pub fn code_lenses(mut self, code_lenses: &'a [CodeLens]) -> Self {
         self.code_lenses = code_lenses;
+        self
+    }
+
+    /// Keeps wrapping lines (as `ViewConfig::word_wrap` says) under a given layout.
+    pub(crate) fn wrap_under_given_layout(mut self) -> Self {
+        self.wraps_under_given_layout = true;
         self
     }
 
@@ -1025,7 +1035,7 @@ impl<'a> CodeEditor<'a> {
 
     /// The width rows wrap at, in columns (0: no wrapping).
     fn wrap_width_columns(&self, metrics: &Metrics) -> usize {
-        if self.display_layout.is_some() {
+        if self.display_layout.is_some() && !self.wraps_under_given_layout {
             return 0;
         }
         let viewport_columns =

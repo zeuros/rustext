@@ -6,7 +6,7 @@
 //! `--inline` shows the diff inline; `--find <pattern>` opens the find widget;
 //! `--showcase` folds a block, shows whitespace and puts the cursor on a bracket; `--blame`
 //! turns the blame demo on; `--code-lens` the code lens demo; `--bracket-guides` shows the
-//! bracket pair guide of a cursor inside a loop; `--wrap <columns>` wraps lines;
+//! bracket pair guide of a cursor inside a loop; `--wrap <columns>` wraps lines (diffs too);
 //! `--complete` opens the completion list; `--scroll <lines>` scrolls down;
 //! `--minimap` shows the minimap; `--lsp "<server command>"` uses a language server.
 
@@ -196,14 +196,20 @@ fn main() -> eframe::Result {
                     }
                     editor_page
                 },
-                diff_page: DiffPage::new(
-                    &languages,
-                    &theme_choice,
-                    diff_file_name,
-                    &old_content,
-                    &new_content,
-                    arguments.inline,
-                ),
+                diff_page: {
+                    let mut diff_page = DiffPage::new(
+                        &languages,
+                        &theme_choice,
+                        diff_file_name,
+                        &old_content,
+                        &new_content,
+                        arguments.inline,
+                    );
+                    if let Some(columns) = arguments.wrap_columns {
+                        diff_page.set_word_wrap(rustext_egui::code_editor::WordWrap::Column(columns));
+                    }
+                    diff_page
+                },
                 merge_page: MergePage::new(&languages, &theme_choice),
                 theme_choice,
                 keymap: Keymap::vscode(),

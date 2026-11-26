@@ -43,7 +43,7 @@ fn large_diff_timings() {
         let diff_ms = started.elapsed().as_secs_f64() * 1000.0;
         let started = Instant::now();
         let collapsing = Collapsing { options: Some(CollapseOptions::default()), expanded_old_lines: Vec::new() };
-        let _ = side_by_side_layouts(&diff, &old, &new, &collapsing, &colors);
+        let _ = side_by_side_layouts(&diff, &old, &new, &collapsing, &colors, &rustext_diff::WrapPoints::NONE);
         let _ = inner_change_decorations(&diff, &old, &new, &colors);
         let layout_ms = started.elapsed().as_secs_f64() * 1000.0;
         println!("{line_count} lines, {} hunks: diff {diff_ms:.1} ms, layouts {layout_ms:.1} ms", diff.hunks.len());

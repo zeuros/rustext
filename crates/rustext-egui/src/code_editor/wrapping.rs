@@ -27,6 +27,11 @@ impl WrapState {
         self.generation
     }
 
+    /// The points of every line (`all_points()[line]`), for a layout built outside the editor.
+    pub fn all_points(&self) -> &[Vec<usize>] {
+        &self.points
+    }
+
     pub fn points(&self, line: usize) -> &[usize] {
         self.points.get(line).map_or(&[], Vec::as_slice)
     }
