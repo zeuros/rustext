@@ -13,6 +13,7 @@ rustext-diff.workspace = true
 egui.workspace = true
 
 [dev-dependencies]
+rustext-syntax.workspace = true
 egui_kittest.workspace = true
 egui = { workspace = true, features = ["default_fonts"] }
 

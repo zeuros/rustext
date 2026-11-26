@@ -105,28 +105,39 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [ ] Inlay hints, code lens, inline completions (ghost text)
 
 ## M13. Gitgud integration
-- [ ] An adapter matching gitgud's uses (table in MONACO_FEATURES.md)
+- [x] An adapter matching gitgud's uses (table in MONACO_FEATURES.md) — `docs/GITGUD_INTEGRATION.md` maps each Monaco use to the API; `tests/gitgud_snippets.rs` keeps it compiling
 - [x] Performance: 100k-line file opens and scrolls at 60 fps (see D19 for the numbers); 10k-line diff in 4 ms, 100k in 45 ms (D14)
 
 ## Where to resume
 
-Last updated: 2026-11-26, end of the first session.
+Last updated: 2026-11-26, end of the first session (continued).
 
-**State**: M0–M7 done; M8/M9 mostly done (see unticked boxes). 177 tests, `scripts/check.sh`
-green. Every milestone is a commit on `main` (`git log --oneline`).
+**State**: M0–M10 done, M11 and M12 mostly done, M13 done (integration guide, performance).
+`scripts/check.sh` green; ~230 tests. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. (done since: diagnostics with hover and F8, the blame demo, the merge editor checked
-   against `git merge-file`.)
-2. (done since: bracket pair colorization, word wrap — D20, performance work — D19.)
-5. M11: an LSP client implementing `LanguageServices` (stdio JSON-RPC, positions converted to UTF-16 at that boundary — D5); snippets. M12: minimap, sticky scroll, command palette.
+1. M11 LSP client: a crate `rustext-lsp` implementing `LanguageServices` over stdio JSON-RPC
+   (a reader thread, requests keyed by text revision, `Reply::Pending` until answered);
+   positions converted to UTF-16 only there (D5). Then signature help and rename.
+2. Snippets with tab stops (`CompletionItem.insert_text` as `$1`/`${1:default}`): a core
+   snippet parser and a "snippet session" of linked selections.
+3. Inlay hints, code lens, inline completions (ghost text) — they need decorations that inject
+   text (`DecorationKind::InjectedText`) in `line_layout_job`.
+4. Up/Down by visual row when wrapping (D20 says per line today).
+5. Brackets inside strings and comments should not color nor match: give `LineStyler` a way
+   to say which spans are strings/comments.
 
 **Known gaps / debts**:
-- Tokenizer re-tokenizes from the edited line to the painted lines; Monaco stops when the
-  end state matches the cached one (worth it for huge files).
+- Tokenizer re-tokenizes from the edited line to the painted lines; Monaco stops when the end
+  state matches the cached one.
 - Folding is indentation-only; `foldingStrategy: 'auto'` needs language structure.
-- `CodeEditor` folding is off when the application passes its own `DisplayLayout` (diffs).
+- Folding is off when the application passes its own `DisplayLayout` (diffs).
 - Find widget: find in selection (`FindState::scope`) has no toggle button yet.
+- The merge editor doesn't sync the result's scroll with the inputs.
+- Text from egui's TextEdit (find input) can't use rustext's keymap (Ctrl+D etc. there are
+  egui's).
 
-**How to verify visually**: `scripts/screenshot.sh <png> [--showcase | --find x | --page diff |
---inline | --diff old new]`, then look at the PNG.
+**How to verify visually**: `scripts/screenshot.sh <png> [file] [--showcase | --find x |
+--page diff | --page merge | --inline | --diff old new | --blame | --wrap N | --complete |
+--minimap | --scroll N]`, then look at the PNG. Performance: `cargo test --release -p
+rustext-egui --test performance -- --ignored --nocapture` (numbers in D19).

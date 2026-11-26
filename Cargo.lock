@@ -2915,6 +2915,7 @@ dependencies = [
  "egui_kittest",
  "rustext-core",
  "rustext-diff",
+ "rustext-syntax",
 ]
 
 [[package]]
