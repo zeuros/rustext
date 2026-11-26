@@ -1,0 +1,3 @@
+# cargo-mutants: see .github/workflows/mutants.yml.
+test_tool = "nextest"
+exclude_re = ["impl Debug", "impl Display", "impl fmt::Debug", "impl fmt::Display"]
