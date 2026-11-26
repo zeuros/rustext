@@ -219,9 +219,10 @@ on explicit actions (fold all, replace all, a new diff) or behind a budget (the 
   extent. Indent guides cover the visible lines. `HiddenLines` are disjoint sorted ranges
   (binary search).
 - `crates/rustext-egui/tests/performance.rs` (ignored, run in release) measures a 100k-line
-  file: idle 0.4 ms, typing 0.5 ms, typing at the end of the file 3.8 ms, typing with 20 000
+  file: idle 0.4 ms, typing 0.5 ms (at the end of the file too), typing with 20 000
   folds 0.7 ms, typing with the find widget open on 20 000 matches 4.7 ms, fold all 37 ms,
-  Ctrl+End 12 ms (the bracket line states of 10 000 lines, the per-frame budget). Highlighted
+  Ctrl+End 12 ms (the bracket line states of 10 000 lines, the per-frame budget; the next
+  frames average 3.6 ms while the states of the lines above catch up). Highlighted
   with tree-sitter (D22): typing 1.2 ms, at the end 5 ms, Ctrl+End 15 ms; the first parse
   (~450 ms) runs on its thread while frames take 0.4 ms. Run it after touching anything
   per-frame; a regression there is a bug.

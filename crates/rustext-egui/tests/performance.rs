@@ -106,6 +106,8 @@ fn large_file_frame_times() {
         });
     });
     println!("ctrl+end frame: {to_end:.2} ms");
+    let idle_at_end = milliseconds_per_frame(&mut harness, 30, |_| {});
+    println!("frames after ctrl+end (bracket states of the lines above catching up): {idle_at_end:.2} ms");
     let typing_at_end = milliseconds_per_frame(&mut harness, 30, |harness| harness.event(Event::Text("w".into())));
     println!("typing frame at the end: {typing_at_end:.2} ms");
 

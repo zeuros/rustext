@@ -145,8 +145,6 @@ text; random tests.
   egui's).
 - The bracket lexer (D21) doesn't know raw strings, nested comments or heredocs.
 - Find References isn't visible in the demo without `--lsp` (word completions answer none).
-- Typing at the end of a 100k-line file takes 3.8 ms a frame against 0.5 ms at its start,
-  with no highlighter: something per edit grows with the line number (not found yet).
 - Tree-sitter: folding, bracket matching and indentation could use the tree (D21's lexer and
   indentation folding are still used); injections aren't run; highlight queries are the
   grammar crates' own.
