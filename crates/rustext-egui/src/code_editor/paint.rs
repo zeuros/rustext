@@ -154,6 +154,11 @@ impl CodeEditor<'_> {
         }
 
         let text_left = self.text_left(metrics);
+        if let Some(placeholder) = self.config.placeholder.as_ref().filter(|_| text.is_empty()) {
+            let top = self.row_top(metrics, 0) + metrics.row_height / 2.0;
+            let font_id = metrics.font_id();
+            text_painter.text(pos2(text_left, top), Align2::LEFT_CENTER, placeholder, font_id, theme.line_number);
+        }
         for column in &self.config.rulers {
             let x = text_left + *column as f32 * metrics.char_width;
             text_painter.vline(x, metrics.text_rect.y_range(), Stroke::new(1.0, theme.ruler));
@@ -502,8 +507,10 @@ impl CodeEditor<'_> {
                 DecorationKind::Underline(color) => {
                     painter.hline(left..=right, bottom - 1.5, Stroke::new(1.0, to_color(*color)));
                 }
-                DecorationKind::Glyph(_) | DecorationKind::LineNumberColor(_) | DecorationKind::InjectedText { .. } => {
-                }
+                DecorationKind::Glyph(_)
+                | DecorationKind::LineNumberColor(_)
+                | DecorationKind::GutterBar(_)
+                | DecorationKind::InjectedText { .. } => {}
             }
         }
     }
@@ -648,6 +655,11 @@ impl CodeEditor<'_> {
                         gutter_painter.rect_filled(row_rect, CornerRadius::ZERO, to_color(color));
                     }
                     DecorationKind::LineNumberColor(color) => line_number_color = Some(to_color(color)),
+                    DecorationKind::GutterBar(color) => {
+                        let left = metrics.text_rect.left() - metrics.char_width * 0.7;
+                        let bar = Rect::from_min_max(pos2(left, top), pos2(left + 3.0, top + metrics.row_height));
+                        gutter_painter.rect_filled(bar, CornerRadius::ZERO, to_color(color));
+                    }
                     DecorationKind::Glyph(color) if self.glyph_margin && decoration.first_line(text) == line => {
                         let center = pos2(gutter_rect.left() + metrics.glyph_margin_width / 2.0, center_y);
                         gutter_painter.circle_filled(center, metrics.row_height * 0.28, to_color(color));

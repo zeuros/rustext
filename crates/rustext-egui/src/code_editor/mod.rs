@@ -128,6 +128,8 @@ pub struct ViewConfig {
     pub sticky_scroll_max_lines: usize,
     /// A zoomed-out map of the text right of it (Monaco's `minimap`).
     pub minimap: bool,
+    /// Shown while the text is empty ("Commit message").
+    pub placeholder: Option<String>,
 }
 
 impl Default for ViewConfig {
@@ -160,6 +162,7 @@ impl Default for ViewConfig {
             sticky_scroll: true,
             sticky_scroll_max_lines: 5,
             minimap: false,
+            placeholder: None,
         }
     }
 }

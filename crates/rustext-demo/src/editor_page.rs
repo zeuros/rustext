@@ -224,6 +224,10 @@ impl EditorPage {
                     Decoration::lines(text, line, line, DecorationKind::LineNumberColor(age_color))
                         .with_hover_message(message.clone()),
                 );
+                if commit_index == BLAME_COMMITS.len() - 1 {
+                    let modified = rustext_egui::code_editor::to_rgba(theme.info);
+                    decorations.push(Decoration::lines(text, line, line, DecorationKind::GutterBar(modified)));
+                }
                 let starts_group = line == 0 || blame_commit_index(line - 1) != commit_index;
                 if starts_group {
                     decorations.push(

@@ -66,7 +66,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Selection anchor | `setSelectionAnchor`, `selectFromAnchorToCursor` | P3 | todo |
 | Smart select expand / shrink | `editor.action.smartSelect.expand/shrink` (Shift+Alt+→/←) | P2 | todo |
 | Cursor style, blinking, width, smooth caret | `cursorStyle`, `cursorBlinking`, `cursorWidth`, `cursorSmoothCaretAnimation` | P1 | done |
-| Cursor surrounding lines | `cursorSurroundingLines` | P2 | todo |
+| Cursor surrounding lines | `cursorSurroundingLines` | P2 | done (`ViewConfig::cursor_surrounding_lines`) |
 
 ## 3. Editing behaviour
 
@@ -94,7 +94,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Read-only + message | `readOnly`, `readOnlyMessage`, `onDidAttemptReadOnlyEdit` | P0 | done |
 | IME composition | `onDidCompositionStart/End`, `inComposition` | P0 | done |
 | Linked editing (HTML tag pairs) | `linkedEditing`, `registerLinkedEditingRangeProvider` | P2 | todo |
-| Snippets with tab stops | `snippetSuggestions`, `insertTextRules.InsertAsSnippet` | P2 | todo |
+| Snippets with tab stops | `snippetSuggestions`, `insertTextRules.InsertAsSnippet` | P2 | done |
 | Drag and drop text | `dragAndDrop`, `dropIntoEditor` | P3 | todo |
 
 ## 4. Rendering
@@ -108,22 +108,22 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Control characters | `renderControlCharacters` (and visible CR, the gitgud hack done right) | P0 | done |
 | Rulers | `rulers` (columns, colors) | P1 | done |
 | Indent guides, active guide | `guides.indentation`, `guides.highlightActiveIndentation` | P1 | done |
-| Bracket pair colorization | `bracketPairColorization.enabled`, `independentColorPoolPerBracketType` | P1 | todo |
+| Bracket pair colorization | `bracketPairColorization.enabled`, `independentColorPoolPerBracketType` | P1 | done |
 | Bracket pair guides | `guides.bracketPairs`, `bracketPairsHorizontal` | P2 | todo |
 | Matching bracket highlight, jump | `matchBrackets`, `editor.action.jumpToBracket` (Ctrl+Shift+\), `selectToBracket` | P1 | done |
 | Selection occurrences highlight | `selectionHighlight` | P1 | done |
 | Word occurrences highlight | `occurrencesHighlight` (`singleFile`, `multiFile`), `wordHighlight.next/prev` | P1 | done |
-| Word wrap | `wordWrap` (`off`, `on`, `wordWrapColumn`, `bounded`), `wrappingIndent`, `wordWrapBreakBeforeCharacters` | P1 | todo |
+| Word wrap | `wordWrap` (`off`, `on`, `wordWrapColumn`, `bounded`), `wrappingIndent`, `wordWrapBreakBeforeCharacters` | P1 | done |
 | Scrolling | `scrollBeyondLastLine`, `scrollBeyondLastColumn`, `smoothScrolling`, `mouseWheelScrollSensitivity`, `fastScrollSensitivity` (Alt), `scrollPredominantAxis` | P0 | done |
 | Scrollbars with overview ruler | `scrollbar.*`, `overviewRulerLanes`, `overviewRulerBorder`, `hideCursorInOverviewRuler` | P0 | done |
-| Minimap | `minimap.enabled/side/size/scale/renderCharacters/showSlider/autohide`, section headers (`// MARK:`) | P2 | todo |
-| Sticky scroll (scopes pinned at the top) | `stickyScroll.enabled/maxLineCount/defaultModel` | P2 | todo |
+| Minimap | `minimap.enabled/side/size/scale/renderCharacters/showSlider/autohide`, section headers (`// MARK:`) | P2 | done |
+| Sticky scroll (scopes pinned at the top) | `stickyScroll.enabled/maxLineCount/defaultModel` | P2 | done |
 | Padding top / bottom | `padding` | P1 | done |
 | Fonts, ligatures, line height, letter spacing, zoom | `fontFamily`, `fontSize`, `fontLigatures`, `lineHeight`, `letterSpacing`, `mouseWheelZoom`, `fontZoomIn/Out/Reset` | P0 | done |
 | Unicode highlighting (invisible, ambiguous chars) | `unicodeHighlight.*` | P2 | todo |
-| Unusual line terminators (LS, PS, NEL) | `unusualLineTerminators` | P2 | todo |
+| Unusual line terminators (LS, PS, NEL) | `unusualLineTerminators` | P2 | done: lines split on `\n` only, others are chars (D4) |
 | Long lines: stop rendering after N chars | `stopRenderingLineAfter` | P1 | done |
-| Placeholder text when empty | `placeholder` | P2 | todo |
+| Placeholder text when empty | `placeholder` | P2 | done (`ViewConfig::placeholder`) |
 | Final newline rendering | `renderFinalNewline` | P2 | todo |
 | Variable line heights / fonts | `allowVariableLineHeights`, decoration `lineHeight` | P3 | todo |
 
@@ -134,17 +134,17 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Range / inline decorations | `createDecorationsCollection`, `deltaDecorations`, `IModelDecorationOptions.className/inlineClassName` | P0 | done |
 | Whole-line decorations | `isWholeLine`, `marginClassName`, `lineNumberClassName` | P0 | done |
 | Glyph margin icons | `glyphMargin`, `glyphMarginClassName`, `GlyphMarginLane`, `addGlyphMarginWidget` | P1 | done |
-| Line decorations (left of the text, e.g. git gutter bars) | `linesDecorationsClassName`, `lineDecorationsWidth` | P1 | todo |
+| Line decorations (left of the text, e.g. git gutter bars) | `linesDecorationsClassName`, `lineDecorationsWidth` | P1 | done (`DecorationKind::GutterBar`) |
 | Overview ruler marks | `overviewRuler: {color, position}` | P0 | done |
 | Minimap marks | `minimap: {color, position}` | P2 | todo |
-| Injected text (before / after content) | `before`, `after` (`InjectedTextOptions`) | P2 | todo |
-| Decoration hover message | `hoverMessage`, `glyphMarginHoverMessage` | P2 | todo |
+| Injected text (before / after content) | `before`, `after` (`InjectedTextOptions`) | P2 | done |
+| Decoration hover message | `hoverMessage`, `glyphMarginHoverMessage` | P2 | done |
 | Stickiness when editing at the edges | `TrackedRangeStickiness` | P0 | done |
 | View zones (space between lines, e.g. diff padding, inline widgets) | `changeViewZones`, `IViewZone` | P0 (diff alignment) | done |
-| Content widgets (anchored at a position) | `addContentWidget` | P2 | todo |
-| Overlay widgets (fixed in the editor, e.g. find) | `addOverlayWidget` | P1 | todo |
-| Markers (diagnostics, squiggles) | `setModelMarkers`, `IMarkerData` (severity, tags `Unnecessary`, `Deprecated`), `showUnused`, `showDeprecated` | P1 | todo |
-| Go to next problem | `editor.action.marker.next` (F8) | P2 | todo |
+| Content widgets (anchored at a position) | `addContentWidget` | P2 | skip: an egui `Area` at `EditorGeometry::cell_center` |
+| Overlay widgets (fixed in the editor, e.g. find) | `addOverlayWidget` | P1 | skip: an egui `Area` over the editor's rect |
+| Markers (diagnostics, squiggles) | `setModelMarkers`, `IMarkerData` (severity, tags `Unnecessary`, `Deprecated`), `showUnused`, `showDeprecated` | P1 | done |
+| Go to next problem | `editor.action.marker.next` (F8) | P2 | done |
 | Banner | `setBanner` | P3 | todo |
 
 ## 6. Find and replace (`contrib/find`)
@@ -155,7 +155,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Case, whole word, regex toggles | Alt+C, Alt+W, Alt+R | P1 | done |
 | Replace, replace all, regex groups `$1` | `editor.action.startFindReplaceAction` (Ctrl+H) | P1 | done |
 | Preserve case in replace | Alt+P | P2 | done |
-| Find in selection | `find.autoFindInSelection` | P1 | todo |
+| Find in selection | `find.autoFindInSelection` | P1 | partial: `FindState::scope`, no toggle button yet |
 | Seed from selection / word | `find.seedSearchStringFromSelection` | P1 | done |
 | Match count "3 of 17", highlights in overview ruler | — | P1 | done |
 | Select all matches as cursors | Alt+Enter | P1 | done |
@@ -191,23 +191,23 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 
 | Feature | Monaco API | Pri | Status |
 |---|---|---|---|
-| Completion (suggest widget, fuzzy filter, details, commit chars, snippets) | `registerCompletionItemProvider`, `quickSuggestions`, `suggest.*`, `acceptSuggestionOnEnter`, `tabCompletion`, `wordBasedSuggestions` | P2 | todo |
-| Hover | `registerHoverProvider`, `hover.delay/sticky/above` | P2 | todo |
+| Completion (suggest widget, fuzzy filter, details, commit chars, snippets) | `registerCompletionItemProvider`, `quickSuggestions`, `suggest.*`, `acceptSuggestionOnEnter`, `tabCompletion`, `wordBasedSuggestions` | P2 | done |
+| Hover | `registerHoverProvider`, `hover.delay/sticky/above` | P2 | done |
 | Signature help | `registerSignatureHelpProvider`, `parameterHints` | P2 | todo |
-| Go to definition / declaration / type / implementation, Ctrl+click | `register*DefinitionProvider`, `gotoLocation.*`, `definitionLinkOpensInPeek` | P2 | todo |
+| Go to definition / declaration / type / implementation, Ctrl+click | `register*DefinitionProvider`, `gotoLocation.*`, `definitionLinkOpensInPeek` | P2 | partial: definition in the same text (F12, Ctrl+click) |
 | References, peek view | `registerReferenceProvider`, `peekView` | P2 | todo |
 | Document highlights | `registerDocumentHighlightProvider` | P2 | todo |
 | Rename (F2) | `registerRenameProvider`, `registerNewSymbolNameProvider` | P2 | todo |
 | Code actions, lightbulb, quick fix | `registerCodeActionProvider`, `lightbulb.enabled` | P2 | todo |
 | Code lens | `registerCodeLensProvider`, `codeLens` | P2 | todo |
 | Formatting (document, range, on type, on paste) | `registerDocumentFormattingEditProvider`, `…Range…`, `…OnType…`, `formatOnType`, `formatOnPaste` | P2 | todo |
-| Inlay hints | `registerInlayHintsProvider`, `inlayHints.*` | P2 | todo |
-| Inline completions (ghost text, AI) | `registerInlineCompletionsProvider`, `inlineSuggest.*` | P2 | todo |
+| Inlay hints | `registerInlayHintsProvider`, `inlayHints.*` | P2 | partial: injected text decorations; no provider method yet |
+| Inline completions (ghost text, AI) | `registerInlineCompletionsProvider`, `inlineSuggest.*` | P2 | done (`inline_completion`) |
 | Links (Ctrl+click URLs) | `registerLinkProvider`, `links`, `registerLinkOpener` | P1 | todo |
 | Color decorators and picker | `registerColorProvider`, `colorDecorators` | P3 | todo |
 | Document symbols, outline, Go to symbol (Ctrl+Shift+O) | `registerDocumentSymbolProvider`, quick access `@` | P2 | todo |
 | Selection ranges (smart select) | `registerSelectionRangeProvider` | P2 | todo |
-| LSP bridge | not in Monaco (monaco-languageclient) | P2 | todo |
+| LSP bridge | not in Monaco (monaco-languageclient) | P2 | done |
 
 ## 10. Commands, keybindings, menus
 
@@ -217,8 +217,8 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Custom actions with keybinding + context menu entry | `addAction({id, label, keybindings, contextMenuGroupId, precondition, run})` | P0 | done |
 | Keybinding rules, chords (Ctrl+K Ctrl+C) | `addKeybindingRule(s)`, `KeyMod`, `KeyCode` | P1 | done |
 | Context keys (`when` clauses) | `createContextKey`, `precondition` | — | skip: see DECISIONS D8 |
-| Context menu | `contextmenu` | P0 | todo |
-| Command palette (F1) | quick access `>` | P2 | todo |
+| Context menu | `contextmenu` | P0 | done |
+| Command palette (F1) | quick access `>` | P2 | done |
 | Go to line (Ctrl+G) | quick access `:` | P1 | done |
 
 ## 11. Diff editor (`IDiffEditor`) — gitgud's main use
@@ -233,16 +233,16 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Ignore trim whitespace | `ignoreTrimWhitespace` | P0 | done |
 | +/- indicators, revert arrows in the gutter | `renderIndicators`, `renderMarginRevertIcon`, `renderGutterMenu` | P1 | done |
 | Overview ruler of changes | `renderOverviewRuler` | P0 | done |
-| Resizable split | `enableSplitViewResizing`, `splitViewDefaultRatio` | P1 | todo |
+| Resizable split | `enableSplitViewResizing`, `splitViewDefaultRatio` | P1 | done |
 | Navigate changes (F7 / Shift+F7) | `goToDiff('next'|'previous')`, `revealFirstDiff` | P0 | done |
-| Original side editable | `originalEditable` | P2 | todo |
+| Original side editable | `originalEditable` | P2 | done (`DiffViewConfig::old_editable`) |
 | Moved code detection | `experimental.showMoves` | P2 | todo |
 | Diff word wrap | `diffWordWrap` | P1 | todo |
 | Accessible diff viewer | `accessibleDiffViewerNext` | P3 | todo |
 | Size / time limits | `maxComputationTime`, `maxFileSize` | P0 | done |
 | Multi-file diff | `createMultiFileDiffEditor` | P2 | todo |
 | Hunk / line patch building (gitgud) | not in Monaco, gitgud's `monaco-patch-builder.ts` | P0 | done |
-| Three-way merge editor | not in standalone Monaco, gitgud's `merge-editor` | P1 | todo |
+| Three-way merge editor | not in standalone Monaco, gitgud's `merge-editor` | P1 | done |
 
 ## 12. Theming
 
@@ -252,7 +252,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Custom themes inheriting a base | `defineTheme({base, inherit, rules, colors})` | P0 | done |
 | Token color rules | `ITokenThemeRule {token, foreground, background, fontStyle}` | P0 | done |
 | Workbench colors (~200 keys) | `colors: {'editor.background': …}` | P0 | done |
-| Load TextMate / VS Code themes | not in Monaco | P2 | todo |
+| Load TextMate / VS Code themes | not in Monaco | P2 | partial: `.tmTheme` and two-face's themes |
 
 ## 13. View state, layout, events
 
@@ -260,7 +260,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 |---|---|---|---|
 | Save / restore view state (scroll, cursors, folds) | `saveViewState`, `restoreViewState` | P0 | done |
 | Reveal line / range (center, top, if outside) | `revealLine`, `revealLineInCenter`, `revealRange*`, `ScrollType` | P0 | done |
-| Coordinates ↔ positions | `getScrolledVisiblePosition`, `getTargetAtClientPoint`, `getTopForLineNumber` | P1 | todo |
+| Coordinates ↔ positions | `getScrolledVisiblePosition`, `getTargetAtClientPoint`, `getTopForLineNumber` | P1 | done (`EditorView::geometry`, `MouseTarget`) |
 | Mouse targets (gutter, line number, glyph, content, scrollbar…) | `onMouseDown` + `MouseTargetType` | P0 | done |
 | Content changed / cursor / scroll / focus events | `onDidChangeModelContent`, `onDidChangeCursorSelection`, `onDidScrollChange`, `onDidFocusEditorText` | P0 | done |
 | Auto layout | `automaticLayout` | P0 | todo (free with an immediate-mode UI) |

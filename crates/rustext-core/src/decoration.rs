@@ -19,6 +19,9 @@ pub enum DecorationKind {
     LineNumberColor(Rgba),
     /// A dot in the glyph margin of the range's first line.
     Glyph(Rgba),
+    /// A bar in the gutter, just left of the text, along the lines the range covers (VS Code's
+    /// added / modified lines; Monaco's `linesDecorationsClassName`).
+    GutterBar(Rgba),
     /// Text shown before the char at `start`, not part of the document: inlay hints, ghost
     /// text (Monaco's `before` / injected text). The cursor stays before it.
     InjectedText {
