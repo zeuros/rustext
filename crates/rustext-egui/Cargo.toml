@@ -1,8 +1,19 @@
 [package]
 name = "rustext-egui"
+description = "egui widgets of the rustext editor: CodeEditor and DiffEditor"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustext-core.workspace = true
+egui.workspace = true
+
+[dev-dependencies]
+egui_kittest.workspace = true
+egui = { workspace = true, features = ["default_fonts"] }
 
 [lints]
 workspace = true

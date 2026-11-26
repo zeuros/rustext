@@ -1,0 +1,18 @@
+[package]
+name = "rustext-demo"
+description = "Playground of the rustext editor, like Monaco's playground"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+rustext-core.workspace = true
+rustext-egui.workspace = true
+egui.workspace = true
+eframe = { workspace = true, features = ["glow", "__screenshot"] }
+
+[lints]
+workspace = true

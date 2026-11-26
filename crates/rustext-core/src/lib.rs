@@ -5,6 +5,7 @@ pub mod change;
 pub mod comment;
 pub mod config;
 pub mod cursors;
+pub mod decoration;
 pub mod edit;
 pub mod history;
 pub mod indentation;
@@ -13,6 +14,7 @@ pub mod motion;
 pub mod position;
 pub mod selection;
 pub mod state;
+pub mod style;
 pub mod text;
 pub mod words;
 
