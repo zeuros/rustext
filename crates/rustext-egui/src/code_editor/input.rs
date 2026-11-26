@@ -352,7 +352,7 @@ impl CodeEditor<'_> {
         outcome: &mut Outcome,
         unhandled_actions: &mut Vec<Action>,
     ) {
-        if modifiers.is_none() && self.completion_key(key, outcome) {
+        if modifiers.is_none() && (self.completion_key(key, outcome) || self.ghost_text_key(key, outcome)) {
             return;
         }
         let has_open_widget = self.view.find.is_open || self.view.go_to_line.is_open;

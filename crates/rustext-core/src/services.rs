@@ -97,6 +97,12 @@ pub trait LanguageServices {
         &[]
     }
 
+    /// Text to suggest after `position` as ghost text (Monaco's inline completions: what an AI
+    /// assistant proposes); Tab accepts it.
+    fn inline_completion(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Option<String>> {
+        Reply::Ready(None)
+    }
+
     /// What to show when hovering `position` (documentation, a type).
     fn hover(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Option<String>> {
         Reply::Ready(None)

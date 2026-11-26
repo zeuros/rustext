@@ -19,6 +19,12 @@ pub enum DecorationKind {
     LineNumberColor(Rgba),
     /// A dot in the glyph margin of the range's first line.
     Glyph(Rgba),
+    /// Text shown before the char at `start`, not part of the document: inlay hints, ghost
+    /// text (Monaco's `before` / injected text). The cursor stays before it.
+    InjectedText {
+        text: String,
+        color: Rgba,
+    },
 }
 
 /// Whether typing at a decoration's edges extends it (Monaco's `TrackedRangeStickiness`).
@@ -50,6 +56,11 @@ impl Decoration {
             hover_message: None,
             stickiness: Stickiness::default(),
         }
+    }
+
+    /// Text shown at char offset `offset` without being part of the document.
+    pub fn injected_text(offset: usize, text: impl Into<String>, color: Rgba) -> Self {
+        Self::new(offset, offset, DecorationKind::InjectedText { text: text.into(), color })
     }
 
     /// A decoration covering lines `first_line..=last_line`.

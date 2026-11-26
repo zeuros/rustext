@@ -472,19 +472,19 @@ impl CodeEditor<'_> {
             let (start, end) = (decoration.start.max(line_start), decoration.end.min(line_end));
             let left = text_left + layout.x_of_column(start - line_start);
             let right = text_left + layout.x_of_column(end - line_start);
-            match decoration.kind {
+            match &decoration.kind {
                 DecorationKind::WholeLineBackground(color) => {
                     let row_rect = Rect::from_min_max(
                         pos2(metrics.text_rect.left(), top),
                         pos2(metrics.text_rect.right(), bottom),
                     );
-                    painter.rect_filled(row_rect, CornerRadius::ZERO, to_color(color));
+                    painter.rect_filled(row_rect, CornerRadius::ZERO, to_color(*color));
                 }
                 DecorationKind::Background(color) => {
                     painter.rect_filled(
                         Rect::from_min_max(pos2(left, top), pos2(right, bottom)),
                         CornerRadius::ZERO,
-                        to_color(color),
+                        to_color(*color),
                     );
                 }
                 DecorationKind::Border(color) => {
@@ -492,17 +492,18 @@ impl CodeEditor<'_> {
                     painter.rect_stroke(
                         rect,
                         CornerRadius::same(2),
-                        Stroke::new(1.0, to_color(color)),
+                        Stroke::new(1.0, to_color(*color)),
                         StrokeKind::Inside,
                     );
                 }
                 DecorationKind::Squiggle(color) => {
-                    paint_squiggle(painter, left, right.max(left + metrics.char_width), bottom - 2.0, to_color(color));
+                    paint_squiggle(painter, left, right.max(left + metrics.char_width), bottom - 2.0, to_color(*color));
                 }
                 DecorationKind::Underline(color) => {
-                    painter.hline(left..=right, bottom - 1.5, Stroke::new(1.0, to_color(color)));
+                    painter.hline(left..=right, bottom - 1.5, Stroke::new(1.0, to_color(*color)));
                 }
-                DecorationKind::Glyph(_) | DecorationKind::LineNumberColor(_) => {}
+                DecorationKind::Glyph(_) | DecorationKind::LineNumberColor(_) | DecorationKind::InjectedText { .. } => {
+                }
             }
         }
     }

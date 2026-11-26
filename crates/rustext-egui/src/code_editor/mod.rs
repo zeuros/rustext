@@ -225,6 +225,9 @@ pub struct EditorView {
     sticky_lines: Vec<usize>,
     /// The language services' latest diagnostics, as decorations that follow edits.
     service_diagnostics: Vec<Decoration>,
+    /// Suggested text at the cursor (inline completion), and the request waiting for one.
+    ghost_text: Option<GhostText>,
+    ghost_request: Option<(u64, usize)>,
     bracket_depths: rustext_core::structure::BracketDepths,
     /// The text revision the view's caches follow; another one means the text changed outside
     /// the widget (`set_text`, an application command) and the caches start over.
@@ -279,6 +282,14 @@ impl EditorGeometry {
     pub fn cell_left(&self, row: usize, visual_column: usize) -> Pos2 {
         self.cell_center(row, visual_column) - vec2(self.char_width / 2.0, 0.0)
     }
+}
+
+/// An inline completion shown at `offset` for text revision `text_revision`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GhostText {
+    offset: usize,
+    text_revision: u64,
+    text: String,
 }
 
 /// Where the pointer is over the editor.
@@ -545,6 +556,10 @@ impl<'a> CodeEditor<'a> {
         self.refresh_service_diagnostics();
         let typed = std::mem::take(&mut self.typed_this_frame);
         self.refresh_completion(&typed);
+        self.refresh_ghost_text(&typed);
+        if self.view.ghost_request.is_some() {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        }
         if self.view.completion.is_waiting() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
@@ -665,6 +680,53 @@ impl<'a> CodeEditor<'a> {
     /// The application's decorations and the language services' diagnostics.
     fn all_decorations(&self) -> impl Iterator<Item = &Decoration> {
         self.decorations.iter().chain(self.view.service_diagnostics.iter())
+    }
+
+    /// Asks for an inline completion after typing; drops a suggestion the cursor left.
+    fn refresh_ghost_text(&mut self, typed: &str) {
+        let primary = self.state.selections().primary();
+        let (revision, head) = (self.state.text_revision(), primary.head);
+        let is_still_valid = |ghost: &GhostText| ghost.offset == head && ghost.text_revision == revision;
+        if self.view.ghost_text.as_ref().is_some_and(|ghost| !is_still_valid(ghost)) {
+            self.view.ghost_text = None;
+        }
+        let can_suggest = primary.is_empty() && !self.state.selections().is_multiple();
+        if !typed.is_empty() && can_suggest {
+            self.view.ghost_request = Some((revision, head));
+        }
+        if self.view.ghost_request.is_some_and(|request| request != (revision, head)) && typed.is_empty() {
+            self.view.ghost_request = None;
+        }
+        let (Some(request), Some(services)) = (self.view.ghost_request, self.services.as_deref_mut()) else { return };
+        match services.inline_completion(self.state.text(), revision, self.state.text().position(head)) {
+            rustext_core::services::Reply::Ready(suggestion) => {
+                self.view.ghost_request = None;
+                self.view.ghost_text = suggestion.filter(|suggestion| !suggestion.is_empty()).map(|text| GhostText {
+                    offset: request.1,
+                    text_revision: request.0,
+                    text,
+                });
+            }
+            rustext_core::services::Reply::Pending => {}
+        }
+    }
+
+    /// Tab accepts the ghost text, Escape dismisses it; returns whether it took the key.
+    fn ghost_text_key(&mut self, key: egui::Key, outcome: &mut Outcome) -> bool {
+        let Some(ghost) = self.view.ghost_text.clone() else { return false };
+        match key {
+            egui::Key::Tab => {
+                self.view.ghost_text = None;
+                let result = self.state.execute(rustext_core::Command::Type(ghost.text));
+                *outcome = std::mem::take(outcome).merged(result);
+                true
+            }
+            egui::Key::Escape => {
+                self.view.ghost_text = None;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Takes the diagnostics the services published, as decorations.

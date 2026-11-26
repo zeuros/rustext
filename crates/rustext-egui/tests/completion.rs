@@ -22,6 +22,11 @@ impl LanguageServices for TestServices {
         Reply::Ready(items)
     }
 
+    fn inline_completion(&mut self, text: &Text, _revision: u64, position: Position) -> Reply<Option<String>> {
+        let before: String = text.line_content(position.line).chars().take(position.column).collect();
+        Reply::Ready(before.ends_with("zz").then(|| "_top".to_string()))
+    }
+
     fn take_diagnostics(&mut self, _text: &Text) -> Option<Vec<rustext_core::services::Diagnostic>> {
         self.pending_diagnostics.take()
     }
@@ -252,4 +257,24 @@ fn service_diagnostics_show_follow_edits_and_take_f8() {
 
     let head = harness.state().state.text().position(harness.state().state.selections().primary().head);
     assert_eq!(head, Position::new(2, 4));
+}
+
+#[test]
+fn ghost_text_is_accepted_with_tab_and_dismissed_with_escape() {
+    let mut harness = harness("\n");
+    click_end(&mut harness, 0);
+
+    type_text(&mut harness, "zz");
+    harness.key_press(Key::Tab);
+    harness.run();
+    assert_eq!(content(&harness), "zz_top\n");
+
+    // "zz" now also lists the word "zz_top": the first Escape closes the list, the second the
+    // ghost text; Tab is a Tab again (column 9 to 12).
+    type_text(&mut harness, " zz");
+    harness.key_press(Key::Escape);
+    harness.key_press(Key::Escape);
+    harness.key_press(Key::Tab);
+    harness.run();
+    assert_eq!(content(&harness), "zz_top zz   \n");
 }

@@ -560,3 +560,19 @@ fn up_and_down_move_by_visual_row_when_wrapping() {
     harness.run();
     assert_eq!(head(&harness), Position::new(0, 2));
 }
+
+#[test]
+fn injected_text_shifts_what_follows_but_is_not_text() {
+    use rustext_core::decoration::Decoration;
+    use rustext_core::style::Rgba;
+    // "f(ab)" shown as "f(x: ab)": the hint takes three cells before column 2.
+    let mut harness = harness("f(ab)");
+    harness.state_mut().decorations = vec![Decoration::injected_text(2, "x: ", Rgba::hex(0x888888))];
+    harness.run();
+
+    click(&mut harness, 0, 6);
+    assert_eq!(head(&harness), Position::new(0, 3));
+
+    type_text(&mut harness, "Z");
+    assert_eq!(content(&harness), "f(aZb)");
+}
