@@ -42,6 +42,9 @@ impl CodeEditor<'_> {
         if pos.x >= metrics.scrollbar_rect.left() {
             return MouseTarget::Scrollbar;
         }
+        if self.horizontal_scrollbar_track(metrics).is_some_and(|track| track.contains(pos)) {
+            return MouseTarget::HorizontalScrollbar;
+        }
         let row = self.row_at_y(metrics, pos.y);
         match self.row_content(row) {
             RowContent::Collapsed { first_line, last_line } => return MouseTarget::Collapsed { first_line, last_line },
@@ -138,6 +141,12 @@ impl CodeEditor<'_> {
                 let grab_offset_y = if thumb.contains(pos) { pos.y - thumb.top() } else { thumb.height() / 2.0 };
                 self.view.drag = Some(Drag::VerticalScrollbar { grab_offset_y });
             }
+            MouseTarget::HorizontalScrollbar => {
+                if let Some(thumb) = self.horizontal_scrollbar_thumb(metrics) {
+                    let grab_offset_x = if thumb.contains(pos) { pos.x - thumb.left() } else { thumb.width() / 2.0 };
+                    self.view.drag = Some(Drag::HorizontalScrollbar { grab_offset_x });
+                }
+            }
             MouseTarget::Collapsed { .. } | MouseTarget::Foreign { .. } | MouseTarget::Padding => {}
             MouseTarget::FoldMarker { line } => self.toggle_fold(line),
             MouseTarget::LineNumber { line } | MouseTarget::GlyphMargin { line } => {
@@ -195,6 +204,16 @@ impl CodeEditor<'_> {
                 let fraction =
                     ((pos.y - grab_offset_y - track.top()) / (track.height() - thumb_height).max(1.0)).clamp(0.0, 1.0);
                 self.view.scroll_offset.y = fraction * self.max_scroll_y(metrics);
+            }
+            Drag::HorizontalScrollbar { grab_offset_x } => {
+                let (Some(track), Some(thumb)) =
+                    (self.horizontal_scrollbar_track(metrics), self.horizontal_scrollbar_thumb(metrics))
+                else {
+                    return;
+                };
+                let fraction =
+                    ((pos.x - grab_offset_x - track.left()) / (track.width() - thumb.width()).max(1.0)).clamp(0.0, 1.0);
+                self.view.scroll_offset.x = fraction * self.max_scroll_x(metrics);
             }
             Drag::Column { anchor } => {
                 let line = self.nearest_line(self.row_at_y(metrics, pos.y));
@@ -411,7 +430,8 @@ impl CodeEditor<'_> {
         if let (Some(styler), Some(first_changed_offset)) = (self.styler.as_deref_mut(), first_changed_offset) {
             styler.invalidate_from(self.state.text().line_of_offset(first_changed_offset));
         }
-        let is_dragging_scrollbar = matches!(self.view.drag, Some(Drag::VerticalScrollbar { .. }));
+        let is_dragging_scrollbar =
+            matches!(self.view.drag, Some(Drag::VerticalScrollbar { .. } | Drag::HorizontalScrollbar { .. }));
         if (outcome.text_changed() || outcome.selections_changed) && !is_dragging_scrollbar {
             self.view.reveal_primary_cursor = true;
             self.view.last_interaction_time = ui.input(|input| input.time);

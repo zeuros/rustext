@@ -624,6 +624,15 @@ impl CodeEditor<'_> {
             }
         }
 
+        let pointer = ui.input(|input| input.pointer.hover_pos());
+        if let Some(thumb) = self.horizontal_scrollbar_thumb(metrics) {
+            let is_active = matches!(self.view.drag, Some(Drag::HorizontalScrollbar { .. }))
+                || self
+                    .horizontal_scrollbar_track(metrics)
+                    .is_some_and(|track| pointer.is_some_and(|pos| track.contains(pos)));
+            let color = if is_active { theme.scrollbar_thumb_hovered } else { theme.scrollbar_thumb };
+            painter.rect_filled(thumb.shrink2(vec2(0.0, 1.0)), CornerRadius::ZERO, color);
+        }
         if self.max_scroll_y(metrics) <= 0.0 {
             return;
         }

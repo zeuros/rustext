@@ -176,6 +176,9 @@ enum Drag {
     VerticalScrollbar {
         grab_offset_y: f32,
     },
+    HorizontalScrollbar {
+        grab_offset_x: f32,
+    },
 }
 
 /// Per-view state the application keeps between frames: scroll, zoom, mouse drag, chord in
@@ -255,6 +258,8 @@ impl EditorGeometry {
 /// Where the pointer is over the editor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MouseTarget {
+    /// The horizontal scrollbar, over the bottom of the text when lines overflow.
+    HorizontalScrollbar,
     /// Over text: the nearest position.
     Text {
         position: Position,
@@ -738,12 +743,36 @@ impl<'a> CodeEditor<'a> {
         }
     }
 
+    fn max_scroll_x(&self, metrics: &Metrics) -> f32 {
+        if self.view.wraps.is_wrapping() {
+            return 0.0;
+        }
+        (self.view.widest_line_px + metrics.char_width * 4.0 - metrics.text_rect.width()).max(0.0)
+    }
+
+    /// The horizontal scrollbar's track: a strip over the bottom of the text, when lines overflow.
+    fn horizontal_scrollbar_track(&self, metrics: &Metrics) -> Option<Rect> {
+        const HEIGHT: f32 = 10.0;
+        (self.max_scroll_x(metrics) > 0.0).then(|| {
+            Rect::from_min_max(
+                pos2(metrics.text_rect.left(), metrics.text_rect.bottom() - HEIGHT),
+                metrics.text_rect.right_bottom(),
+            )
+        })
+    }
+
+    fn horizontal_scrollbar_thumb(&self, metrics: &Metrics) -> Option<Rect> {
+        let track = self.horizontal_scrollbar_track(metrics)?;
+        let content_width = self.max_scroll_x(metrics) + metrics.text_rect.width();
+        let thumb_width = (track.width() * metrics.text_rect.width() / content_width)
+            .clamp(20.0_f32.min(track.width()), track.width());
+        let fraction = self.view.scroll_offset.x / self.max_scroll_x(metrics);
+        let left = track.left() + fraction * (track.width() - thumb_width);
+        Some(Rect::from_min_size(pos2(left, track.top()), vec2(thumb_width, track.height())))
+    }
+
     fn clamp_scroll(&mut self, metrics: &Metrics) {
-        let max_scroll_x = if self.view.wraps.is_wrapping() {
-            0.0
-        } else {
-            (self.view.widest_line_px + metrics.char_width * 4.0 - metrics.text_rect.width()).max(0.0)
-        };
+        let max_scroll_x = self.max_scroll_x(metrics);
         self.view.scroll_offset.x = self.view.scroll_offset.x.clamp(0.0, max_scroll_x);
         self.view.scroll_offset.y = self.view.scroll_offset.y.clamp(0.0, self.max_scroll_y(metrics));
     }

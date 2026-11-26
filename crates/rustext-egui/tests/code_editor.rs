@@ -474,3 +474,33 @@ fn editing_rewraps_the_edited_line() {
     click(&mut harness, 3, 1);
     assert_eq!(head(&harness), Position::new(1, 1));
 }
+
+#[test]
+fn dragging_the_horizontal_scrollbar_scrolls_long_lines() {
+    let mut harness = harness(&format!("{}\nshort", "x".repeat(400)));
+    let geometry = geometry(&harness);
+    let track_y = geometry.text_rect.bottom() - 5.0;
+    let from = Pos2::new(geometry.text_rect.left() + 5.0, track_y);
+    let to = Pos2::new(geometry.text_rect.right() - 5.0, track_y);
+
+    harness.event(Event::PointerMoved(from));
+    harness.event(Event::PointerButton {
+        pos: from,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    harness.step();
+    harness.event(Event::PointerMoved(to));
+    harness.step();
+    harness.event(Event::PointerButton {
+        pos: to,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run();
+
+    assert!(harness.state().view.scroll_offset.x > 1000.0, "scrolled to {}", harness.state().view.scroll_offset.x);
+    assert_eq!(head(&harness), Position::new(0, 0), "the drag must not move the cursor");
+}

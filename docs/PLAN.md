@@ -32,7 +32,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 ## M3. `CodeEditor` widget v1 (`rustext-egui`) + demo
 - [x] Paint visible lines, gutter with line numbers (absolute/relative/off), current line highlight
 - [x] Cursors (line, block, underline; blinking), selections
-- [x] Scrolling (wheel, Alt fast scroll, scrollbars, scroll beyond last line), reveal cursor with margin — no horizontal scrollbar drawn yet (Shift+wheel scrolls)
+- [x] Scrolling (wheel, Alt fast scroll, scrollbars, scroll beyond last line), reveal cursor with margin
 - [x] Mouse: click, drag-select, double-click word, triple-click line, Alt+click adds a cursor, Shift+click extends, Alt+Shift drag column select, gutter click selects line
 - [x] Keyboard via a `Keymap` value (VS Code defaults), clipboard, IME composition
 - [x] `EditorResponse` (D10): changed, selection changed, clicked target
@@ -122,7 +122,6 @@ green. Every milestone is a commit on `main` (`git log --oneline`).
 5. M11 language services trait + completion widget; M12 minimap, sticky scroll.
 
 **Known gaps / debts**:
-- No horizontal scrollbar is drawn (Shift+wheel and cursor reveal scroll horizontally).
 - Tokenizer re-tokenizes from the edited line to the painted lines; Monaco stops when the
   end state matches the cached one (worth it for huge files).
 - Folding is indentation-only; `foldingStrategy: 'auto'` needs language structure.
