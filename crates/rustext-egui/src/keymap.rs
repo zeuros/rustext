@@ -53,6 +53,8 @@ pub enum Action {
     FormatSelection,
     /// Lists the quick fixes and refactorings at the selection (Ctrl+.).
     CodeActions,
+    /// Diff editors: reads the change at the cursor line by line, for screen readers (Alt+F2).
+    AccessibleDiffViewer,
     /// Renames the symbol at the cursor through the language services (F2).
     Rename,
     /// Lists the references of the symbol at the cursor (Shift+F12).
@@ -260,6 +262,7 @@ impl Keymap {
             (chord(command_shift, Key::O), Action::GoToSymbol),
             (chord(shift_alt, Key::F), Action::FormatDocument),
             (chord(command, Key::Period), Action::CodeActions),
+            (chord(alt, Key::F2), Action::AccessibleDiffViewer),
             (chord(shift, Key::F8), Action::PreviousProblem),
             (chord(shift, Key::F7), Action::PreviousChange),
         ];

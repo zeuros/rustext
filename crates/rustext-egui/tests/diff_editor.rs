@@ -60,6 +60,28 @@ fn wrapped_lines_stay_aligned_with_the_other_side() {
     assert_eq!(old.text().position(old.selections().primary().head).line, 0);
 }
 
+#[test]
+fn the_accessible_viewer_reads_the_change_at_the_cursor() {
+    use egui_kittest::kittest::Queryable;
+    let config =
+        DiffViewConfig { mode: DiffViewMode::SideBySide, inline_below_width: 0.0, ..DiffViewConfig::default() };
+    let mut harness = harness("a\nb\nc\n", "a\nB\nc\n", config);
+    let first_line = harness.state().document.new_view.geometry().unwrap().cell_center(0, 0);
+    click(&mut harness, first_line);
+
+    harness.key_press(Key::F7);
+    harness.key_press_modifiers(Modifiers::ALT, Key::F2);
+    harness.run();
+    assert!(harness.state().document.shows_accessible_viewer);
+    harness.get_by_label("Change 1 of 1");
+    harness.get_by_label("removed line 2: b");
+    harness.get_by_label("added line 2: B");
+
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(!harness.state().document.shows_accessible_viewer);
+}
+
 fn click(harness: &mut Harness<'_, Fixture>, pos: Pos2) {
     harness.event(Event::PointerMoved(pos));
     harness.event(Event::PointerButton {

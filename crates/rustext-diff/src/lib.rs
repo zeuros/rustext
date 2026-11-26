@@ -8,7 +8,10 @@ pub mod line_diff;
 pub mod merge;
 pub mod patch;
 
-pub use display::{Collapsing, DiffColors, WrapPoints, inline_layout, inner_change_decorations, side_by_side_layouts};
+pub use display::{
+    Collapsing, DiffColors, ReadLine, ReadLineKind, WrapPoints, hunk_read_lines, inline_layout,
+    inner_change_decorations, side_by_side_layouts,
+};
 pub use layout::{
     CollapseOptions, InlineRow, RowKind, Segment, SideBySideRow, collapse_unchanged, inline_rows, side_by_side_rows,
 };

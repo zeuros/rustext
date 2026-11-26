@@ -206,6 +206,65 @@ fn push_trailing_empty_line(rows: &mut Vec<DisplayRow>, text: &Text, git_line_co
     }
 }
 
+/// What a line of a change is, for a screen reader.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ReadLineKind {
+    Unchanged,
+    Removed,
+    Added,
+}
+
+/// A line of a change as the accessible diff viewer reads it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ReadLine {
+    pub kind: ReadLineKind,
+    pub old_line: Option<usize>,
+    pub new_line: Option<usize>,
+    pub text: String,
+}
+
+impl ReadLine {
+    /// The words a screen reader says: `removed line 9: …`, `added line 10: …`, `line 8: …`
+    /// (1-based line numbers, of the side the line is on).
+    pub fn spoken(&self) -> String {
+        match (self.kind, self.old_line, self.new_line) {
+            (ReadLineKind::Removed, Some(line), _) => format!("removed line {}: {}", line + 1, self.text),
+            (ReadLineKind::Added, _, Some(line)) => format!("added line {}: {}", line + 1, self.text),
+            (_, _, line) => format!("line {}: {}", line.or(self.old_line).unwrap_or(0) + 1, self.text),
+        }
+    }
+}
+
+/// The lines of hunk `index`: up to `context` unchanged lines before, the removed lines, the
+/// added lines, up to `context` unchanged lines after.
+pub fn hunk_read_lines(diff: &LineDiff, old: &Text, new: &Text, index: usize, context: usize) -> Vec<ReadLine> {
+    let Some(hunk) = diff.hunks.get(index) else { return Vec::new() };
+    let unchanged = |old_line: usize, new_line: usize| ReadLine {
+        kind: ReadLineKind::Unchanged,
+        old_line: Some(old_line),
+        new_line: Some(new_line),
+        text: new.line_content(new_line),
+    };
+    let before = context.min(hunk.old.start).min(hunk.new.start);
+    let after = context.min(diff.old_line_count - hunk.old.end).min(diff.new_line_count - hunk.new.end);
+    let mut lines: Vec<ReadLine> =
+        (1..=before).rev().map(|distance| unchanged(hunk.old.start - distance, hunk.new.start - distance)).collect();
+    lines.extend((hunk.old.start..hunk.old.end).map(|line| ReadLine {
+        kind: ReadLineKind::Removed,
+        old_line: Some(line),
+        new_line: None,
+        text: old.line_content(line),
+    }));
+    lines.extend((hunk.new.start..hunk.new.end).map(|line| ReadLine {
+        kind: ReadLineKind::Added,
+        old_line: None,
+        new_line: Some(line),
+        text: new.line_content(line),
+    }));
+    lines.extend((0..after).map(|distance| unchanged(hunk.old.end + distance, hunk.new.end + distance)));
+    lines
+}
+
 /// Backgrounds of the changed words: on the old text, and on the new text.
 pub fn inner_change_decorations(
     diff: &LineDiff,
@@ -244,6 +303,16 @@ mod tests {
 
     fn contents(layout: &DisplayLayout) -> Vec<RowContent> {
         layout.rows().iter().map(|row| row.content).collect()
+    }
+
+    #[test]
+    fn a_change_reads_as_removed_and_added_lines_with_context() {
+        let (old, new) = (Text::new("a\nb\nc\nd\n"), Text::new("a\nB\nc\nd\n"));
+        let diff = diff_lines(&old, &new, &DiffOptions::default());
+
+        let spoken: Vec<String> = hunk_read_lines(&diff, &old, &new, 0, 1).iter().map(ReadLine::spoken).collect();
+
+        assert_eq!(spoken, vec!["line 1: a", "removed line 2: b", "added line 2: B", "line 3: c"]);
     }
 
     #[test]
