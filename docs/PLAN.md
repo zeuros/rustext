@@ -113,7 +113,9 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 Last updated: 2026-11-26, end of the first session (continued).
 
 **State**: M0–M10 done, M11 and M12 mostly done, M13 done (integration guide, performance).
-`scripts/check.sh` green; ~230 tests. Every feature is a commit on `main`.
+`scripts/check.sh` green; ~250 tests, including seeded random tests (`random_commands.rs`
+in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case counts or
+change their seeds locally to hunt for rarer bugs). Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
 1. LSP: references (a peek list) and document highlights. (Done: diagnostics, rename, signature
@@ -123,6 +125,8 @@ Last updated: 2026-11-26, end of the first session (continued).
 4. (done since: Up/Down by visual row when wrapping.)
 5. Brackets inside strings and comments should not color nor match: give `LineStyler` a way
    to say which spans are strings/comments.
+6. Accessibility beyond the name and cursor line (done): expose the visible text and the
+   selection to AccessKit, an accessible diff viewer (`accessibleDiffViewerNext`).
 
 **Known gaps / debts**:
 - Folding is indentation-only; `foldingStrategy: 'auto'` needs language structure.

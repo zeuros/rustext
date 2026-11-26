@@ -264,4 +264,4 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Mouse targets (gutter, line number, glyph, content, scrollbar…) | `onMouseDown` + `MouseTargetType` | P0 | done |
 | Content changed / cursor / scroll / focus events | `onDidChangeModelContent`, `onDidChangeCursorSelection`, `onDidScrollChange`, `onDidFocusEditorText` | P0 | done |
 | Auto layout | `automaticLayout` | P0 | todo (free with an immediate-mode UI) |
-| Accessibility (screen readers) | `accessibilitySupport`, `ariaLabel` | P2 | todo |
+| Accessibility (screen readers) | `accessibilitySupport`, `ariaLabel` | P2 | partial (named text input, value = cursor line; no full text or selection exposed) |
