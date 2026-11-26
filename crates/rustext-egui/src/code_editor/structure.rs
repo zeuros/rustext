@@ -7,14 +7,14 @@ use rustext_core::EditedLines;
 use rustext_core::decoration::{Decoration, DecorationKind};
 use rustext_core::display::{DisplayLayout, DisplayRow, RowContent};
 use rustext_core::find::{self, SearchQuery};
+use rustext_core::indentation::Indentation;
 use rustext_core::motion::HiddenLines;
-use rustext_core::structure::{
-    FoldRange, active_indent_guide, fold_range_at, indent_level, indentation_fold_ranges, is_fold_header,
-    matching_bracket_pair,
-};
+use rustext_core::structure::{FoldRange, active_indent_guide, fold_range_at, indent_level, matching_bracket_pair};
+use rustext_core::style::LineStyler;
+use rustext_core::{Selections, Text};
 
-use super::CodeEditor;
 use super::layout::to_rgba;
+use super::{CodeEditor, FoldingStrategy};
 use crate::keymap::Action;
 
 /// How far from the cursor the active indent guide's block is searched.
@@ -104,20 +104,42 @@ impl FoldState {
     }
 }
 
+/// The fold range `line` starts: from the styler's syntax tree when it has one and the
+/// strategy allows, else from indentation.
+fn fold_range_of<'styler>(
+    styler: Option<&mut (dyn LineStyler + 'styler)>,
+    strategy: FoldingStrategy,
+    text: &Text,
+    indentation: &Indentation,
+    line: usize,
+) -> Option<FoldRange> {
+    match styler.filter(|styler| strategy == FoldingStrategy::Auto && styler.folds_by_syntax()) {
+        Some(styler) => styler.syntax_fold_range(text, line),
+        None => fold_range_at(text, indentation, line),
+    }
+}
+
 impl CodeEditor<'_> {
+    fn fold_range_at_line(&mut self, line: usize) -> Option<FoldRange> {
+        let (text, indentation) = (self.state.text(), &self.state.config.indentation);
+        fold_range_of(self.styler.as_deref_mut(), self.config.folding_strategy, text, indentation, line)
+    }
+
     /// The folded ranges: untouched blocks as they are, touched ones computed again (and
     /// dropped when their header no longer starts a fold).
     fn folded_ranges(&mut self) -> Vec<FoldRange> {
         let text = self.state.text().clone();
         let indentation = self.state.config.indentation;
+        let strategy = self.config.folding_strategy;
+        let styler = &mut self.styler;
+        let mut range_at = |line: usize| fold_range_of(styler.as_deref_mut(), strategy, &text, &indentation, line);
         let mut ranges = Vec::with_capacity(self.view.folds.blocks.len());
         self.view.folds.blocks.retain_mut(|block| {
             if !block.needs_recompute {
                 ranges.push(FoldRange { header_line: block.header_line, last_hidden_line: block.last_hidden_line });
                 return true;
             }
-            let range = fold_range_at(&text, &indentation, block.header_line)
-                .or_else(|| block.other_header_line.and_then(|line| fold_range_at(&text, &indentation, line)));
+            let range = range_at(block.header_line).or_else(|| block.other_header_line.and_then(&mut range_at));
             match range {
                 Some(range) => {
                     *block = FoldedBlock {
@@ -136,8 +158,8 @@ impl CodeEditor<'_> {
     }
 
     /// Whether `line` starts a fold range (a local check, fine for every visible line).
-    pub(super) fn is_fold_header(&self, line: usize) -> bool {
-        is_fold_header(self.state.text(), &self.state.config.indentation, line)
+    pub(super) fn is_fold_header(&mut self, line: usize) -> bool {
+        self.fold_range_at_line(line).is_some()
     }
 
     pub(super) fn is_folded(&self, header_line: usize) -> bool {
@@ -159,18 +181,22 @@ impl CodeEditor<'_> {
     /// Runs the folding actions; returns the actions it doesn't handle.
     pub(super) fn run_fold_action(&mut self, action: Action) -> Option<Action> {
         let text = self.state.text().clone();
-        let indentation = self.state.config.indentation;
         let cursor_line = text.line_of_offset(self.state.selections().primary().head);
         let holds_cursor = |range: &FoldRange| range.header_line == cursor_line || range.hides(cursor_line);
         match action {
             Action::Fold => {
                 // The innermost unfolded range holding the cursor: headers looked up from it.
                 let header = (0..=cursor_line).rev().find(|&line| {
-                    !self.is_folded(line)
-                        && fold_range_at(&text, &indentation, line).is_some_and(|range| holds_cursor(&range))
+                    !self.is_folded(line) && self.fold_range_at_line(line).is_some_and(|range| holds_cursor(&range))
                 });
-                if let Some(header) = header {
-                    self.toggle_fold(header);
+                // A cursor the fold would hide moves to the end of its header, as in VS Code
+                // (else the hidden cursor would unfold it again).
+                if let Some(range) = header.and_then(|header| self.fold_range_at_line(header)) {
+                    self.toggle_fold(range.header_line);
+                    if range.hides(cursor_line) {
+                        let header_end = text.line_content_end(range.header_line);
+                        self.execute_tracked(rustext_core::Command::SetSelections(Selections::cursor(header_end)));
+                    }
                 }
             }
             Action::Unfold => {
@@ -181,7 +207,8 @@ impl CodeEditor<'_> {
                 }
             }
             Action::FoldAll => {
-                let ranges = indentation_fold_ranges(&text, &indentation);
+                let ranges: Vec<FoldRange> =
+                    (0..text.line_count()).filter_map(|line| self.fold_range_at_line(line)).collect();
                 self.view.folds.blocks = ranges
                     .iter()
                     .map(|range| FoldedBlock {

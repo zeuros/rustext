@@ -119,8 +119,8 @@ in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case
 change their seeds locally to hunt for rarer bugs). Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. Tree-sitter for folding (`foldingStrategy: 'auto'`) and bracket matching, replacing the
-   lexer (D21) where a grammar is bundled.
+1. Tree-sitter for bracket matching and colorization, replacing the lexer (D21) where a
+   grammar is bundled (folding by syntax is done).
 2. Services across files: definitions and references in other documents need the application
    to open them (an `EditorResponse` request; gitgud decides).
 3. Snippet tab stops highlighted while the snippet session lasts.
@@ -128,7 +128,8 @@ change their seeds locally to hunt for rarer bugs). Every feature is a commit on
    AccessKit; an accessible diff viewer (`accessibleDiffViewerNext`).
 5. Bracket pair guides (`guides.bracketPairs`), from `BracketLineStarts`.
 
-Done since: code lenses (D25, `--code-lens` in the demo); Helix's crates (D22–D24): tree-sitter highlighting for 18 languages, parsed on a
+Done since: folding by syntax tree (`FoldingStrategy`), Fold from inside a block moves the
+cursor to its header; code lenses (D25, `--code-lens` in the demo); Helix's crates (D22–D24): tree-sitter highlighting for 18 languages, parsed on a
 thread; smart select (Shift+Alt+→/←); `lsp-types` messages, checked against a real
 rust-analyzer (`crates/rustext-lsp/tests/rust_analyzer.rs`, ignored); `nucleo` fuzzy matching;
 `regex-cursor` find over the rope.
@@ -145,9 +146,8 @@ text; random tests.
   egui's).
 - The bracket lexer (D21) doesn't know raw strings, nested comments or heredocs.
 - Find References isn't visible in the demo without `--lsp` (word completions answer none).
-- Tree-sitter: folding, bracket matching and indentation could use the tree (D21's lexer and
-  indentation folding are still used); injections aren't run; highlight queries are the
-  grammar crates' own.
+- Tree-sitter: bracket matching and indentation could use the tree (D21's lexer is still
+  used); injections aren't run; highlight queries are the grammar crates' own.
 
 **How to verify visually**: `scripts/screenshot.sh <png> [file] [--showcase | --find x |
 --page diff | --page merge | --inline | --diff old new | --blame | --wrap N | --complete |

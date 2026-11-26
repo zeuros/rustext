@@ -55,6 +55,15 @@ pub enum CursorStyle {
     Underline,
 }
 
+/// What folds (Monaco's `foldingStrategy`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum FoldingStrategy {
+    /// The syntax tree's blocks when the styler parses the text (D22), else indentation.
+    #[default]
+    Auto,
+    Indentation,
+}
+
 /// When lines wrap (Monaco's `wordWrap`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum WordWrap {
@@ -115,8 +124,9 @@ pub struct ViewConfig {
     pub mouse_wheel_zoom: bool,
     /// Draws the cursor positions and marks on the vertical scrollbar.
     pub overview_ruler: bool,
-    /// Indentation folding, with fold markers in the gutter.
+    /// Folding, with fold markers in the gutter.
     pub folding: bool,
+    pub folding_strategy: FoldingStrategy,
     pub indent_guides: bool,
     pub match_brackets: bool,
     /// Highlights the other occurrences of the word at the cursor.
@@ -161,6 +171,7 @@ impl Default for ViewConfig {
             mouse_wheel_zoom: true,
             overview_ruler: true,
             folding: true,
+            folding_strategy: FoldingStrategy::Auto,
             indent_guides: true,
             match_brackets: true,
             occurrences_highlight: true,

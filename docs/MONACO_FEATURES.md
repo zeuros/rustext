@@ -165,7 +165,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Feature | Monaco API | Pri | Status |
 |---|---|---|---|
 | Indentation-based folding | `foldingStrategy: 'indentation'` | P1 | done |
-| Language / provider folding | `registerFoldingRangeProvider`, `foldingStrategy: 'auto'` | P2 | todo |
+| Language / provider folding | `registerFoldingRangeProvider`, `foldingStrategy: 'auto'` | P2 | done for tree-sitter languages (`FoldingStrategy::Auto`, D22); no provider API |
 | Marker regions (`#region` / `// region`) | language `folding.markers`, `foldAllMarkerRegions` | P2 | todo |
 | Fold / unfold / toggle, recursive, all, level N | `editor.fold`, `unfold`, `toggleFold`, `foldAll`, `unfoldAll`, `foldLevel1..7`, `foldRecursively` | P1 | done |
 | Fold controls in the gutter | `showFoldingControls` (`always`, `mouseover`, `never`) | P1 | done |

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
+use rustext_core::structure::FoldRange;
 use rustext_core::style::{LineStyler, StyledSpan, TextStyle};
 use rustext_core::{Change, ChangeSet, EditedLines, Text};
 use syntect::highlighting::Highlighter;
@@ -252,6 +253,39 @@ impl BackgroundParser {
         });
         Self { jobs, parsed }
     }
+}
+
+/// Words that end a block on a line of their own, kept visible by its fold.
+const CLOSING_KEYWORDS: &[&str] = &["end", "fi", "done", "esac", "endif", "endfor", "endwhile"];
+
+fn is_closing_bracket(node: Node) -> bool {
+    matches!(node.kind(), "}" | "]" | ")")
+}
+
+/// Whether a multi-line node folds from the line it starts on: a bracketed node (`{…}`,
+/// `[…]`, `(…)`) does; a node ending with a bracket doesn't (`if a {…} else {…}` folds
+/// through its blocks, not as a whole); another node (a Python `def`, a Ruby `def…end`, a
+/// comment, an HTML element) does unless it is the tail of a construct started on an
+/// earlier line (a Python `block`, a YAML value).
+fn folds_from_its_first_line(node: Node) -> bool {
+    let last_index = node.child_count().saturating_sub(1);
+    let is_bracketed = node.child_count() >= 2
+        && node.child(0).is_some_and(|child| matches!(child.kind(), "{" | "[" | "("))
+        && node.child(last_index).is_some_and(is_closing_bracket);
+    if is_bracketed {
+        return true;
+    }
+    let mut last_leaf = node;
+    while let Some(child) = last_leaf.child(last_leaf.child_count().saturating_sub(1)) {
+        last_leaf = child;
+    }
+    let is_tail = !node.kind().contains("comment")
+        && node.parent().is_some_and(|parent| {
+            let is_last_named_child =
+                parent.named_child(parent.named_child_count().saturating_sub(1) as u32) == Some(node);
+            parent.start_position().row < node.start_position().row && is_last_named_child
+        });
+    !is_closing_bracket(last_leaf) && !is_tail
 }
 
 /// Highlights one text with a tree-sitter grammar and one theme. Parsing runs on a thread of
@@ -510,6 +544,45 @@ impl LineStyler for TreeHighlighter {
     fn is_catching_up(&self) -> bool {
         !self.is_parsed()
     }
+
+    fn folds_by_syntax(&self) -> bool {
+        true
+    }
+
+    /// Looks at the nodes starting on `line`, token by token (so `} else {` starts the `else`);
+    /// of those that fold (`folds_from_its_first_line`), the one ending last gives the range,
+    /// its last line kept visible when it only closes (`}`, `end`, `</div>`).
+    fn syntax_fold_range(&mut self, text: &Text, line: usize) -> Option<FoldRange> {
+        let tree = self.tree.as_ref()?;
+        let content = text.line_content(line);
+        let mut byte_column = content.len() - content.trim_start().len();
+        let mut fold_end = Point::new(line, 0);
+        while byte_column < content.len() {
+            let point = Point::new(line, byte_column);
+            let token = tree.root_node().descendant_for_point_range(point, point)?;
+            let mut node = token;
+            while let Some(parent) = node.parent().filter(|_| node.start_position().row == line) {
+                if node.end_position().row > line && folds_from_its_first_line(node) {
+                    fold_end = fold_end.max(node.end_position());
+                }
+                node = parent;
+            }
+            let token_end = token.end_position();
+            byte_column = if token_end.row == line && token_end.column > byte_column {
+                token_end.column
+            } else {
+                content[byte_column..].char_indices().nth(1).map_or(content.len(), |(next, _)| byte_column + next)
+            };
+        }
+        let last_line_content = text.line_content(fold_end.row.min(text.last_line()));
+        let before_end = last_line_content.get(..fold_end.column).unwrap_or(&last_line_content);
+        let closing = before_end.trim();
+        let only_closes = closing.chars().all(|character| ")]};,".contains(character))
+            || CLOSING_KEYWORDS.contains(&closing)
+            || (closing.starts_with("</") && closing.ends_with('>') && !closing[2..].contains('<'));
+        let last_hidden_line = if only_closes { fold_end.row.saturating_sub(1) } else { fold_end.row };
+        (last_hidden_line > line).then_some(FoldRange { header_line: line, last_hidden_line })
+    }
 }
 
 #[cfg(test)]
@@ -603,6 +676,53 @@ mod tests {
         highlighter.wait_until_parsed(&after);
 
         assert_eq!(colored_runs(&mut highlighter, &after, 5)[0].1, 0x6a);
+    }
+
+    fn fold_ranges(language_name: &str, content: &str) -> Vec<(usize, usize)> {
+        let registry = LanguageRegistry::new();
+        let mut highlighter =
+            TreeHighlighter::new(registry.grammar(language_name).unwrap(), &SyntaxTheme::dark_modern());
+        let text = Text::new(content);
+        highlighter.wait_until_parsed(&text);
+        (0..text.line_count())
+            .filter_map(|line| highlighter.syntax_fold_range(&text, line))
+            .map(|range| (range.header_line, range.last_hidden_line))
+            .collect()
+    }
+
+    #[test]
+    fn syntax_folds_keep_the_closing_bracket_line_visible() {
+        let rust = "fn f() {\n    if a {\n        b();\n    } else {\n        c();\n    }\n}\n";
+
+        assert_eq!(fold_ranges("Rust", rust), vec![(0, 5), (1, 2), (3, 4)]);
+    }
+
+    #[test]
+    fn syntax_folds_without_closing_brackets_hide_to_the_last_line() {
+        let python = "def f():\n    a = 1\n    return a\n\nprint(f())\n";
+
+        assert_eq!(fold_ranges("Python", python), vec![(0, 2)]);
+    }
+
+    #[test]
+    fn syntax_folds_keep_a_closing_keyword_line_visible() {
+        let ruby = "def f\n  a = 1\n  a\nend\n";
+
+        assert_eq!(fold_ranges("Ruby", ruby), vec![(0, 2)]);
+    }
+
+    #[test]
+    fn block_comments_fold() {
+        let c = "/*\n * one\n * two\n */\nint a;\n";
+
+        assert_eq!(fold_ranges("C", c), vec![(0, 3)]);
+    }
+
+    #[test]
+    fn syntax_folds_follow_structure_not_indentation() {
+        let json = "{\n\"a\": [\n1,\n2\n]\n}\n";
+
+        assert_eq!(fold_ranges("JSON", json), vec![(0, 4), (1, 3)]);
     }
 
     #[test]

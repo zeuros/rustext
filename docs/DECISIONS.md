@@ -223,7 +223,8 @@ on explicit actions (fold all, replace all, a new diff) or behind a budget (the 
   folds 0.7 ms, typing with the find widget open on 20 000 matches 4.7 ms, fold all 37 ms,
   Ctrl+End 12 ms (the bracket line states of 10 000 lines, the per-frame budget; the next
   frames average 3.6 ms while the states of the lines above catch up). Highlighted
-  with tree-sitter (D22): typing 1.2 ms, at the end 5 ms, Ctrl+End 15 ms; the first parse
+  with tree-sitter (D22): typing 1.6 ms (fold markers from the tree included), at the end
+  5.4 ms, Ctrl+End 15 ms; the first parse
   (~450 ms) runs on its thread while frames take 0.4 ms. Run it after touching anything
   per-frame; a regression there is a bug.
 
@@ -281,6 +282,13 @@ others, so diffs of any file stay highlighted.
 - `LineStyler::text_edited` hands the styler each change set with the text before it, so it
   can edit its tree; `LineStyler::enclosing_syntax_node` gives smart select the node holding
   a selection. Both have defaults, so other stylers ignore them.
+- Folding (`FoldingStrategy::Auto`, the default) asks the tree for the fold a line starts:
+  a bracketed node (`{…}`, `[…]`, `(…)`) folds from its opening line; a node ending with a
+  bracket doesn't (`if {…} else {…}` folds through its two blocks, as rust-analyzer's folding
+  ranges do); another multi-line node (Python `def`, Ruby `def…end`, a comment, an HTML
+  element) folds unless it is the last named child of a construct started earlier (Python's
+  `block`). The last line stays visible when it only closes (`}`, `end`, `</div>`).
+  Without a grammar, folding is by indentation, as before.
 - Queries come from the grammar crates (MIT). Helix's and nvim-treesitter's are richer but
   MPL/Apache files with their own conventions (`#set!`, `inherits`); vendoring them is a later
   choice. Injections (JS in HTML, code in Markdown) aren't run yet.

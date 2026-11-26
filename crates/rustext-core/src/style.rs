@@ -3,6 +3,7 @@
 
 use crate::change::ChangeSet;
 use crate::state::EditedLines;
+use crate::structure::FoldRange;
 use crate::text::Text;
 
 /// An sRGB color with straight (not premultiplied) alpha.
@@ -73,6 +74,19 @@ pub trait LineStyler {
     /// styler that parses the text (smart select). `None` when it doesn't know.
     fn enclosing_syntax_node(&mut self, text: &Text, start: usize, end: usize) -> Option<(usize, usize)> {
         let _ = (text, start, end);
+        None
+    }
+
+    /// Whether this styler folds by syntax (`syntax_fold_range` answers for every line), so
+    /// the editor doesn't fold by indentation.
+    fn folds_by_syntax(&self) -> bool {
+        false
+    }
+
+    /// The fold range `line` starts, from the syntax tree: the longest node starting on it
+    /// and ending on a later line. `None` when `line` starts none (or the text isn't parsed).
+    fn syntax_fold_range(&mut self, text: &Text, line: usize) -> Option<FoldRange> {
+        let _ = (text, line);
         None
     }
 
