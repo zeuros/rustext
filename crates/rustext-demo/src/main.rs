@@ -9,6 +9,7 @@
 
 mod diff_page;
 mod editor_page;
+mod merge_page;
 mod theme_choice;
 
 use eframe::egui;
@@ -17,6 +18,7 @@ use rustext_syntax::LanguageRegistry;
 
 use crate::diff_page::DiffPage;
 use crate::editor_page::EditorPage;
+use crate::merge_page::MergePage;
 use crate::theme_choice::ThemeChoice;
 
 const SAMPLE: &str = include_str!("../samples/sample.rs");
@@ -25,6 +27,7 @@ const SAMPLE: &str = include_str!("../samples/sample.rs");
 enum Page {
     Editor,
     Diff,
+    Merge,
 }
 
 struct Playground {
@@ -33,6 +36,7 @@ struct Playground {
     keymap: Keymap,
     editor_page: EditorPage,
     diff_page: DiffPage,
+    merge_page: MergePage,
 }
 
 impl eframe::App for Playground {
@@ -44,6 +48,7 @@ impl eframe::App for Playground {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.page, Page::Editor, "Editor");
                 ui.selectable_value(&mut self.page, Page::Diff, "Diff");
+                ui.selectable_value(&mut self.page, Page::Merge, "Merge");
                 ui.separator();
                 self.theme_choice.combo_box(ui);
             });
@@ -51,6 +56,7 @@ impl eframe::App for Playground {
         match self.page {
             Page::Editor => self.editor_page.show(ui, &self.theme_choice, &self.keymap),
             Page::Diff => self.diff_page.show(ui, &self.theme_choice, &self.keymap),
+            Page::Merge => self.merge_page.show(ui, &self.theme_choice, &self.keymap),
         }
     }
 }
@@ -91,11 +97,11 @@ fn parse_arguments() -> Arguments {
                 arguments.inline = true;
                 arguments.page = Page::Diff;
             }
-            "--page" => {
-                if raw.next().as_deref() == Some("diff") {
-                    arguments.page = Page::Diff;
-                }
-            }
+            "--page" => match raw.next().as_deref() {
+                Some("diff") => arguments.page = Page::Diff,
+                Some("merge") => arguments.page = Page::Merge,
+                _ => {}
+            },
             _ => arguments.file = Some(argument),
         }
     }
@@ -155,6 +161,7 @@ fn main() -> eframe::Result {
                     &new_content,
                     arguments.inline,
                 ),
+                merge_page: MergePage::new(&languages, &theme_choice),
                 theme_choice,
                 keymap: Keymap::vscode(),
             }))

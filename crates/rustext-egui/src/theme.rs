@@ -40,6 +40,9 @@ pub struct EditorTheme {
     pub inserted_text_background: Color32,
     pub removed_text_background: Color32,
     pub diff_padding_background: Color32,
+    pub merge_change_background: Color32,
+    pub merge_conflict_background: Color32,
+    pub merge_resolved_background: Color32,
     /// Bracket pair colorization, cycled by nesting depth.
     pub bracket_pair_colors: Vec<Color32>,
 }
@@ -91,6 +94,9 @@ impl EditorTheme {
             inserted_text_background: hex_alpha(0x2a6a3a, 0x80),
             removed_text_background: hex_alpha(0x8a2a2a, 0x80),
             diff_padding_background: hex(0x252525),
+            merge_change_background: hex_alpha(0x1e82ff, 0x26),
+            merge_conflict_background: hex_alpha(0xa04100, 0x48),
+            merge_resolved_background: hex_alpha(0x64a04b, 0x40),
             bracket_pair_colors: vec![hex(0xffd700), hex(0xda70d6), hex(0x179fff)],
         }
     }
@@ -133,6 +139,9 @@ impl EditorTheme {
             inserted_text_background: hex_alpha(0x9ccc2c, 0x80),
             removed_text_background: hex_alpha(0xff0000, 0x50),
             diff_padding_background: hex(0xf3f3f3),
+            merge_change_background: hex_alpha(0x1464dc, 0x1f),
+            merge_conflict_background: hex_alpha(0xb45000, 0x2e),
+            merge_resolved_background: hex_alpha(0x508c3c, 0x33),
             bracket_pair_colors: vec![hex(0x0431fa), hex(0x319331), hex(0x7b3814)],
         }
     }

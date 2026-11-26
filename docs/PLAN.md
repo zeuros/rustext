@@ -77,8 +77,8 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [x] `DecorationSet` mapped through edits; typed styles (D11); whole-line, inline, gutter, overview ruler
 - [x] Hidden areas in a display map (buffer line ↔ display row)
 - [x] Indentation folding, fold markers in the gutter, fold/unfold/all/level N, `…` placeholder
-- [ ] Markers (diagnostics) with squiggles, hover text, next/previous problem
-- [ ] Blame demo (shaded line groups, click on a line number)
+- [x] Markers (diagnostics) with squiggles, hover text, next/previous problem
+- [x] Blame demo (shaded line groups, click on a line number)
 
 ## M9. Rendering extras
 - [x] Whitespace rendering modes, control characters, visible `␍`
@@ -89,8 +89,8 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [ ] View zones (blocks between lines) in the display map
 
 ## M10. Merge editor
-- [ ] Three-way model: base, ours, theirs → conflicts and non-conflicting changes
-- [ ] Widget: two inputs + result, accept ours / theirs / both per conflict, accept all of a side
+- [x] Three-way model: base, ours, theirs → conflicts and non-conflicting changes
+- [x] Widget: two inputs + result, accept ours / theirs / both per conflict, accept all of a side
 
 ## M11. Language services (D9)
 - [ ] `LanguageServices` trait, versioned async results
@@ -116,15 +116,9 @@ Last updated: 2026-11-26, end of the first session.
 green. Every milestone is a commit on `main` (`git log --oneline`).
 
 **Next, in order** (each a commit):
-1. M8 markers: a `Marker { range, severity, message }` list → squiggle decorations + overview
-   marks + a hover tooltip (egui `show_tooltip_at`) + F8 next problem. Hover needs
-   `MouseTarget::Text` → decoration under the pointer (`DecorationSet::in_range`).
-2. M8 blame demo in the playground: `DecorationKind::WholeLineBackground` per commit group,
-   `LineNumberColor`, and a click on `MouseTarget::LineNumber` (gitgud's blame view).
-3. M10 merge editor: `rustext-diff::merge` (diff3 of base/ours/theirs: hunks of both diffs
-   against base, overlapping = conflict), then a widget: two read-only editors above a result
-   editor, "accept ours / theirs / both" per conflict (gitgud's `merge-editor`).
-4. M9 bracket pair colorization (override bracket chars' colors in `line_layout_job` with a
+1. (done since: diagnostics with hover and F8, the blame demo, the merge editor checked
+   against `git merge-file`.)
+2. M9 bracket pair colorization (override bracket chars' colors in `line_layout_job` with a
    depth computed per line, cached by text revision) and word wrap (a `DisplayLayout` with
    several rows per line: needs `RowContent::Line` to carry a column range — design it in
    DECISIONS first).

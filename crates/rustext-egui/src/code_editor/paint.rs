@@ -71,18 +71,17 @@ impl CodeEditor<'_> {
                 pos2(metrics.text_rect.left(), top),
                 vec2(metrics.text_rect.width(), metrics.row_height),
             );
+            let paints_current_line =
+                matches!(self.config.current_line_highlight, CurrentLineHighlight::Line | CurrentLineHighlight::All);
+            let is_cursor_row = matches!(painted.content, RowContent::Line(line) if cursor_lines.contains(&line));
+            if paints_current_line && highlights_current_line && is_cursor_row {
+                text_painter.rect_filled(row_rect, CornerRadius::ZERO, theme.current_line_background);
+            }
             if let (Some(background), _) = self.row_style(painted.row) {
                 text_painter.rect_filled(row_rect, CornerRadius::ZERO, to_color(background));
             }
             match (painted.content, &painted.layout) {
                 (RowContent::Line(line), Some(layout)) => {
-                    let paints_current_line = matches!(
-                        self.config.current_line_highlight,
-                        CurrentLineHighlight::Line | CurrentLineHighlight::All
-                    );
-                    if paints_current_line && highlights_current_line && cursor_lines.contains(&line) {
-                        text_painter.rect_filled(row_rect, CornerRadius::ZERO, theme.current_line_background);
-                    }
                     self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, self.decorations);
                     self.paint_line_decorations(&text_painter, metrics, &text, line, layout, top, &find_decorations);
                     self.paint_line_decorations(
@@ -511,7 +510,7 @@ impl CodeEditor<'_> {
                 RowContent::Padding | RowContent::Foreign(_) => continue,
             };
             let is_cursor_line = cursor_lines.contains(&line);
-            if context.highlights_current_line && is_cursor_line {
+            if context.highlights_current_line && is_cursor_line && background.is_none() {
                 gutter_painter.rect_filled(row_rect, CornerRadius::ZERO, theme.current_line_background);
             }
             let is_folded = context.folded_header_lines.contains(&line);

@@ -5,6 +5,7 @@
 pub mod display;
 pub mod layout;
 pub mod line_diff;
+pub mod merge;
 pub mod patch;
 
 pub use display::{Collapsing, DiffColors, inline_layout, inner_change_decorations, side_by_side_layouts};
