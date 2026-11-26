@@ -33,6 +33,9 @@ pub struct MergeDocument {
     pub theirs_view: EditorView,
     pub result_view: EditorView,
     current_conflict: Option<usize>,
+    /// The inputs' and the result's vertical scroll after the last sync, to see which one the
+    /// user scrolled since.
+    synced_scroll: (f32, f32),
 }
 
 impl MergeDocument {
@@ -61,6 +64,7 @@ impl MergeDocument {
             theirs_view: EditorView::default(),
             result_view: EditorView::default(),
             current_conflict: None,
+            synced_scroll: (0.0, 0.0),
         };
         document.current_conflict = document.conflict_indexes().first().copied();
         document
@@ -157,6 +161,49 @@ impl MergeDocument {
             let start = changes.map_offset(range.0, Bias::Before);
             *range = (start, changes.map_offset(range.1, Bias::Before).max(start));
         }
+    }
+
+    /// First input row of each region (both inputs have one row per region line, padded).
+    fn region_first_rows(&self) -> Vec<usize> {
+        let mut first_rows = Vec::with_capacity(self.regions.len());
+        let mut row = 0;
+        for region in &self.regions {
+            first_rows.push(row);
+            row += region.ours.len().max(region.theirs.len());
+        }
+        first_rows
+    }
+
+    /// Keeps the result scrolled to the region the inputs show, or the other way round,
+    /// following whichever the user scrolled.
+    fn sync_result_scroll(&mut self, row_height: f32) -> bool {
+        let inputs_y = self.ours_view.scroll_offset.y;
+        let result_y = self.result_view.scroll_offset.y;
+        let (synced_inputs_y, synced_result_y) = self.synced_scroll;
+        let first_rows = self.region_first_rows();
+        let text = self.result.text().clone();
+        let result_line_of_region = |index: usize| text.line_of_offset(self.result_ranges[index].0);
+        if inputs_y != synced_inputs_y {
+            let top_row = (inputs_y / row_height).floor() as usize;
+            let region = first_rows.partition_point(|&first_row| first_row <= top_row).saturating_sub(1);
+            let (start, end) = self.result_ranges[region];
+            let region_lines = text.line_of_offset(end.max(start)) - text.line_of_offset(start) + 1;
+            let line =
+                result_line_of_region(region) + (top_row - first_rows[region]).min(region_lines.saturating_sub(1));
+            self.result_view.scroll_offset.y = line as f32 * row_height + inputs_y.rem_euclid(row_height);
+        } else if result_y != synced_result_y {
+            let top_line = (result_y / row_height).floor() as usize;
+            let region =
+                (0..self.regions.len()).rev().find(|&index| result_line_of_region(index) <= top_line).unwrap_or(0);
+            let row = first_rows[region] + (top_line - result_line_of_region(region));
+            let input_y = row as f32 * row_height + result_y.rem_euclid(row_height);
+            self.ours_view.scroll_offset.y = input_y;
+            self.theirs_view.scroll_offset.y = input_y;
+        } else {
+            return false;
+        }
+        self.synced_scroll = (self.ours_view.scroll_offset.y, self.result_view.scroll_offset.y);
+        true
     }
 
     /// The region holding a result offset.
@@ -389,6 +436,10 @@ impl<'a> MergeEditor<'a> {
             if region.is_some() {
                 document.current_conflict = region;
             }
+        }
+        let row_height = document.result_view.geometry().map_or(0.0, |geometry| geometry.row_height);
+        if row_height > 0.0 && document.sync_result_scroll(row_height) {
+            ui.ctx().request_repaint();
         }
         MergeResponse { result_changed: result_response.outcome.text_changed() }
     }

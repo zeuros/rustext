@@ -129,7 +129,6 @@ Last updated: 2026-11-26, end of the first session (continued).
   state matches the cached one.
 - Folding is indentation-only; `foldingStrategy: 'auto'` needs language structure.
 - Folding is off when the application passes its own `DisplayLayout` (diffs).
-- The merge editor doesn't sync the result's scroll with the inputs.
 - Text from egui's TextEdit (find input) can't use rustext's keymap (Ctrl+D etc. there are
   egui's).
 
