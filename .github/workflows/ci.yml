@@ -18,11 +18,18 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-shear
+
       - name: Format
         run: cargo fmt --all --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Unused dependencies
+        run: cargo shear
 
   test:
     strategy:
