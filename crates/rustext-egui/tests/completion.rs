@@ -168,6 +168,18 @@ impl LanguageServices for TestServices {
         ])
     }
 
+    /// Puts a header line above the range's first line.
+    fn format_range(
+        &mut self,
+        _text: &Text,
+        _revision: u64,
+        range: rustext_core::Range,
+        _indentation: rustext_core::indentation::Indentation,
+    ) -> Reply<Vec<TextEdit>> {
+        let start = Position::new(range.start.line, 0);
+        Reply::Ready(vec![TextEdit { range: rustext_core::Range::new(start, start), new_text: "// range\n".into() }])
+    }
+
     /// Puts a header line on top, saying the tab size.
     fn format_document(
         &mut self,
@@ -634,6 +646,19 @@ fn a_lightbulb_shows_where_the_cursor_rests_on_code_actions_and_a_click_lists_th
     let bulb = harness.state().view.lightbulb_rect().unwrap().center();
     press(&mut harness, bulb, Modifiers::NONE);
     assert!(harness.state().view.code_actions.is_open());
+}
+
+#[test]
+fn ctrl_k_ctrl_f_formats_the_selected_lines() {
+    let mut harness = harness("a\nb\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(1, 0);
+    press(&mut harness, pos, Modifiers::NONE);
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+
+    assert_eq!(harness.state().state.text().to_string(), "a\n// range\nb\n");
 }
 
 #[test]

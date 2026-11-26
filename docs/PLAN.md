@@ -125,10 +125,10 @@ real server. Every feature is a commit on `main`.
 2. Tree-sitter for bracket matching and colorization where a grammar is bundled, replacing
    the lexer (D21) there; language injections (JS in HTML, code blocks in Markdown).
 3. An accessible diff viewer (`accessibleDiffViewerNext`): the changes read one by one.
-4. Range formatting and format on type (`documentRangeFormatting`, `onTypeFormatting`).
+4. Format on type (`onTypeFormatting`) and on paste.
 
 **Done in the last sessions** (newest first):
-- Language services: a lightbulb where the cursor rests on code actions; code actions (Ctrl+.), format document (Shift+Alt+F), Go to Symbol
+- Language services: a lightbulb where the cursor rests on code actions; code actions (Ctrl+.), format document (Shift+Alt+F) and selection (Ctrl+K Ctrl+F), Go to Symbol
   (Ctrl+Shift+O, from LSP or tree-sitter tags), definitions and references in other
   documents (`EditorResponse::open_request`, D26), F12 answered on a later frame.
 - Editing and display: links (Ctrl+click), word wrap in diffs, screen readers read the

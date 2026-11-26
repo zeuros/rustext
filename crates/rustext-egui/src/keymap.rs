@@ -49,6 +49,8 @@ pub enum Action {
     GoToSymbol,
     /// Formats the document through the language services (Shift+Alt+F).
     FormatDocument,
+    /// Formats the lines of the selection through the language services (Ctrl+K Ctrl+F).
+    FormatSelection,
     /// Lists the quick fixes and refactorings at the selection (Ctrl+.).
     CodeActions,
     /// Renames the symbol at the cursor through the language services (F2).
@@ -224,6 +226,7 @@ impl Keymap {
             (Key::L, edit(Command::TransformCase(CaseTransform::Lower))),
             (Key::Num0, Action::FoldAll),
             (Key::J, Action::UnfoldAll),
+            (Key::F, Action::FormatSelection),
         ];
         for (key, action) in sequences {
             keymap = keymap.bind(&[command_k, chord(command, key)], action);

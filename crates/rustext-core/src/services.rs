@@ -340,6 +340,17 @@ pub trait LanguageServices {
         Reply::Ready(Vec::new())
     }
 
+    /// Edits formatting the lines of `range` (Ctrl+K Ctrl+F).
+    fn format_range(
+        &mut self,
+        _text: &Text,
+        _text_revision: u64,
+        _range: Range,
+        _indentation: crate::indentation::Indentation,
+    ) -> Reply<Vec<TextEdit>> {
+        Reply::Ready(Vec::new())
+    }
+
     /// The definitions of the document (Go to Symbol), in text order. Without an answer, the
     /// styler's syntax tree gives them.
     fn document_symbols(&mut self, _text: &Text, _text_revision: u64) -> Reply<Vec<DocumentSymbol>> {

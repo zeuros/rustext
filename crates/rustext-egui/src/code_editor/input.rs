@@ -428,7 +428,12 @@ impl CodeEditor<'_> {
             Action::TriggerSuggest => self.view.completion.request(),
             Action::CommandPalette => self.view.palette.open(super::palette::PaletteMode::Commands),
             Action::GoToSymbol => self.view.palette.open(super::palette::PaletteMode::Symbols),
-            Action::FormatDocument => self.view.format_request = Some(self.state.text_revision()),
+            Action::FormatDocument => self.view.format_request = Some((self.state.text_revision(), None)),
+            Action::FormatSelection => {
+                let (text, primary) = (self.state.text(), self.state.selections().primary());
+                let range = rustext_core::Range::new(text.position(primary.start()), text.position(primary.end()));
+                self.view.format_request = Some((self.state.text_revision(), Some(range)));
+            }
             Action::CodeActions => self.open_code_actions(),
             Action::Rename => self.open_rename(),
             Action::FindReferences => self.open_references(),

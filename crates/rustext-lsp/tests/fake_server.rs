@@ -175,3 +175,15 @@ fn code_actions_with_edits_come_preferred_first() {
     assert!(actions[0].is_quick_fix && actions[0].is_preferred);
     assert_eq!(actions[0].edits[0].new_text, "// fixed\n");
 }
+
+#[test]
+fn range_formatting_sends_the_range() {
+    let mut services = start();
+    let text = Text::new("a\nb\n");
+    let indentation = rustext_core::indentation::Indentation { tab_size: 4, insert_spaces: true };
+    let line_one = rustext_core::Range::new(Position::new(1, 0), Position::new(1, 1));
+
+    let edits = until_ready(|| services.format_range(&text, 1, line_one, indentation));
+
+    assert_eq!((edits[0].range.start.line, edits[0].new_text.as_str()), (1, "// range\n"));
+}

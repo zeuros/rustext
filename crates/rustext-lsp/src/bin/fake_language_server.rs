@@ -81,6 +81,10 @@ fn main() {
                     { "title": "Fix it", "kind": "quickfix", "isPreferred": true, "edit": { "changes": insert("// fixed\n") } },
                 ])
             }
+            "textDocument/rangeFormatting" => {
+                let line = message["params"]["range"]["start"]["line"].as_u64().unwrap_or(0);
+                json!([{ "range": { "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 0 } }, "newText": "// range\n" }])
+            }
             "textDocument/formatting" => {
                 let tab_size = message["params"]["options"]["tabSize"].as_u64().unwrap_or(0);
                 json!([{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": format!("// tab size {tab_size}\n") }])

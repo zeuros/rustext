@@ -499,6 +499,23 @@ fn edits_for_document(edit: lsp::WorkspaceEdit, uri: &Uri) -> Vec<lsp::TextEdit>
         .collect()
 }
 
+fn formatting_options(indentation: rustext_core::indentation::Indentation) -> lsp::FormattingOptions {
+    lsp::FormattingOptions {
+        tab_size: indentation.tab_size as u32,
+        insert_spaces: indentation.insert_spaces,
+        ..Default::default()
+    }
+}
+
+/// A server's edits of this document, in chars.
+fn text_edits(text: &Text, edits: Option<Vec<lsp::TextEdit>>) -> Vec<TextEdit> {
+    edits
+        .unwrap_or_default()
+        .into_iter()
+        .map(|edit| TextEdit { range: range_of(text, edit.range), new_text: edit.new_text })
+        .collect()
+}
+
 fn symbol_kind(kind: lsp::SymbolKind) -> SymbolKind {
     use lsp::SymbolKind as Kind;
     match kind {
@@ -766,21 +783,29 @@ impl LanguageServices for LspServices {
     ) -> Reply<Vec<TextEdit>> {
         let params = lsp::DocumentFormattingParams {
             text_document: self.text_document(),
-            options: lsp::FormattingOptions {
-                tab_size: indentation.tab_size as u32,
-                insert_spaces: indentation.insert_spaces,
-                ..Default::default()
-            },
+            options: formatting_options(indentation),
             work_done_progress_params: Default::default(),
         };
         let key = RequestKey::new::<request::Formatting>(text_revision, Position::new(0, 0));
-        map_reply(self.ask::<request::Formatting>(text, key, params), |edits| {
-            edits
-                .unwrap_or_default()
-                .into_iter()
-                .map(|edit| TextEdit { range: range_of(text, edit.range), new_text: edit.new_text })
-                .collect()
-        })
+        map_reply(self.ask::<request::Formatting>(text, key, params), |edits| text_edits(text, edits))
+    }
+
+    fn format_range(
+        &mut self,
+        text: &Text,
+        text_revision: u64,
+        range: Range,
+        indentation: rustext_core::indentation::Indentation,
+    ) -> Reply<Vec<TextEdit>> {
+        let params = lsp::DocumentRangeFormattingParams {
+            text_document: self.text_document(),
+            range: lsp::Range::new(lsp_position(text, range.start), lsp_position(text, range.end)),
+            options: formatting_options(indentation),
+            work_done_progress_params: Default::default(),
+        };
+        let key = RequestKey::new::<request::RangeFormatting>(text_revision, range.start)
+            .with_argument(format!("{:?}", range.end));
+        map_reply(self.ask::<request::RangeFormatting>(text, key, params), |edits| text_edits(text, edits))
     }
 
     fn document_symbols(&mut self, text: &Text, text_revision: u64) -> Reply<Vec<DocumentSymbol>> {

@@ -275,8 +275,9 @@ pub struct EditorView {
     lightbulb: code_actions::LightbulbState,
     /// A definition asked for (F12, Ctrl+click) and not answered yet: (text revision, position).
     definition_request: Option<(u64, Position)>,
-    /// Formatting asked for (Shift+Alt+F) and not answered yet: the text revision.
-    format_request: Option<u64>,
+    /// Formatting asked for and not answered yet: the text revision, and the range for a
+    /// selection (Ctrl+K Ctrl+F), `None` for the document (Shift+Alt+F).
+    format_request: Option<(u64, Option<rustext_core::Range>)>,
     /// Smart select's history (Shift+Alt+Right / Left).
     pub smart_select: smart_select::SmartSelectState,
     pub(crate) wraps: wrapping::WrapState,
