@@ -165,6 +165,12 @@ impl Text {
     pub fn lines(&self) -> impl Iterator<Item = String> + '_ {
         (0..self.line_count()).map(|line| self.line_content(line))
     }
+
+    /// Every line with its line ending (`\n`, `\r\n`, or none for the last line), read in one
+    /// sequential pass: much faster than `line_content` per line for whole-text work.
+    pub fn raw_lines(&self) -> impl Iterator<Item = String> + '_ {
+        self.rope.lines().map(String::from)
+    }
 }
 
 impl fmt::Display for Text {

@@ -125,12 +125,16 @@ pub fn raw_line(text: &Text, line: usize) -> String {
     text.line_content(line) + ending
 }
 
-fn line_key(text: &Text, line: usize, ignore_trim_whitespace: bool) -> String {
-    if ignore_trim_whitespace {
-        let has_newline = text.line_ending_of(line).is_some();
-        return text.line_content(line).trim().to_string() + if has_newline { "\n" } else { "" };
-    }
-    raw_line(text, line)
+/// The diff key of each line in git's sense: the raw line, or with `ignore_trim_whitespace`
+/// the trimmed content plus whether it ends with a newline.
+fn line_keys(text: &Text, ignore_trim_whitespace: bool) -> impl Iterator<Item = String> + '_ {
+    text.raw_lines().take(git_line_count(text)).map(move |raw| {
+        if !ignore_trim_whitespace {
+            return raw;
+        }
+        let has_newline = raw.ends_with('\n');
+        raw.trim().to_string() + if has_newline { "\n" } else { "" }
+    })
 }
 
 pub fn diff_lines(old: &Text, new: &Text, options: &DiffOptions) -> LineDiff {
@@ -139,9 +143,9 @@ pub fn diff_lines(old: &Text, new: &Text, options: &DiffOptions) -> LineDiff {
     let new_line_count = git_line_count(new);
 
     let mut input: InternedInput<String> = InternedInput::default();
-    input.update_before((0..old_line_count).map(|line| line_key(old, line, options.ignore_trim_whitespace)));
-    input.update_after((0..new_line_count).map(|line| line_key(new, line, options.ignore_trim_whitespace)));
-    let mut diff = Diff::compute(Algorithm::Histogram, &input);
+    input.update_before(line_keys(old, options.ignore_trim_whitespace));
+    input.update_after(line_keys(new, options.ignore_trim_whitespace));
+    let mut diff = Diff::compute(Algorithm::Myers, &input);
     diff.postprocess_lines(&input);
 
     let mut hit_time_limit = false;

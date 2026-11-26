@@ -156,10 +156,13 @@ choice is an enum (`LineNumbers::Relative`), no stringly types and no overloaded
 - Rejected: writing a Monarch interpreter first (Monaco's format, but few grammars outside
   Monaco); tree-sitter first (one crate per language, harder to cover "any file" for diffs).
 
-## D14. Diff: `imara-diff` (histogram) for lines, our own refinement inside hunks
+## D14. Diff: `imara-diff` (Myers) for lines, our own refinement inside hunks
 
-- Histogram is git's algorithm: hunks match what `git diff` shows, which matters when the
-  diff view stages hunks with `git apply`.
+- Myers with a line post-processing heuristic is git's default (`diff.algorithm` defaults to
+  myers, plus its indent heuristic), so hunks look like `git diff`'s. Histogram was the first
+  choice, but imara-diff's histogram took 467 ms on a 100k-line file of distinct lines where
+  Myers takes 1.6 ms (`crates/rustext-diff/tests/performance.rs`). Patches don't depend on
+  the algorithm: `git apply` takes any valid diff (`tests/git_apply.rs`).
 - Inner (char / word) changes are computed per changed hunk with the same library on
   word tokens, then on chars, as Monaco's `charChanges`.
 - Results are data (`LineDiff { hunks: Vec<Hunk> }`, each with `inner_changes`), and the
