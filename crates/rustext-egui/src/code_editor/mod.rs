@@ -126,6 +126,8 @@ pub struct ViewConfig {
     pub bracket_pair_colorization: bool,
     pub word_wrap: WordWrap,
     /// Pins the headers of the blocks enclosing the top line (Monaco's `stickyScroll`).
+    /// Ask the language services for inlay hints (parameter names, inferred types).
+    pub inlay_hints: bool,
     pub sticky_scroll: bool,
     pub sticky_scroll_max_lines: usize,
     /// A zoomed-out map of the text right of it (Monaco's `minimap`).
@@ -163,6 +165,7 @@ impl Default for ViewConfig {
             show_carriage_returns: false,
             bracket_pair_colorization: true,
             word_wrap: WordWrap::default(),
+            inlay_hints: true,
             sticky_scroll: true,
             sticky_scroll_max_lines: 5,
             minimap: false,
@@ -232,6 +235,7 @@ pub struct EditorView {
     pub rename: RenameState,
     /// The signature help tooltip.
     pub signature: SignatureState,
+    pub inlay_hints: assist::InlayHintsState,
     wraps: wrapping::WrapState,
     /// Lines pinned at the top by sticky scroll in the last frame.
     sticky_lines: Vec<usize>,
@@ -575,6 +579,9 @@ impl<'a> CodeEditor<'a> {
         }
         self.after_outcome(ui, &outcome);
         self.refresh_service_diagnostics();
+        if self.refresh_inlay_hints(&metrics) {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        }
         let typed = std::mem::take(&mut self.typed_this_frame);
         self.refresh_completion(&typed);
         self.refresh_ghost_text(&typed);
@@ -713,9 +720,9 @@ impl<'a> CodeEditor<'a> {
         self.tracked_outcome = std::mem::take(&mut self.tracked_outcome).merged(result);
     }
 
-    /// The application's decorations and the language services' diagnostics.
+    /// The application's decorations and the language services' diagnostics and inlay hints.
     fn all_decorations(&self) -> impl Iterator<Item = &Decoration> {
-        self.decorations.iter().chain(self.view.service_diagnostics.iter())
+        self.decorations.iter().chain(self.view.service_diagnostics.iter()).chain(self.view.inlay_hints.decorations())
     }
 
     /// Asks for an inline completion after typing; drops a suggestion the cursor left.
@@ -961,6 +968,13 @@ impl<'a> CodeEditor<'a> {
             / metrics.row_height)
             .floor();
         (row.max(0.0) as usize).min(self.row_count().saturating_sub(1))
+    }
+
+    /// The lines the visible rows show (`None` when they show none of the editor's lines).
+    fn visible_lines(&self, metrics: &Metrics) -> Option<std::ops::RangeInclusive<usize>> {
+        let mut lines = self.visible_rows(metrics).filter_map(|row| self.row_segment(row).map(|(line, _, _)| line));
+        let first = lines.next()?;
+        Some(first..=lines.next_back().unwrap_or(first))
     }
 
     fn visible_rows(&self, metrics: &Metrics) -> std::ops::Range<usize> {

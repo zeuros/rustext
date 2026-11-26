@@ -201,7 +201,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Code actions, lightbulb, quick fix | `registerCodeActionProvider`, `lightbulb.enabled` | P2 | todo |
 | Code lens | `registerCodeLensProvider`, `codeLens` | P2 | todo |
 | Formatting (document, range, on type, on paste) | `registerDocumentFormattingEditProvider`, `…Range…`, `…OnType…`, `formatOnType`, `formatOnPaste` | P2 | todo |
-| Inlay hints | `registerInlayHintsProvider`, `inlayHints.*` | P2 | partial: injected text decorations; no provider method yet |
+| Inlay hints | `registerInlayHintsProvider`, `inlayHints.*` | P2 | done: `LanguageServices::inlay_hints` per block of visible lines, LSP `textDocument/inlayHint`; hints aren't clickable |
 | Inline completions (ghost text, AI) | `registerInlineCompletionsProvider`, `inlineSuggest.*` | P2 | done (`inline_completion`) |
 | Links (Ctrl+click URLs) | `registerLinkProvider`, `links`, `registerLinkOpener` | P1 | todo |
 | Color decorators and picker | `registerColorProvider`, `colorDecorators` | P3 | todo |

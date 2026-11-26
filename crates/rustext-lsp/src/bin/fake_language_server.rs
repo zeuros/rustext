@@ -39,7 +39,7 @@ fn main() {
         let position = &message["params"]["position"];
         let result = match method {
             "initialize" => {
-                json!({ "capabilities": { "textDocumentSync": 2, "completionProvider": { "triggerCharacters": ["."] }, "hoverProvider": true, "definitionProvider": true } })
+                json!({ "capabilities": { "textDocumentSync": 2, "inlayHintProvider": true, "completionProvider": { "triggerCharacters": ["."] }, "hoverProvider": true, "definitionProvider": true } })
             }
             "fake/document" => json!(document.join("\n")),
             "textDocument/completion" => json!({ "isIncomplete": false, "items": [
@@ -67,6 +67,13 @@ fn main() {
                 "activeSignature": 0,
                 "activeParameter": 1,
             }),
+            "textDocument/inlayHint" => {
+                let range = &message["params"]["range"];
+                let first = range["start"]["line"].as_u64().unwrap_or(0);
+                let end = range["end"]["line"].as_u64().unwrap_or(0);
+                let hint = |line: u64| json!({ "position": { "line": line, "character": 2 }, "label": [{ "value": ": " }, { "value": "u8" }], "paddingLeft": true });
+                json!((first..end).map(hint).collect::<Vec<_>>())
+            }
             "exit" => return,
             _ => Value::Null,
         };

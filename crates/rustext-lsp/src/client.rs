@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use rustext_core::services::{
-    CompletionItem, CompletionKind, Diagnostic, LanguageServices, Reply, Severity, SignatureHelp, TextEdit,
+    CompletionItem, CompletionKind, Diagnostic, InlayHint, LanguageServices, Reply, Severity, SignatureHelp, TextEdit,
 };
 use rustext_core::{Position, Range, Text};
 use serde_json::{Value, json};
@@ -21,6 +21,7 @@ enum RequestKind {
     Definition,
     Rename,
     SignatureHelp,
+    InlayHints,
 }
 
 /// What a request was about: answers for another key are not what the editor asks for now.
@@ -42,6 +43,8 @@ pub struct LspServices {
     trigger_chars: Vec<char>,
     /// The server takes incremental changes (`textDocumentSync.change == 2`).
     syncs_incrementally: bool,
+    /// The server announced `inlayHintProvider`.
+    gives_inlay_hints: bool,
     request_ids: HashMap<RequestKey, u64>,
     results: HashMap<u64, Value>,
     /// The last `publishDiagnostics` for the document, not taken yet.
@@ -111,6 +114,8 @@ impl LspServices {
             .unwrap_or_default();
         let sync = &initialize_result["capabilities"]["textDocumentSync"];
         let syncs_incrementally = sync.as_u64().or(sync["change"].as_u64()) == Some(2);
+        let inlay_hint_provider = &initialize_result["capabilities"]["inlayHintProvider"];
+        let gives_inlay_hints = !inlay_hint_provider.is_null() && inlay_hint_provider != &Value::Bool(false);
         connection.notify("initialized", json!({}))?;
         Ok(Self {
             connection,
@@ -120,6 +125,7 @@ impl LspServices {
             document_version: 0,
             trigger_chars,
             syncs_incrementally,
+            gives_inlay_hints,
             request_ids: HashMap::new(),
             results: HashMap::new(),
             published_diagnostics: None,
@@ -174,6 +180,19 @@ impl LspServices {
 
     /// `ask` with more request parameters (merged into the position parameters).
     fn ask_with(&mut self, text: &Text, key: RequestKey, method: &str, extra_params: Value) -> Reply<Value> {
+        let line = key.position.line;
+        let mut params = json!({
+            "textDocument": { "uri": self.document_uri },
+            "position": { "line": line, "character": utf16_column(text, line, key.position.column) },
+        });
+        if let (Some(params), Some(extra)) = (params.as_object_mut(), extra_params.as_object()) {
+            params.extend(extra.clone());
+        }
+        self.request_once(text, key, method, params)
+    }
+
+    /// The result of the request for `key` with exactly `params`, sending it the first time.
+    fn request_once(&mut self, text: &Text, key: RequestKey, method: &str, params: Value) -> Reply<Value> {
         self.sync(text, key.text_revision);
         self.receive();
         if let Some(&id) = self.request_ids.get(&key) {
@@ -184,14 +203,6 @@ impl LspServices {
                 }
                 None => Reply::Pending,
             };
-        }
-        let line = key.position.line;
-        let mut params = json!({
-            "textDocument": { "uri": self.document_uri },
-            "position": { "line": line, "character": utf16_column(text, line, key.position.column) },
-        });
-        if let (Some(params), Some(extra)) = (params.as_object_mut(), extra_params.as_object()) {
-            params.extend(extra.clone());
         }
         if let Ok(id) = self.connection.request(method, params) {
             self.request_ids.insert(key, id);
@@ -370,6 +381,48 @@ impl LanguageServices for LspServices {
         if self.connection.notify("textDocument/didChange", params).is_ok() {
             self.synced_revision = Some(text_revision_after);
         }
+    }
+
+    fn inlay_hints(&mut self, text: &Text, text_revision: u64, lines: std::ops::Range<usize>) -> Reply<Vec<InlayHint>> {
+        if !self.gives_inlay_hints || lines.is_empty() {
+            return Reply::Ready(Vec::new());
+        }
+        let key = RequestKey {
+            kind: RequestKind::InlayHints,
+            text_revision,
+            position: Position::new(lines.start, 0),
+            argument: lines.end.to_string(),
+        };
+        let end = if lines.end < text.line_count() {
+            json!({ "line": lines.end, "character": 0 })
+        } else {
+            let last = text.last_line();
+            json!({ "line": last, "character": utf16_column(text, last, text.line_len(last)) })
+        };
+        let params = json!({
+            "textDocument": { "uri": self.document_uri },
+            "range": { "start": { "line": lines.start, "character": 0 }, "end": end },
+        });
+        let result = match self.request_once(text, key, "textDocument/inlayHint", params) {
+            Reply::Ready(result) => result,
+            Reply::Pending => return Reply::Pending,
+        };
+        let hint_of = |hint: &Value| {
+            let line = hint["position"]["line"].as_u64()? as usize;
+            if line >= text.line_count() {
+                return None;
+            }
+            let column = char_column(text, line, hint["position"]["character"].as_u64()? as usize);
+            let label = match &hint["label"] {
+                Value::String(label) => label.clone(),
+                Value::Array(parts) => parts.iter().filter_map(|part| part["value"].as_str()).collect(),
+                _ => return None,
+            };
+            let padding = |key: &str| if hint[key].as_bool() == Some(true) { " " } else { "" };
+            let label = format!("{}{label}{}", padding("paddingLeft"), padding("paddingRight"));
+            Some(InlayHint { position: Position::new(line, column), label })
+        };
+        Reply::Ready(result.as_array().map(|hints| hints.iter().filter_map(hint_of).collect()).unwrap_or_default())
     }
 
     fn completion_trigger_chars(&self) -> &[char] {

@@ -1,10 +1,45 @@
-//! Rename (F2) and signature help, from the language services (DECISIONS D9).
+//! Rename (F2), signature help and inlay hints, from the language services (DECISIONS D9).
 
 use egui::{Align2, Area, Frame, Id, Key, Order, RichText, Ui, pos2};
+use rustext_core::decoration::Decoration;
 use rustext_core::services::{Reply, SignatureHelp, transaction_of_edits};
-use rustext_core::{Command, Outcome};
+use rustext_core::{ChangeSet, Command, Outcome};
 
+use super::layout::to_rgba;
 use super::{CodeEditor, Metrics};
+
+/// Inlay hints are asked for whole blocks of this many lines around the visible ones, so
+/// scrolling a little reuses the answer.
+const INLAY_HINT_BLOCK_LINES: usize = 100;
+
+/// The shown inlay hints (they follow edits until the new answer) and the lines asked for.
+#[derive(Clone, Debug, Default)]
+pub struct InlayHintsState {
+    decorations: Vec<Decoration>,
+    /// (text revision, lines) of the shown hints, and of the request waiting for an answer.
+    answered: Option<(u64, std::ops::Range<usize>)>,
+    request: Option<(u64, std::ops::Range<usize>)>,
+}
+
+impl InlayHintsState {
+    pub fn decorations(&self) -> &[Decoration] {
+        &self.decorations
+    }
+
+    pub fn labels(&self) -> Vec<&str> {
+        self.decorations
+            .iter()
+            .filter_map(|decoration| match &decoration.kind {
+                rustext_core::decoration::DecorationKind::InjectedText { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub(super) fn map(&mut self, changes: &ChangeSet) {
+        self.decorations = self.decorations.iter().filter_map(|decoration| decoration.map(changes)).collect();
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct RenameState {
@@ -120,6 +155,48 @@ impl CodeEditor<'_> {
             },
         );
         gives_focus_back
+    }
+
+    /// Asks for the inlay hints of the blocks around the visible lines when the text or those
+    /// blocks changed; returns whether an answer is awaited.
+    pub(super) fn refresh_inlay_hints(&mut self, metrics: &Metrics) -> bool {
+        let visible = self.visible_lines_for_hints(metrics);
+        let (Some(services), Some(visible)) = (self.services.as_deref_mut(), visible) else {
+            self.view.inlay_hints = InlayHintsState::default();
+            return false;
+        };
+        let wanted = (self.state.text_revision(), visible);
+        let hints = &mut self.view.inlay_hints;
+        if hints.answered.as_ref() != Some(&wanted) {
+            hints.request = Some(wanted);
+        }
+        let Some((revision, lines)) = hints.request.clone() else { return false };
+        let text = self.state.text();
+        match services.inlay_hints(text, revision, lines.clone()) {
+            Reply::Ready(answer) => {
+                let color = to_rgba(self.theme.hint);
+                hints.decorations = answer
+                    .into_iter()
+                    .filter(|hint| hint.position.line < text.line_count())
+                    .map(|hint| Decoration::injected_text(text.offset(hint.position), hint.label, color))
+                    .collect();
+                hints.answered = hints.request.take();
+                false
+            }
+            Reply::Pending => true,
+        }
+    }
+
+    /// The visible lines widened to whole `INLAY_HINT_BLOCK_LINES` blocks, `None` when hints
+    /// are off.
+    fn visible_lines_for_hints(&self, metrics: &Metrics) -> Option<std::ops::Range<usize>> {
+        if !self.config.inlay_hints {
+            return None;
+        }
+        let visible = self.visible_lines(metrics)?;
+        let first = visible.start() / INLAY_HINT_BLOCK_LINES * INLAY_HINT_BLOCK_LINES;
+        let end = (visible.end() / INLAY_HINT_BLOCK_LINES + 1) * INLAY_HINT_BLOCK_LINES;
+        Some(first..end.min(self.state.text().line_count()))
     }
 
     /// Asks for the signature after `(` or `,`; closes it after `)`, Escape or a line change.

@@ -101,6 +101,14 @@ pub struct SignatureHelp {
     pub documentation: Option<String>,
 }
 
+/// A label shown inside the text, not part of it: a parameter name, an inferred type.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InlayHint {
+    pub position: Position,
+    /// Shown as is: services put the padding spaces they want in it.
+    pub label: String,
+}
+
 /// The edits of `edits` as one transaction (they must not overlap), the cursor after the
 /// first one.
 pub fn transaction_of_edits(text: &Text, edits: &[TextEdit]) -> Option<crate::edit::Transaction> {
@@ -179,6 +187,16 @@ pub trait LanguageServices {
         _position: Position,
     ) -> Reply<Option<SignatureHelp>> {
         Reply::Ready(None)
+    }
+
+    /// The inlay hints of `lines` (the editor asks for a window around the visible lines).
+    fn inlay_hints(
+        &mut self,
+        _text: &Text,
+        _text_revision: u64,
+        _lines: std::ops::Range<usize>,
+    ) -> Reply<Vec<InlayHint>> {
+        Reply::Ready(Vec::new())
     }
 
     /// Where the symbol at `position` is defined, in the same text (F12, Ctrl+click).

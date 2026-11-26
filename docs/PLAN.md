@@ -102,7 +102,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [x] Minimap (token-colored runs, viewport slider, click or drag to scroll; off by default)
 - [x] Sticky scroll (indentation headers, up to 5 pinned; click to go back)
 - [x] Command palette (F1, Ctrl+Shift+P; every keymap binding by name with its keys)
-- [x] Inlay hints, code lens, inline completions (ghost text) — injected text decorations (inlay hints from the application) and ghost text from `LanguageServices::inline_completion`; code lens and LSP inlay hints not yet
+- [x] Inlay hints, code lens, inline completions (ghost text) — injected text decorations, inlay hints from `LanguageServices::inlay_hints` (LSP too) and ghost text from `LanguageServices::inline_completion`; code lens not yet
 
 ## M13. Gitgud integration
 - [x] An adapter matching gitgud's uses (table in MONACO_FEATURES.md) — `docs/GITGUD_INTEGRATION.md` maps each Monaco use to the API; `tests/gitgud_snippets.rs` keeps it compiling
@@ -121,7 +121,8 @@ change their seeds locally to hunt for rarer bugs). Every feature is a commit on
 1. LSP: references (a peek list) and document highlights. (Done: diagnostics, rename, signature
    help, incremental sync through `LanguageServices::text_changed` and `Outcome::texts_before`.)
 2. (done since: snippets — `rustext_core::snippet`, `Command::InsertSnippet`; their tab stops aren't highlighted yet.)
-3. (done since: `DecorationKind::InjectedText`, ghost text.) Next: LSP `textDocument/inlayHint` → injected texts; code lens as a row above lines (a new `RowContent`).
+3. (done since: injected text, ghost text, inlay hints with LSP.) Next: code lens as a row above
+   lines (a new `RowContent`).
 4. (done since: Up/Down by visual row when wrapping.)
 5. (done since: brackets in strings and comments neither color nor match, D21.)
 6. Accessibility beyond the name and cursor line (done): expose the visible text and the

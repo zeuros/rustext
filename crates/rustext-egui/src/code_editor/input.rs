@@ -475,6 +475,7 @@ impl CodeEditor<'_> {
         for changes in &outcome.applied_changes {
             self.view.service_diagnostics =
                 self.view.service_diagnostics.iter().filter_map(|decoration| decoration.map(changes)).collect();
+            self.view.inlay_hints.map(changes);
             self.map_find_scope(changes);
         }
         for edited in &outcome.edited_lines {

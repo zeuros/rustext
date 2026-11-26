@@ -12,6 +12,8 @@ struct TestServices {
     words: WordCompletions,
     /// Published once, on the next frame.
     pending_diagnostics: Option<Vec<rustext_core::services::Diagnostic>>,
+    /// The line ranges inlay hints were asked for.
+    inlay_hint_requests: Vec<std::ops::Range<usize>>,
 }
 
 impl LanguageServices for TestServices {
@@ -66,6 +68,25 @@ impl LanguageServices for TestServices {
         Reply::Ready(Some(rustext_core::services::SignatureHelp { label, active_parameter, documentation: None }))
     }
 
+    /// `: i32` after the name of every `let`.
+    fn inlay_hints(
+        &mut self,
+        text: &Text,
+        _revision: u64,
+        lines: std::ops::Range<usize>,
+    ) -> Reply<Vec<rustext_core::services::InlayHint>> {
+        self.inlay_hint_requests.push(lines.clone());
+        let hints = lines
+            .filter_map(|line| {
+                let content = text.line_content(line);
+                let name = content.strip_prefix("let ")?.split([' ', '=']).next()?;
+                let position = Position::new(line, 4 + name.chars().count());
+                Some(rustext_core::services::InlayHint { position, label: ": i32".into() })
+            })
+            .collect();
+        Reply::Ready(hints)
+    }
+
     fn take_diagnostics(&mut self, _text: &Text) -> Option<Vec<rustext_core::services::Diagnostic>> {
         self.pending_diagnostics.take()
     }
@@ -104,7 +125,11 @@ fn harness(content: &str) -> Harness<'static, Fixture> {
         config: ViewConfig { cursor_blinking: false, ..ViewConfig::default() },
         theme: EditorTheme::dark(),
         keymap: Keymap::vscode(),
-        services: TestServices { words: WordCompletions::default(), pending_diagnostics: None },
+        services: TestServices {
+            words: WordCompletions::default(),
+            pending_diagnostics: None,
+            inlay_hint_requests: Vec::new(),
+        },
     };
     let mut harness = Harness::builder().with_size(Vec2::new(900.0, 500.0)).with_step_dt(1.0 / 60.0).build_ui_state(
         |ui, fixture: &mut Fixture| {
@@ -348,4 +373,36 @@ fn signature_help_follows_the_active_parameter() {
     assert_eq!(shown(&harness).as_deref(), Some("helper(first: u8, second: u8)"));
     type_text(&mut harness, "1, 2)");
     assert_eq!(shown(&harness), None);
+}
+
+#[test]
+fn inlay_hints_show_for_the_visible_block_and_follow_edits() {
+    let content: String =
+        (0..300).map(|line| if line == 2 { "let a = 1;\n".to_string() } else { format!("// {line}\n") }).collect();
+    let mut harness = harness(&content);
+
+    assert_eq!(harness.state().view.inlay_hints.labels(), vec![": i32"]);
+    assert_eq!(harness.state().services.inlay_hint_requests.last(), Some(&(0..100)));
+    let hint_offset = |harness: &Harness<'_, Fixture>| harness.state().view.inlay_hints.decorations()[0].start;
+    let before = hint_offset(&harness);
+
+    let pos = harness.state().view.geometry().unwrap().cell_left(0, 0);
+    press(&mut harness, pos, Modifiers::NONE);
+    type_text(&mut harness, "x");
+    assert_eq!(hint_offset(&harness), before + 1);
+}
+
+#[test]
+fn small_scrolls_reuse_the_inlay_hints_answer() {
+    let content = "let a = 1;\n".repeat(300);
+    let mut harness = harness(&content);
+    let requests_before = harness.state().services.inlay_hint_requests.len();
+
+    harness.state_mut().view.scroll_offset.y = 200.0;
+    harness.run();
+    assert_eq!(harness.state().services.inlay_hint_requests.len(), requests_before);
+
+    harness.state_mut().view.scroll_offset.y = 3_000.0;
+    harness.run();
+    assert_eq!(harness.state().services.inlay_hint_requests.last().map(|lines| lines.start), Some(100));
 }

@@ -99,3 +99,16 @@ fn edits_reach_the_server_as_ranges() {
     let hover = until_ready(|| services.hover(&after, 2, Position::new(0, 0)));
     assert_eq!(hover.as_deref(), Some("fake hover at 0:0 on \"1\""));
 }
+
+#[test]
+fn inlay_hints_of_a_line_range() {
+    let mut services = start();
+    let text = Text::new("😀b\nab\nab\n");
+
+    let hints = until_ready(|| services.inlay_hints(&text, 1, 0..2));
+
+    assert_eq!(hints.len(), 2);
+    assert_eq!(hints[0].label, " : u8");
+    assert_eq!(hints[0].position, Position::new(0, 1));
+    assert_eq!(hints[1].position, Position::new(1, 2));
+}
