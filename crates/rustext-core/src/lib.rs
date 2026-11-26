@@ -16,6 +16,7 @@ pub mod motion;
 pub mod position;
 pub mod selection;
 pub mod services;
+pub mod snippet;
 pub mod state;
 pub mod structure;
 pub mod style;

@@ -38,6 +38,8 @@ pub struct CompletionItem {
     pub detail: Option<String>,
     /// What accepting inserts in place of the prefix; the label when `None`.
     pub insert_text: Option<String>,
+    /// `insert_text` is a snippet (`${1:arg}`…): its tab stops are visited with Tab.
+    pub is_snippet: bool,
 }
 
 impl CompletionItem {
@@ -47,6 +49,17 @@ impl CompletionItem {
 
     pub fn with_detail(self, detail: impl Into<String>) -> Self {
         Self { detail: Some(detail.into()), ..self }
+    }
+
+    /// A snippet item: `snippet` (`fn ${1:name}() {$0}`) is inserted with its tab stops.
+    pub fn snippet(label: impl Into<String>, snippet: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            kind: CompletionKind::Snippet,
+            insert_text: Some(snippet.into()),
+            is_snippet: true,
+            ..Self::default()
+        }
     }
 
     pub fn text_to_insert(&self) -> &str {

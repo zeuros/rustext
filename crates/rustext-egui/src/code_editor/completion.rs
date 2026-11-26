@@ -203,6 +203,15 @@ impl CodeEditor<'_> {
     fn accept_completion(&mut self, item: &CompletionItem, outcome: &mut Outcome) {
         let Some(session) = self.view.completion.session.take() else { return };
         let prefix_len = self.state.selections().primary().head - session.prefix_start;
+        if item.is_snippet {
+            let command = Command::InsertSnippet {
+                snippet: item.text_to_insert().to_string(),
+                replaced_before_cursor: prefix_len,
+            };
+            let result = self.state.execute(command);
+            *outcome = std::mem::take(outcome).merged(result);
+            return;
+        }
         let insert = item.text_to_insert().to_string();
         let context = self.state.context();
         let transaction = replace_each(&context, EditKind::Other, |selection| {

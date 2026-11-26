@@ -10,7 +10,7 @@ use crate::history::History;
 use crate::lines::{self, CaseTransform, LinesRewrite};
 use crate::motion::{HiddenLines, Motion, apply_motion_over};
 use crate::position::Position;
-use crate::selection::Selections;
+use crate::selection::{Selection, Selections};
 use crate::text::Text;
 
 /// Everything the editor can do to its state. Commands that need the viewport (page moves)
@@ -67,6 +67,13 @@ pub enum Command {
     ToggleBlockComment,
     /// Applies a transaction computed outside (find / replace, formatting, an application edit).
     Apply(Transaction),
+    /// Inserts a snippet (`${1:name}`…) in place of the primary selection and the
+    /// `replaced_before_cursor` chars before it (a completion's prefix), then selects its first
+    /// tab stop; Tab and Shift+Tab go through the others.
+    InsertSnippet {
+        snippet: String,
+        replaced_before_cursor: usize,
+    },
 }
 
 impl Command {
@@ -138,6 +145,7 @@ impl Command {
             Command::ToggleLineComment => "comment.line",
             Command::ToggleBlockComment => "comment.block",
             Command::Apply(_) => "edit.apply",
+            Command::InsertSnippet { .. } => "edit.insertSnippet",
         }
     }
 }
@@ -224,6 +232,33 @@ pub struct EditorState {
     text_revision: u64,
     /// Lines the view hides (folds): vertical moves step over them.
     pub hidden_lines: HiddenLines,
+    snippet_session: Option<SnippetSession>,
+}
+
+/// The tab stops of an inserted snippet, in char offsets that follow edits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SnippetSession {
+    /// (tab stop index, start, end).
+    stops: Vec<(usize, usize, usize)>,
+    /// Tab stop indexes in visiting order (`$0` last).
+    order: Vec<usize>,
+    /// Position in `order` of the stop selected now.
+    current: usize,
+}
+
+impl SnippetSession {
+    fn ranges_of(&self, order_position: usize) -> Vec<(usize, usize)> {
+        let index = self.order[order_position];
+        self.stops
+            .iter()
+            .filter(|(stop_index, _, _)| *stop_index == index)
+            .map(|&(_, start, end)| (start, end))
+            .collect()
+    }
+
+    fn holds(&self, offset: usize) -> bool {
+        self.ranges_of(self.current).iter().any(|&(start, end)| start <= offset && offset <= end)
+    }
 }
 
 impl EditorState {
@@ -242,6 +277,7 @@ impl EditorState {
             last_copy: None,
             text_revision: 0,
             hidden_lines: HiddenLines::default(),
+            snippet_session: None,
         }
     }
 
@@ -295,7 +331,21 @@ impl EditorState {
         self.history.push_undo_stop();
     }
 
+    /// Whether Tab moves between the tab stops of an inserted snippet.
+    pub fn is_in_snippet(&self) -> bool {
+        self.snippet_session.is_some()
+    }
+
     pub fn execute(&mut self, command: Command) -> Outcome {
+        match (&command, self.snippet_session.is_some()) {
+            (Command::Tab, true) => return self.jump_to_tab_stop(true),
+            (Command::Outdent, true) => return self.jump_to_tab_stop(false),
+            (Command::CollapseSelections, true) => self.snippet_session = None,
+            (Command::InsertSnippet { snippet, replaced_before_cursor }, _) if !self.config.read_only => {
+                return self.insert_snippet(snippet, *replaced_before_cursor);
+            }
+            _ => {}
+        }
         if command.edits_text() && self.config.read_only {
             let clipboard = matches!(command, Command::Cut).then(|| edit::copied_content(&self.context())).flatten();
             return Outcome { rejected_read_only: true, clipboard, ..Outcome::default() };
@@ -366,6 +416,7 @@ impl EditorState {
             Command::ToggleLineComment => toggle_line_comment(&context),
             Command::ToggleBlockComment => toggle_block_comment(&context),
             Command::Apply(transaction) => Some(transaction),
+            Command::InsertSnippet { .. } => None,
         };
         transaction.map(|transaction| self.apply(transaction)).unwrap_or_default()
     }
@@ -399,6 +450,12 @@ impl EditorState {
         auto_closed_offsets.sort_unstable();
         auto_closed_offsets.dedup();
 
+        if let Some(session) = self.snippet_session.as_mut() {
+            for stop in &mut session.stops {
+                stop.1 = transaction.changes.map_offset(stop.1, crate::change::Bias::Before);
+                stop.2 = transaction.changes.map_offset(stop.2, crate::change::Bias::After).max(stop.1);
+            }
+        }
         let selections_changed = selections_after != self.selections;
         let edited_lines = EditedLines::of(&transaction.changes, &self.text, &new_text).into_iter().collect();
         self.text_revision += 1;
@@ -413,10 +470,58 @@ impl EditorState {
         if selections == self.selections {
             return Outcome::default();
         }
+        if self.snippet_session.as_ref().is_some_and(|session| !session.holds(selections.primary().head)) {
+            self.snippet_session = None;
+        }
         self.selections = selections;
         self.history.push_undo_stop();
         self.forget_auto_closed_away_from_cursors();
         Outcome { selections_changed: true, ..Outcome::default() }
+    }
+
+    fn insert_snippet(&mut self, snippet: &str, replaced_before_cursor: usize) -> Outcome {
+        let parsed = crate::snippet::parse_snippet(snippet);
+        let primary = self.selections.primary();
+        let start = primary.start().saturating_sub(if primary.is_empty() { replaced_before_cursor } else { 0 });
+        let changes = ChangeSet::single(crate::change::Change::new(start, primary.end(), parsed.text.clone()));
+        let end = start + parsed.text.chars().count();
+        let transaction = Transaction {
+            changes,
+            selections: Selections::cursor(end),
+            kind: crate::history::EditKind::Other,
+            auto_closed_offsets: Vec::new(),
+        };
+        self.snippet_session = None;
+        let outcome = self.apply(transaction);
+        let order = parsed.visiting_order();
+        if order.is_empty() {
+            return outcome;
+        }
+        let stops = parsed.tab_stops.iter().map(|stop| (stop.index, start + stop.start, start + stop.end)).collect();
+        self.snippet_session = Some(SnippetSession { stops, order, current: 0 });
+        outcome.merged(self.select_current_tab_stop())
+    }
+
+    /// Selects the ranges of the current tab stop (several for mirrors); ends the session on
+    /// the last stop.
+    fn select_current_tab_stop(&mut self) -> Outcome {
+        let Some(session) = self.snippet_session.clone() else { return Outcome::default() };
+        let ranges: Vec<Selection> =
+            session.ranges_of(session.current).iter().map(|&(start, end)| Selection::new(start, end)).collect();
+        let is_last = session.current + 1 == session.order.len();
+        let outcome = self.select(Selections::new(ranges, 0));
+        if is_last {
+            self.snippet_session = None;
+        }
+        outcome
+    }
+
+    fn jump_to_tab_stop(&mut self, forward: bool) -> Outcome {
+        let Some(session) = self.snippet_session.as_mut() else { return Outcome::default() };
+        session.current = if forward { session.current + 1 } else { session.current.saturating_sub(1) };
+        session.current = session.current.min(session.order.len() - 1);
+        self.history.push_undo_stop();
+        self.select_current_tab_stop()
     }
 
     fn replay(&mut self, is_undo: bool) -> Outcome {
@@ -646,6 +751,51 @@ mod tests {
         assert_eq!(edited.map_line(0), Some(0));
         assert_eq!(edited.map_line(3), Some(5));
         assert_eq!(edited.map_line(1), None);
+    }
+
+    #[test]
+    fn snippets_select_their_tab_stops_in_order() {
+        let mut state = editor("x = fo", 6);
+
+        state.execute(Command::InsertSnippet {
+            snippet: "for ${1:item} in ${2:items} {$0}".into(),
+            replaced_before_cursor: 2,
+        });
+        assert_eq!(state.text().to_string(), "x = for item in items {}");
+        assert_eq!(state.selections().primary(), Selection::new(8, 12));
+
+        type_all(&mut state, "row");
+        state.execute(Command::Tab);
+        assert_eq!(state.text().to_string(), "x = for row in items {}");
+        assert_eq!(state.selections().primary(), Selection::new(15, 20));
+
+        state.execute(Command::Tab);
+        assert_eq!(state.selections().primary(), Selection::cursor(22));
+        assert!(!state.is_in_snippet());
+
+        state.execute(Command::Tab);
+        // The session ended: Tab is a normal Tab again (to the tab stop at column 24).
+        assert_eq!(state.text().to_string(), "x = for row in items {  }");
+    }
+
+    #[test]
+    fn snippet_mirrors_are_edited_together() {
+        let mut state = editor("", 0);
+
+        state.execute(Command::InsertSnippet { snippet: "let ${1:x} = ${1:x};".into(), replaced_before_cursor: 0 });
+        type_all(&mut state, "value");
+
+        assert_eq!(state.text().to_string(), "let value = value;");
+    }
+
+    #[test]
+    fn leaving_the_tab_stop_ends_the_snippet() {
+        let mut state = editor("", 0);
+        state.execute(Command::InsertSnippet { snippet: "f(${1:a}, ${2:b})".into(), replaced_before_cursor: 0 });
+
+        state.execute(Command::Move { motion: Motion::DocumentEnd, extend: false });
+
+        assert!(!state.is_in_snippet());
     }
 
     #[test]

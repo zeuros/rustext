@@ -16,6 +16,7 @@ impl LanguageServices for TestServices {
     fn completions(&mut self, text: &Text, revision: u64, position: Position) -> Reply<Vec<CompletionItem>> {
         let Reply::Ready(mut items) = self.words.completions(text, revision, position) else { return Reply::Pending };
         items.push(CompletionItem::new("helper", CompletionKind::Function).with_detail("fn() -> u8"));
+        items.push(CompletionItem::snippet("forloop", "for ${1:item} in ${2:items} {\n    $0\n}"));
         Reply::Ready(items)
     }
 
@@ -200,4 +201,25 @@ fn escape_in_the_editor_closes_the_find_widget() {
     harness.run();
 
     assert!(!harness.state().view.find.is_open);
+}
+
+#[test]
+fn snippet_completions_visit_their_tab_stops_with_tab() {
+    let mut harness = harness("\n");
+    click_end(&mut harness, 0);
+
+    type_text(&mut harness, "forl");
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(content(&harness), "for item in items {\n    \n}\n");
+
+    type_text(&mut harness, "row");
+    harness.key_press(Key::Tab);
+    harness.run();
+    type_text(&mut harness, "rows");
+    harness.key_press(Key::Tab);
+    harness.run();
+    type_text(&mut harness, "x");
+
+    assert_eq!(content(&harness), "for row in rows {\n    x\n}\n");
 }
