@@ -226,7 +226,9 @@ on explicit actions (fold all, replace all, a new diff) or behind a budget (the 
   with tree-sitter (D22): typing 1.6 ms (fold markers from the tree included), at the end
   5.4 ms, Ctrl+End 15 ms; the first parse
   (~450 ms) runs on its thread while frames take 0.4 ms. Run it after touching anything
-  per-frame; a regression there is a bug.
+  per-frame; a regression there is a bug. kittest keeps AccessKit on, so these include the
+  screen reader text runs (~0.15 ms a frame), which an application without a screen reader
+  doesn't build.
 
 ## D20. Word wrap: continuation rows, column-based breaking
 

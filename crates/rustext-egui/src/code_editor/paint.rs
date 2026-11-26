@@ -28,7 +28,7 @@ struct PaintedRow {
 }
 
 impl CodeEditor<'_> {
-    pub(super) fn paint(&mut self, ui: &mut Ui, metrics: &Metrics, has_focus: bool) {
+    pub(super) fn paint(&mut self, ui: &mut Ui, metrics: &Metrics, has_focus: bool, editor_id: egui::Id) {
         let painter = ui.painter_at(metrics.full_rect());
         let theme = self.theme.clone();
         painter.rect_filled(metrics.full_rect(), CornerRadius::ZERO, theme.background);
@@ -161,6 +161,16 @@ impl CodeEditor<'_> {
         }
 
         self.paint_bracket_pair_guide(&text_painter, metrics);
+        let segments: Vec<super::accessibility::VisibleSegment> = rows
+            .iter()
+            .filter_map(|painted| {
+                let (line, start_column, end_column) = self.row_segment(painted.row)?;
+                let end_column = end_column.min(text.line_len(line));
+                Some(super::accessibility::VisibleSegment { line, start_column, end_column })
+            })
+            .collect();
+        let first_row_top = rows.first().map_or(metrics.text_rect.top(), |painted| self.row_top(metrics, painted.row));
+        self.update_accesskit_text(ui, editor_id, metrics, first_row_top, &segments);
 
         let text_left = self.text_left(metrics);
         if let Some(placeholder) = self.config.placeholder.as_ref().filter(|_| text.is_empty()) {

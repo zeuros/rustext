@@ -616,3 +616,17 @@ fn screen_readers_see_a_named_text_input_with_the_cursor_line() {
     let node = harness.get_by_label("Editor");
     assert_eq!(node.value().as_deref(), Some("second line"));
 }
+
+#[test]
+fn screen_readers_read_the_visible_lines_and_the_selection() {
+    let mut harness = harness("first line\nsecond line");
+    click(&mut harness, 1, 3);
+
+    use egui_kittest::kittest::NodeT;
+    let editor = harness.get_by_label("Editor").accesskit_node();
+    assert_eq!(editor.role(), egui::Role::MultilineTextInput);
+    let runs: Vec<String> = harness.get_all_by_role(egui::Role::TextRun).filter_map(|run| run.value()).collect();
+    assert_eq!(runs, vec!["first line\n", "second line"]);
+    let selection = editor.data().text_selection().copied();
+    assert_eq!(selection.map(|selection| selection.focus.character_index), Some(3));
+}

@@ -8,6 +8,7 @@
 //! The editor paints display rows (DECISIONS D17): one per line by default, or the rows of a
 //! `DisplayLayout` (padding, collapsed and foreign rows, for diffs and folding).
 
+mod accessibility;
 mod assist;
 mod code_lens;
 mod completion;
@@ -726,7 +727,7 @@ impl<'a> CodeEditor<'a> {
                 }
             })
         };
-        self.paint(ui, &metrics, response.has_focus());
+        self.paint(ui, &metrics, response.has_focus(), id);
         if self.bracket_budget_lines == 0 {
             ui.ctx().request_repaint();
         }
