@@ -113,28 +113,32 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 Last updated: 2026-11-26, end of the first session (continued).
 
 **State**: M0–M10 done, M11 and M12 mostly done, M13 done (integration guide, performance).
-`scripts/check.sh` green; ~250 tests, including seeded random tests (`random_commands.rs`
+`scripts/check.sh` green; ~265 tests, including seeded random tests (`random_commands.rs`
 in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case counts or
 change their seeds locally to hunt for rarer bugs). Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. Services across files: definitions and references in other documents (they need the
-   application to open them: an `EditorResponse` request, gitgud decides). (Done in the same
-   text: diagnostics, rename, signature help, document highlights, inlay hints, references
-   (Shift+F12), incremental LSP sync.)
-2. (done since: snippets — `rustext_core::snippet`, `Command::InsertSnippet`; their tab stops aren't highlighted yet.)
-3. (done since: injected text, ghost text, inlay hints with LSP.) Next: code lens as a row above
-   lines (a new `RowContent`).
-4. (done since: Up/Down by visual row when wrapping.)
-5. (done since: brackets in strings and comments neither color nor match, D21.)
-6. Accessibility beyond the name and cursor line (done): expose the visible text and the
-   selection to AccessKit, an accessible diff viewer (`accessibleDiffViewerNext`).
+1. Code lens: a row above a line (a new `RowContent`) with clickable labels from the services
+   or the application (gitgud: blame, "stage hunk").
+2. Services across files: definitions and references in other documents need the application
+   to open them (an `EditorResponse` request; gitgud decides).
+3. Snippet tab stops highlighted while the snippet session lasts.
+4. Accessibility beyond the name and cursor line: expose the visible text and the selection to
+   AccessKit; an accessible diff viewer (`accessibleDiffViewerNext`).
+5. Bracket pair guides (`guides.bracketPairs`), from `BracketLineStarts`.
+
+Done since the last rewrite of this list: same-text services (diagnostics, rename, signature
+help, document highlights, inlay hints, references on Shift+F12) with incremental LSP sync;
+brackets in strings and comments (D21); Up/Down by visual row when wrapping; snippets; ghost
+text; random tests.
 
 **Known gaps / debts**:
 - Folding is indentation-only; `foldingStrategy: 'auto'` needs language structure.
 - Folding is off when the application passes its own `DisplayLayout` (diffs).
 - Text from egui's TextEdit (find input) can't use rustext's keymap (Ctrl+D etc. there are
   egui's).
+- The bracket lexer (D21) doesn't know raw strings, nested comments or heredocs.
+- Find References isn't visible in the demo without `--lsp` (word completions answer none).
 
 **How to verify visually**: `scripts/screenshot.sh <png> [file] [--showcase | --find x |
 --page diff | --page merge | --inline | --diff old new | --blame | --wrap N | --complete |
