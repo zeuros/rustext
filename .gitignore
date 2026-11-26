@@ -1,0 +1,4 @@
+/target
+*.png.new
+*.diff.png
+.playwright-mcp/

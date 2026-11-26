@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/zeuros/rustext"
+rust-version = "1.90"
+
+[workspace.dependencies]
+rustext-core = { path = "crates/rustext-core" }
+rustext-syntax = { path = "crates/rustext-syntax" }
+rustext-diff = { path = "crates/rustext-diff" }
+rustext-egui = { path = "crates/rustext-egui" }
+ropey = { version = "1.6", default-features = false, features = ["simd"] }
+unicode-segmentation = "1.13"
+regex = "1.13"
+syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
+two-face = { version = "0.5", default-features = false, features = ["syntect-default-fancy"] }
+imara-diff = "0.2"
+egui = "0.37"
+eframe = "0.37"
+egui_kittest = "0.37"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.dev.package."*"]
+opt-level = 2
