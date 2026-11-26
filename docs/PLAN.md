@@ -123,7 +123,7 @@ change their seeds locally to hunt for rarer bugs). Every feature is a commit on
    grammar is bundled (folding by syntax is done).
 2. An accessible diff viewer (`accessibleDiffViewerNext`): the changes read one by one.
 
-Done since: word wrap in diffs (`--page diff --wrap N`); links (underlined URLs, Ctrl+click opens); the visible lines and the selection exposed to screen readers (AccessKit text
+Done since: Go to Symbol (Ctrl+Shift+O); word wrap in diffs (`--page diff --wrap N`); links (underlined URLs, Ctrl+click opens); the visible lines and the selection exposed to screen readers (AccessKit text
 runs); definitions and references in other documents (`open_request`, D26), F12 answered on a later frame; bracket pair guide of the cursor's pair (`--bracket-guides`); snippet placeholders highlighted; folding by syntax tree (`FoldingStrategy`), Fold from inside a block moves the
 cursor to its header; code lenses (D25, `--code-lens` in the demo); Helix's crates (D22–D24): tree-sitter highlighting for 18 languages, parsed on a
 thread; smart select (Shift+Alt+→/←); `lsp-types` messages, checked against a real

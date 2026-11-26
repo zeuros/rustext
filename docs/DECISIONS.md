@@ -296,6 +296,9 @@ others, so diffs of any file stay highlighted.
   element) folds unless it is the last named child of a construct started earlier (Python's
   `block`). The last line stays visible when it only closes (`}`, `end`, `</div>`).
   Without a grammar, folding is by indentation, as before.
+- Go to Symbol (Ctrl+Shift+O) asks the services first (an LSP server knows more), and runs
+  the grammar crate's `tags.scm` when they have nothing: `@definition.*` captures named by
+  `@name`. The command palette and the symbol list are one fuzzy list (`PaletteMode`).
 - Queries come from the grammar crates (MIT). Helix's and nvim-treesitter's are richer but
   MPL/Apache files with their own conventions (`#set!`, `inherits`); vendoring them is a later
   choice. Injections (JS in HTML, code in Markdown) aren't run yet.

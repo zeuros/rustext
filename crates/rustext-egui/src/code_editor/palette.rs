@@ -1,26 +1,54 @@
-//! The command palette (F1, Ctrl+Shift+P): every keymap binding by name, fuzzy-filtered, run
-//! with Enter. Names come from `Command::name()` and the widget actions (DECISIONS D8).
+//! The palette: a fuzzy-filtered list picked with Enter. The command palette (F1,
+//! Ctrl+Shift+P) lists every keymap binding by name (from `Command::name()` and the widget
+//! actions, DECISIONS D8); Go to Symbol (Ctrl+Shift+O) lists the document's definitions, from
+//! the language services or else the styler's syntax tree.
 
 use egui::{Align2, Area, Frame, Id, Key, Order, RichText, Ui, vec2};
-use rustext_core::services::FuzzyQuery;
+use rustext_core::Range;
+use rustext_core::services::{DocumentSymbol, FuzzyQuery, Reply};
 
 use super::{CodeEditor, Metrics};
 use crate::keymap::{Action, KeyChord};
 
 const VISIBLE_ITEMS: usize = 14;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PaletteMode {
+    #[default]
+    Commands,
+    Symbols,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct PaletteState {
     pub is_open: bool,
+    pub mode: PaletteMode,
     pub query: String,
     selected: usize,
     focus_requested: bool,
+    /// The document's symbols, once known (Symbols mode).
+    symbols: Option<Vec<DocumentSymbol>>,
 }
 
 impl PaletteState {
-    pub(super) fn open(&mut self) {
-        *self = PaletteState { is_open: true, focus_requested: true, ..PaletteState::default() };
+    pub(super) fn open(&mut self, mode: PaletteMode) {
+        *self = PaletteState { is_open: true, mode, focus_requested: true, ..PaletteState::default() };
     }
+}
+
+/// What picking an entry does.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum PalettePick {
+    Action(Action),
+    /// Selects this range (a symbol's name).
+    Select(Range),
+}
+
+struct PaletteEntry {
+    label: String,
+    /// Right-aligned: the keys of a command, the kind and line of a symbol.
+    hint: String,
+    pick: PalettePick,
 }
 
 /// `lines.moveUp` → `Lines: Move Up`; `ZoomIn` → `Zoom In`.
@@ -76,26 +104,77 @@ pub fn chords_label(chords: &[KeyChord]) -> String {
 }
 
 impl CodeEditor<'_> {
-    /// The entries matching the query: (label, key hint, action), best first, one per label.
-    fn palette_entries(&self) -> Vec<(String, String, Action)> {
+    /// The entries matching the query, best first.
+    fn palette_entries(&mut self) -> Vec<PaletteEntry> {
+        match self.view.palette.mode {
+            PaletteMode::Commands => self.command_entries(),
+            PaletteMode::Symbols => self.symbol_entries(),
+        }
+    }
+
+    /// The commands matching the query, one per label.
+    fn command_entries(&self) -> Vec<PaletteEntry> {
         let mut fuzzy_query = FuzzyQuery::new(&self.view.palette.query);
-        let mut entries: Vec<(u16, String, String, Action)> = Vec::new();
+        let mut entries: Vec<(u16, PaletteEntry)> = Vec::new();
         for binding in self.keymap.bindings.iter().rev() {
             let label = action_label(&binding.action);
-            if entries.iter().any(|(_, existing, _, _)| *existing == label) {
+            if entries.iter().any(|(_, entry)| entry.label == label) {
                 continue;
             }
             if let Some(score) = fuzzy_query.score(&label) {
-                entries.push((score, label, chords_label(&binding.chords), binding.action.clone()));
+                let pick = PalettePick::Action(binding.action.clone());
+                entries.push((score, PaletteEntry { label, hint: chords_label(&binding.chords), pick }));
             }
         }
-        entries.sort_by(|first, second| second.0.cmp(&first.0).then_with(|| first.1.cmp(&second.1)));
-        entries.into_iter().map(|(_, label, keys, action)| (label, keys, action)).collect()
+        entries.sort_by(|first, second| second.0.cmp(&first.0).then_with(|| first.1.label.cmp(&second.1.label)));
+        entries.into_iter().map(|(_, entry)| entry).collect()
+    }
+
+    /// The symbols matching the query: in text order for an empty query, else best first.
+    /// They come from the services, or from the styler's syntax tree when the services have
+    /// none; while the services think, the list is empty.
+    fn symbol_entries(&mut self) -> Vec<PaletteEntry> {
+        if self.view.palette.symbols.is_none() {
+            let (text, revision) = (self.state.text(), self.state.text_revision());
+            let from_services = match self.services.as_deref_mut() {
+                Some(services) => services.document_symbols(text, revision),
+                None => Reply::Ready(Vec::new()),
+            };
+            self.view.palette.symbols = match from_services {
+                Reply::Ready(symbols) if !symbols.is_empty() => Some(symbols),
+                Reply::Ready(_) => {
+                    Some(self.styler.as_deref_mut().map(|styler| styler.document_symbols(text)).unwrap_or_default())
+                }
+                Reply::Pending => None,
+            };
+        }
+        let mut fuzzy_query = FuzzyQuery::new(&self.view.palette.query);
+        let symbols = self.view.palette.symbols.as_deref().unwrap_or_default();
+        let mut entries: Vec<(u16, PaletteEntry)> = symbols
+            .iter()
+            .filter_map(|symbol| {
+                let score = fuzzy_query.score(&symbol.name)?;
+                let container =
+                    symbol.container.as_deref().map(|container| format!("{container} · ")).unwrap_or_default();
+                let hint = format!("{container}{} · line {}", symbol.kind.label(), symbol.range.start.line + 1);
+                let entry = PaletteEntry { label: symbol.name.clone(), hint, pick: PalettePick::Select(symbol.range) };
+                Some((score, entry))
+            })
+            .collect();
+        if !self.view.palette.query.is_empty() {
+            entries.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+        }
+        entries.into_iter().map(|(_, entry)| entry).collect()
     }
 
     /// Draws the palette; returns the action picked, if any, and whether the editor gets the
     /// focus back.
-    pub(super) fn show_palette(&mut self, ui: &mut Ui, metrics: &Metrics, editor_id: Id) -> (Option<Action>, bool) {
+    pub(super) fn show_palette(
+        &mut self,
+        ui: &mut Ui,
+        metrics: &Metrics,
+        editor_id: Id,
+    ) -> (Option<PalettePick>, bool) {
         if !self.view.palette.is_open {
             return (None, false);
         }
@@ -124,10 +203,12 @@ impl CodeEditor<'_> {
                     ui,
                     |ui| {
                         ui.set_width(480.0);
+                        let hint = match palette.mode {
+                            PaletteMode::Commands => "Type a command",
+                            PaletteMode::Symbols => "Go to symbol",
+                        };
                         let input = ui.add(
-                            egui::TextEdit::singleline(&mut palette.query)
-                                .hint_text("Type a command")
-                                .desired_width(f32::INFINITY),
+                            egui::TextEdit::singleline(&mut palette.query).hint_text(hint).desired_width(f32::INFINITY),
                         );
                         if palette.focus_requested {
                             input.request_focus();
@@ -143,15 +224,15 @@ impl CodeEditor<'_> {
                             palette.selected = (palette.selected + entries.len() - 1) % entries.len();
                         }
                         let first_visible = palette.selected.saturating_sub(VISIBLE_ITEMS - 1);
-                        for (index, (label, keys, action)) in
-                            entries.iter().enumerate().skip(first_visible).take(VISIBLE_ITEMS)
-                        {
+                        for (index, entry) in entries.iter().enumerate().skip(first_visible).take(VISIBLE_ITEMS) {
                             let is_selected = index == palette.selected;
                             let row = ui.horizontal(|ui| {
                                 ui.set_width(470.0);
-                                ui.label(RichText::new(label).color(theme.foreground));
+                                ui.label(RichText::new(&entry.label).color(theme.foreground));
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    ui.label(RichText::new(keys).monospace().size(11.0).color(theme.line_number));
+                                    ui.label(
+                                        RichText::new(&entry.hint).monospace().size(11.0).color(theme.line_number),
+                                    );
                                 });
                             });
                             if is_selected {
@@ -169,14 +250,18 @@ impl CodeEditor<'_> {
                                 )
                                 .clicked()
                             {
-                                picked = Some(action.clone());
+                                picked = Some(entry.pick.clone());
                             }
                         }
                         if entries.is_empty() {
-                            ui.label(RichText::new("No matching commands").color(theme.line_number));
+                            let nothing = match palette.mode {
+                                PaletteMode::Commands => "No matching commands",
+                                PaletteMode::Symbols => "No matching symbols",
+                            };
+                            ui.label(RichText::new(nothing).color(theme.line_number));
                         }
                         if (input.lost_focus() || input.has_focus()) && enter {
-                            picked = entries.get(palette.selected).map(|(_, _, action)| action.clone());
+                            picked = entries.get(palette.selected).map(|entry| entry.pick.clone());
                         }
                         closes = escape;
                     },

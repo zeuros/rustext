@@ -81,5 +81,9 @@ fn rust_analyzer_answers_parse() {
     );
     assert_eq!(highlights.map(|ranges| ranges.len()), Some(2));
 
+    let symbols = until_answered(|attempt| services.document_symbols(&text, attempt), |symbols| symbols.len() >= 3);
+    let names: Vec<&str> = symbols.iter().map(|symbol| symbol.name.as_str()).collect();
+    assert!(names.starts_with(&["Point", "x", "length"]), "{names:?}");
+
     let _ = std::fs::remove_dir_all(main.parent().unwrap().parent().unwrap());
 }

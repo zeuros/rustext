@@ -1,6 +1,7 @@
 //! The editor's syntax highlighter: tree-sitter for the languages with a bundled grammar
 //! (DECISIONS D22), TextMate grammars for every other one (D13), behind one type.
 
+use rustext_core::services::DocumentSymbol;
 use rustext_core::structure::FoldRange;
 use rustext_core::style::{LineStyler, StyledSpan};
 use rustext_core::{ChangeSet, EditedLines, Text};
@@ -94,6 +95,10 @@ impl LineStyler for SyntaxHighlighter {
 
     fn folds_by_syntax(&self) -> bool {
         self.uses_tree_sitter()
+    }
+
+    fn document_symbols(&mut self, text: &Text) -> Vec<DocumentSymbol> {
+        self.styler().document_symbols(text)
     }
 
     fn syntax_fold_range(&mut self, text: &Text, line: usize) -> Option<FoldRange> {

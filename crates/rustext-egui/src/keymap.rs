@@ -45,6 +45,8 @@ pub enum Action {
     GoToDefinition,
     /// Lists every command to run one (F1, Ctrl+Shift+P).
     CommandPalette,
+    /// Lists the document's symbols to go to one (Ctrl+Shift+O).
+    GoToSymbol,
     /// Renames the symbol at the cursor through the language services (F2).
     Rename,
     /// Lists the references of the symbol at the cursor (Shift+F12).
@@ -248,6 +250,7 @@ impl Keymap {
             (chord(shift_alt, Key::ArrowRight), Action::GrowSelection),
             (chord(shift_alt, Key::ArrowLeft), Action::ShrinkSelection),
             (chord(command_shift, Key::P), Action::CommandPalette),
+            (chord(command_shift, Key::O), Action::GoToSymbol),
             (chord(shift, Key::F8), Action::PreviousProblem),
             (chord(shift, Key::F7), Action::PreviousChange),
         ];

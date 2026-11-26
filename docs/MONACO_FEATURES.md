@@ -205,7 +205,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Inline completions (ghost text, AI) | `registerInlineCompletionsProvider`, `inlineSuggest.*` | P2 | done (`inline_completion`) |
 | Links (Ctrl+click URLs) | `registerLinkProvider`, `links`, `registerLinkOpener` | P1 | done for URLs (`ViewConfig::links`, opened through egui's `open_url`); no link provider |
 | Color decorators and picker | `registerColorProvider`, `colorDecorators` | P3 | todo |
-| Document symbols, outline, Go to symbol (Ctrl+Shift+O) | `registerDocumentSymbolProvider`, quick access `@` | P2 | todo |
+| Document symbols, outline, Go to symbol (Ctrl+Shift+O) | `registerDocumentSymbolProvider`, quick access `@` | P2 | partial: Go to Symbol from the services (LSP `documentSymbol`) or the grammar's tags query; no outline view |
 | Selection ranges (smart select) | `registerSelectionRangeProvider` | P2 | partial (from the styler's syntax tree, not a service) |
 | LSP bridge | not in Monaco (monaco-languageclient) | P2 | done |
 

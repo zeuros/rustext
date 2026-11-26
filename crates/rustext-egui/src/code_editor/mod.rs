@@ -689,12 +689,21 @@ impl<'a> CodeEditor<'a> {
         }
         self.show_signature_help(ui, &metrics, id);
         self.show_references(ui, &metrics, id, &mut completion_outcome);
-        let (picked_action, palette_closed) = self.show_palette(ui, &metrics, id);
+        let (picked, palette_closed) = self.show_palette(ui, &metrics, id);
         if palette_closed {
             response.request_focus();
         }
-        if let Some(action) = picked_action {
-            self.run_action(&metrics, action, &mut completion_outcome, &mut unhandled_actions);
+        match picked {
+            Some(palette::PalettePick::Action(action)) => {
+                self.run_action(&metrics, action, &mut completion_outcome, &mut unhandled_actions)
+            }
+            Some(palette::PalettePick::Select(range)) => {
+                let (start, end) = self.state.text().range_offsets(range);
+                let selections = rustext_core::Selections::single(rustext_core::Selection::new(start, end));
+                self.execute_tracked(rustext_core::Command::SetSelections(selections));
+                self.view.reveal_primary_cursor = true;
+            }
+            None => {}
         }
         let widget_outcome = std::mem::take(&mut self.tracked_outcome).merged(completion_outcome);
         self.after_outcome(ui, &widget_outcome);

@@ -72,6 +72,12 @@ fn main() {
                 let location = |uri: Value, line: u64| json!({ "uri": uri, "range": { "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 2 } } });
                 json!([location(uri.clone(), 0), location(json!("file:///elsewhere.rs"), 5), location(uri, 1)])
             }
+            "textDocument/documentSymbol" => {
+                let range = |line: u64| json!({ "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 2 } });
+                json!([{ "name": "Shape", "kind": 23, "range": range(0), "selectionRange": range(0), "children": [
+                    { "name": "area", "kind": 6, "range": range(1), "selectionRange": range(1) },
+                ] }])
+            }
             "textDocument/documentHighlight" => {
                 let range = |line: u64| json!({ "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 2 } });
                 json!([{ "range": range(0), "kind": 3 }, { "range": range(1), "kind": 2 }])

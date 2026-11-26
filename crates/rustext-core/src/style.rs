@@ -2,6 +2,7 @@
 //! crate turns them into its own colors and fonts.
 
 use crate::change::ChangeSet;
+use crate::services::DocumentSymbol;
 use crate::state::EditedLines;
 use crate::structure::FoldRange;
 use crate::text::Text;
@@ -88,6 +89,12 @@ pub trait LineStyler {
     fn syntax_fold_range(&mut self, text: &Text, line: usize) -> Option<FoldRange> {
         let _ = (text, line);
         None
+    }
+
+    /// The definitions of the text from the syntax tree (tree-sitter tags), in text order.
+    fn document_symbols(&mut self, text: &Text) -> Vec<DocumentSymbol> {
+        let _ = text;
+        Vec::new()
     }
 
     /// Whether some lines were left unstyled to keep the frame fast: paint again soon.

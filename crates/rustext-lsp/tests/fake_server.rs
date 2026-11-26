@@ -135,3 +135,17 @@ fn references_in_this_document_and_others() {
         locations.iter().map(|location| (location.document.as_deref(), location.range.start.line)).collect();
     assert_eq!(found, vec![(None, 0), (Some("file:///elsewhere.rs"), 5), (None, 1)]);
 }
+
+#[test]
+fn document_symbols_are_flattened_with_their_containers() {
+    let mut services = start();
+    let text = Text::new("ab\nab c\n");
+
+    let symbols = until_ready(|| services.document_symbols(&text, 1));
+
+    let found: Vec<(&str, Option<&str>, usize)> = symbols
+        .iter()
+        .map(|symbol| (symbol.name.as_str(), symbol.container.as_deref(), symbol.range.start.line))
+        .collect();
+    assert_eq!(found, vec![("Shape", None, 0), ("area", Some("Shape"), 1)]);
+}

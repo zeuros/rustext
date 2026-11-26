@@ -12,8 +12,8 @@ use lsp_types::notification::{self, Notification};
 use lsp_types::request::{self, Request};
 use lsp_types::{self as lsp, OneOf, Uri};
 use rustext_core::services::{
-    CompletionItem, CompletionKind, Diagnostic, InlayHint, LanguageServices, Location, Reply, Severity, SignatureHelp,
-    TextEdit,
+    CompletionItem, CompletionKind, Diagnostic, DocumentSymbol, InlayHint, LanguageServices, Location, Reply, Severity,
+    SignatureHelp, SymbolKind, TextEdit,
 };
 use rustext_core::{ChangeSet, Position, Range, Text};
 use serde_json::Value;
@@ -206,6 +206,10 @@ fn client_capabilities() -> lsp::ClientCapabilities {
             inlay_hint: Some(Default::default()),
             document_highlight: Some(Default::default()),
             references: Some(Default::default()),
+            document_symbol: Some(lsp::DocumentSymbolClientCapabilities {
+                hierarchical_document_symbol_support: Some(true),
+                ..Default::default()
+            }),
             definition: Some(Default::default()),
             publish_diagnostics: Some(Default::default()),
             ..Default::default()
@@ -477,6 +481,38 @@ fn edits_for_document(edit: lsp::WorkspaceEdit, uri: &Uri) -> Vec<lsp::TextEdit>
         .collect()
 }
 
+fn symbol_kind(kind: lsp::SymbolKind) -> SymbolKind {
+    use lsp::SymbolKind as Kind;
+    match kind {
+        Kind::FUNCTION => SymbolKind::Function,
+        Kind::METHOD | Kind::CONSTRUCTOR => SymbolKind::Method,
+        Kind::CLASS | Kind::INTERFACE | Kind::STRUCT | Kind::ENUM | Kind::TYPE_PARAMETER => SymbolKind::Type,
+        Kind::MODULE | Kind::NAMESPACE | Kind::PACKAGE => SymbolKind::Module,
+        Kind::CONSTANT | Kind::ENUM_MEMBER => SymbolKind::Constant,
+        Kind::VARIABLE => SymbolKind::Variable,
+        Kind::FIELD | Kind::PROPERTY => SymbolKind::Field,
+        _ => SymbolKind::Other,
+    }
+}
+
+/// Nested document symbols as a list, each child naming its parent as its container.
+fn flattened_symbols(
+    text: &Text,
+    symbols: Vec<lsp::DocumentSymbol>,
+    container: Option<&str>,
+    flattened: &mut Vec<DocumentSymbol>,
+) {
+    for symbol in symbols {
+        flattened.push(DocumentSymbol {
+            name: symbol.name.clone(),
+            kind: symbol_kind(symbol.kind),
+            range: range_of(text, symbol.selection_range),
+            container: container.map(str::to_string),
+        });
+        flattened_symbols(text, symbol.children.unwrap_or_default(), Some(&symbol.name), flattened);
+    }
+}
+
 /// The active signature, with its active parameter as a char range of its label.
 fn signature_help_of(help: lsp::SignatureHelp) -> Option<SignatureHelp> {
     let signature_index = help.active_signature.unwrap_or(0) as usize;
@@ -660,6 +696,37 @@ impl LanguageServices for LspServices {
                     InlayHint { position: position_of(text, hint.position), label }
                 })
                 .collect()
+        })
+    }
+
+    fn document_symbols(&mut self, text: &Text, text_revision: u64) -> Reply<Vec<DocumentSymbol>> {
+        let params = lsp::DocumentSymbolParams {
+            text_document: self.text_document(),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        let key = RequestKey::new::<request::DocumentSymbolRequest>(text_revision, Position::new(0, 0));
+        let uri = self.document_uri.clone();
+        map_reply(self.ask::<request::DocumentSymbolRequest>(text, key, params), |response| {
+            let mut symbols = Vec::new();
+            match response {
+                Some(lsp::DocumentSymbolResponse::Nested(nested)) => {
+                    flattened_symbols(text, nested, None, &mut symbols)
+                }
+                Some(lsp::DocumentSymbolResponse::Flat(flat)) => {
+                    symbols.extend(flat.into_iter().filter(|symbol| symbol.location.uri == uri).map(|symbol| {
+                        DocumentSymbol {
+                            name: symbol.name,
+                            kind: symbol_kind(symbol.kind),
+                            range: range_of(text, symbol.location.range),
+                            container: symbol.container_name,
+                        }
+                    }));
+                }
+                None => {}
+            }
+            symbols.sort_by_key(|symbol| symbol.range.start);
+            symbols
         })
     }
 

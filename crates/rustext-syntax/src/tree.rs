@@ -9,9 +9,10 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
+use rustext_core::services::{DocumentSymbol, SymbolKind};
 use rustext_core::structure::FoldRange;
 use rustext_core::style::{LineStyler, StyledSpan, TextStyle};
-use rustext_core::{Change, ChangeSet, EditedLines, Text};
+use rustext_core::{Change, ChangeSet, EditedLines, Range, Text};
 use syntect::highlighting::Highlighter;
 use syntect::parsing::Scope;
 use tree_sitter::{InputEdit, Node, Parser, Point, Query, QueryCursor, StreamingIterator, TextProvider, Tree};
@@ -20,10 +21,11 @@ use tree_sitter_language::LanguageFn;
 use crate::textmate::text_style;
 use crate::theme::SyntaxTheme;
 
-/// A compiled grammar: the language and its highlight query.
+/// A compiled grammar: the language, its highlight query and its tags query.
 pub struct Grammar {
     language: tree_sitter::Language,
     highlights: Query,
+    tags: Option<Query>,
 }
 
 impl std::fmt::Debug for Grammar {
@@ -32,33 +34,64 @@ impl std::fmt::Debug for Grammar {
     }
 }
 
-/// The bundled tree-sitter grammar of a language (by its syntect name) and its highlight
-/// queries, the first winning where two capture the same node.
-fn grammar_source(language_name: &str) -> Option<(LanguageFn, Vec<&'static str>)> {
+/// The bundled tree-sitter grammar of a language (by its syntect name): the language, its
+/// highlight queries (the first winning where two capture the same node) and its tags query
+/// (definitions, for Go to Symbol), when the grammar crate has one.
+fn grammar_source(language_name: &str) -> Option<(LanguageFn, Vec<&'static str>, Option<&'static str>)> {
     let javascript = tree_sitter_javascript::HIGHLIGHT_QUERY;
     let jsx = tree_sitter_javascript::JSX_HIGHLIGHT_QUERY;
     let typescript = tree_sitter_typescript::HIGHLIGHTS_QUERY;
     Some(match language_name {
-        "Rust" => (tree_sitter_rust::LANGUAGE, vec![tree_sitter_rust::HIGHLIGHTS_QUERY]),
-        "Python" => (tree_sitter_python::LANGUAGE, vec![tree_sitter_python::HIGHLIGHTS_QUERY]),
-        "JavaScript" | "JavaScript (Babel)" => (tree_sitter_javascript::LANGUAGE, vec![jsx, javascript]),
-        "TypeScript" => (tree_sitter_typescript::LANGUAGE_TYPESCRIPT, vec![typescript, javascript]),
-        "TypeScriptReact" => (tree_sitter_typescript::LANGUAGE_TSX, vec![typescript, jsx, javascript]),
-        "JSON" => (tree_sitter_json::LANGUAGE, vec![tree_sitter_json::HIGHLIGHTS_QUERY]),
-        "Go" => (tree_sitter_go::LANGUAGE, vec![tree_sitter_go::HIGHLIGHTS_QUERY]),
-        "C" => (tree_sitter_c::LANGUAGE, vec![tree_sitter_c::HIGHLIGHT_QUERY]),
-        "C++" => (tree_sitter_cpp::LANGUAGE, vec![tree_sitter_cpp::HIGHLIGHT_QUERY, tree_sitter_c::HIGHLIGHT_QUERY]),
-        "Bourne Again Shell (bash)" | "Shell-Unix-Generic" => {
-            (tree_sitter_bash::LANGUAGE, vec![tree_sitter_bash::HIGHLIGHT_QUERY])
+        "Rust" => {
+            (tree_sitter_rust::LANGUAGE, vec![tree_sitter_rust::HIGHLIGHTS_QUERY], Some(tree_sitter_rust::TAGS_QUERY))
         }
-        "HTML" => (tree_sitter_html::LANGUAGE, vec![tree_sitter_html::HIGHLIGHTS_QUERY]),
-        "CSS" => (tree_sitter_css::LANGUAGE, vec![tree_sitter_css::HIGHLIGHTS_QUERY]),
-        "TOML" => (tree_sitter_toml_ng::LANGUAGE, vec![tree_sitter_toml_ng::HIGHLIGHTS_QUERY]),
-        "YAML" => (tree_sitter_yaml::LANGUAGE, vec![tree_sitter_yaml::HIGHLIGHTS_QUERY]),
-        "Java" => (tree_sitter_java::LANGUAGE, vec![tree_sitter_java::HIGHLIGHTS_QUERY]),
-        "C#" => (tree_sitter_c_sharp::LANGUAGE, vec![tree_sitter_c_sharp::HIGHLIGHTS_QUERY]),
-        "Ruby" => (tree_sitter_ruby::LANGUAGE, vec![tree_sitter_ruby::HIGHLIGHTS_QUERY]),
-        "Lua" => (tree_sitter_lua::LANGUAGE, vec![tree_sitter_lua::HIGHLIGHTS_QUERY]),
+        "Python" => (
+            tree_sitter_python::LANGUAGE,
+            vec![tree_sitter_python::HIGHLIGHTS_QUERY],
+            Some(tree_sitter_python::TAGS_QUERY),
+        ),
+        "JavaScript" | "JavaScript (Babel)" => {
+            (tree_sitter_javascript::LANGUAGE, vec![jsx, javascript], Some(tree_sitter_javascript::TAGS_QUERY))
+        }
+        "TypeScript" => (
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
+            vec![typescript, javascript],
+            Some(tree_sitter_typescript::TAGS_QUERY),
+        ),
+        "TypeScriptReact" => (
+            tree_sitter_typescript::LANGUAGE_TSX,
+            vec![typescript, jsx, javascript],
+            Some(tree_sitter_typescript::TAGS_QUERY),
+        ),
+        "JSON" => (tree_sitter_json::LANGUAGE, vec![tree_sitter_json::HIGHLIGHTS_QUERY], None),
+        "Go" => (tree_sitter_go::LANGUAGE, vec![tree_sitter_go::HIGHLIGHTS_QUERY], Some(tree_sitter_go::TAGS_QUERY)),
+        "C" => (tree_sitter_c::LANGUAGE, vec![tree_sitter_c::HIGHLIGHT_QUERY], Some(tree_sitter_c::TAGS_QUERY)),
+        "C++" => (
+            tree_sitter_cpp::LANGUAGE,
+            vec![tree_sitter_cpp::HIGHLIGHT_QUERY, tree_sitter_c::HIGHLIGHT_QUERY],
+            Some(tree_sitter_cpp::TAGS_QUERY),
+        ),
+        "Bourne Again Shell (bash)" | "Shell-Unix-Generic" => {
+            (tree_sitter_bash::LANGUAGE, vec![tree_sitter_bash::HIGHLIGHT_QUERY], None)
+        }
+        "HTML" => (tree_sitter_html::LANGUAGE, vec![tree_sitter_html::HIGHLIGHTS_QUERY], None),
+        "CSS" => (tree_sitter_css::LANGUAGE, vec![tree_sitter_css::HIGHLIGHTS_QUERY], None),
+        "TOML" => (tree_sitter_toml_ng::LANGUAGE, vec![tree_sitter_toml_ng::HIGHLIGHTS_QUERY], None),
+        "YAML" => (tree_sitter_yaml::LANGUAGE, vec![tree_sitter_yaml::HIGHLIGHTS_QUERY], None),
+        "Java" => {
+            (tree_sitter_java::LANGUAGE, vec![tree_sitter_java::HIGHLIGHTS_QUERY], Some(tree_sitter_java::TAGS_QUERY))
+        }
+        "C#" => (
+            tree_sitter_c_sharp::LANGUAGE,
+            vec![tree_sitter_c_sharp::HIGHLIGHTS_QUERY],
+            Some(tree_sitter_c_sharp::TAGS_QUERY),
+        ),
+        "Ruby" => {
+            (tree_sitter_ruby::LANGUAGE, vec![tree_sitter_ruby::HIGHLIGHTS_QUERY], Some(tree_sitter_ruby::TAGS_QUERY))
+        }
+        "Lua" => {
+            (tree_sitter_lua::LANGUAGE, vec![tree_sitter_lua::HIGHLIGHTS_QUERY], Some(tree_sitter_lua::TAGS_QUERY))
+        }
         _ => return None,
     })
 }
@@ -89,10 +122,11 @@ impl Grammar {
     /// Compiles the bundled grammar of `language_name`; `None` without one, or when its query
     /// doesn't compile (the TextMate grammar is used instead).
     pub(crate) fn compile(language_name: &str) -> Result<Option<Grammar>, String> {
-        let Some((language_fn, queries)) = grammar_source(language_name) else { return Ok(None) };
+        let Some((language_fn, queries, tags)) = grammar_source(language_name) else { return Ok(None) };
         let language = tree_sitter::Language::new(language_fn);
         let highlights = Query::new(&language, &queries.join("\n")).map_err(|error| error.to_string())?;
-        Ok(Some(Grammar { language, highlights }))
+        let tags = tags.map(|tags| Query::new(&language, tags)).transpose().map_err(|error| error.to_string())?;
+        Ok(Some(Grammar { language, highlights, tags }))
     }
 }
 
@@ -252,6 +286,20 @@ impl BackgroundParser {
             }
         });
         Self { jobs, parsed }
+    }
+}
+
+/// The symbol kind of a tags query's `definition.<kind>` capture.
+fn symbol_kind(tag_kind: &str) -> SymbolKind {
+    match tag_kind {
+        "function" | "macro" => SymbolKind::Function,
+        "method" => SymbolKind::Method,
+        "class" | "interface" | "type" | "struct" | "enum" | "union" | "trait" => SymbolKind::Type,
+        "module" | "namespace" => SymbolKind::Module,
+        "constant" => SymbolKind::Constant,
+        "field" | "property" => SymbolKind::Field,
+        "variable" => SymbolKind::Variable,
+        _ => SymbolKind::Other,
     }
 }
 
@@ -549,6 +597,39 @@ impl LineStyler for TreeHighlighter {
         true
     }
 
+    /// The `@definition.*` matches of the grammar's tags query, named by their `@name`.
+    fn document_symbols(&mut self, text: &Text) -> Vec<DocumentSymbol> {
+        if self.grammar.tags.is_none() {
+            return Vec::new();
+        }
+        if self.tree.is_none() {
+            self.wait_until_parsed(text);
+        }
+        let Some(tags) = &self.grammar.tags else { return Vec::new() };
+        let Some(tree) = &self.tree else { return Vec::new() };
+        let capture_names = tags.capture_names();
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(tags, tree.root_node(), RopeText(text));
+        let mut symbols = Vec::new();
+        while let Some(found) = matches.next() {
+            let captures = found.captures();
+            let kind =
+                captures.iter().find_map(|capture| capture_names[capture.index as usize].strip_prefix("definition."));
+            let name = captures.iter().find(|capture| capture_names[capture.index as usize] == "name");
+            let (Some(kind), Some(name)) = (kind, name) else { continue };
+            let (start, end) = (text.char_of_byte(name.node.start_byte()), text.char_of_byte(name.node.end_byte()));
+            symbols.push(DocumentSymbol {
+                name: text.slice(start, end),
+                kind: symbol_kind(kind),
+                range: Range::new(text.position(start), text.position(end)),
+                container: None,
+            });
+        }
+        symbols.sort_by_key(|symbol| symbol.range.start);
+        symbols.dedup_by(|second, first| first.range == second.range);
+        symbols
+    }
+
     /// Looks at the nodes starting on `line`, token by token (so `} else {` starts the `else`);
     /// of those that fold (`folds_from_its_first_line`), the one ending last gives the range,
     /// its last line kept visible when it only closes (`}`, `end`, `</div>`).
@@ -688,6 +769,28 @@ mod tests {
             .filter_map(|line| highlighter.syntax_fold_range(&text, line))
             .map(|range| (range.header_line, range.last_hidden_line))
             .collect()
+    }
+
+    #[test]
+    fn tags_queries_give_the_definitions_in_text_order() {
+        let registry = LanguageRegistry::new();
+        let mut highlighter = TreeHighlighter::new(registry.grammar("Rust").unwrap(), &SyntaxTheme::dark_modern());
+        let text = Text::new("struct Point;\nimpl Point {\n    fn length(&self) {}\n}\nfn main() {}\n");
+
+        let symbols: Vec<(String, SymbolKind, usize)> = highlighter
+            .document_symbols(&text)
+            .into_iter()
+            .map(|symbol| (symbol.name, symbol.kind, symbol.range.start.line))
+            .collect();
+
+        assert_eq!(
+            symbols,
+            vec![
+                ("Point".into(), SymbolKind::Type, 0),
+                ("length".into(), SymbolKind::Method, 2),
+                ("main".into(), SymbolKind::Function, 4)
+            ]
+        );
     }
 
     #[test]

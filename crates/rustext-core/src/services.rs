@@ -28,6 +28,44 @@ impl Location {
     }
 }
 
+/// What a document symbol is, for its icon or label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SymbolKind {
+    Function,
+    Method,
+    Type,
+    Module,
+    Constant,
+    Variable,
+    Field,
+    Other,
+}
+
+impl SymbolKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            SymbolKind::Function => "function",
+            SymbolKind::Method => "method",
+            SymbolKind::Type => "type",
+            SymbolKind::Module => "module",
+            SymbolKind::Constant => "constant",
+            SymbolKind::Variable => "variable",
+            SymbolKind::Field => "field",
+            SymbolKind::Other => "symbol",
+        }
+    }
+}
+
+/// A named definition of the document (Go to Symbol, Ctrl+Shift+O): `range` is its name.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct DocumentSymbol {
+    pub name: String,
+    pub kind: SymbolKind,
+    pub range: Range,
+    /// The symbol holding it (a method's type), when known.
+    pub container: Option<String>,
+}
+
 /// A clickable label shown above a line (Monaco's code lens): "3 references", "Run test", or
 /// the application's own ("Stage hunk", a blame summary).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -248,6 +286,12 @@ pub trait LanguageServices {
     /// The uses of the symbol at `position`, its declaration included (Shift+F12), in this
     /// document and others.
     fn references(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Vec<Location>> {
+        Reply::Ready(Vec::new())
+    }
+
+    /// The definitions of the document (Go to Symbol), in text order. Without an answer, the
+    /// styler's syntax tree gives them.
+    fn document_symbols(&mut self, _text: &Text, _text_revision: u64) -> Reply<Vec<DocumentSymbol>> {
         Reply::Ready(Vec::new())
     }
 
