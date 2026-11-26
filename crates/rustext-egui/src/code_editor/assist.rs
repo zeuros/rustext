@@ -52,6 +52,23 @@ pub struct RenameState {
     focus_requested: bool,
 }
 
+/// The service's highlights of the symbol at the cursor, for one text revision and cursor.
+#[derive(Clone, Debug, Default)]
+pub struct DocumentHighlightsState {
+    /// (text revision, cursor offset) the highlights are for.
+    key: Option<(u64, usize)>,
+    /// Char offset ranges; `None` while waiting or when the service doesn't know.
+    ranges: Option<Vec<(usize, usize)>>,
+    is_waiting: bool,
+}
+
+impl DocumentHighlightsState {
+    /// The highlights for this text revision and cursor, if the service gave some.
+    pub fn ranges_for(&self, text_revision: u64, cursor: usize) -> Option<&[(usize, usize)]> {
+        (self.key == Some((text_revision, cursor))).then_some(self.ranges.as_deref()).flatten()
+    }
+}
+
 /// The signature tooltip and the request waiting for one.
 #[derive(Clone, Debug, Default)]
 pub struct SignatureState {
@@ -197,6 +214,36 @@ impl CodeEditor<'_> {
         let first = visible.start() / INLAY_HINT_BLOCK_LINES * INLAY_HINT_BLOCK_LINES;
         let end = (visible.end() / INLAY_HINT_BLOCK_LINES + 1) * INLAY_HINT_BLOCK_LINES;
         Some(first..end.min(self.state.text().line_count()))
+    }
+
+    /// Asks for the highlights of the symbol at an empty primary cursor when the text or the
+    /// cursor changed; returns whether an answer is awaited.
+    pub(super) fn refresh_document_highlights(&mut self) -> bool {
+        let primary = self.state.selections().primary();
+        let Some(services) =
+            self.services.as_deref_mut().filter(|_| self.config.occurrences_highlight && primary.is_empty())
+        else {
+            self.view.document_highlights = DocumentHighlightsState::default();
+            return false;
+        };
+        let key = (self.state.text_revision(), primary.head);
+        let highlights = &mut self.view.document_highlights;
+        if highlights.key != Some(key) {
+            *highlights = DocumentHighlightsState { key: Some(key), ranges: None, is_waiting: true };
+        }
+        if !highlights.is_waiting {
+            return false;
+        }
+        let text = self.state.text();
+        match services.document_highlights(text, key.0, text.position(primary.head)) {
+            Reply::Ready(ranges) => {
+                highlights.ranges =
+                    ranges.map(|ranges| ranges.into_iter().map(|range| text.range_offsets(range)).collect());
+                highlights.is_waiting = false;
+                false
+            }
+            Reply::Pending => true,
+        }
     }
 
     /// Asks for the signature after `(` or `,`; closes it after `)`, Escape or a line change.

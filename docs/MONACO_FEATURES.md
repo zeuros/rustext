@@ -196,7 +196,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Signature help | `registerSignatureHelpProvider`, `parameterHints` | P2 | done |
 | Go to definition / declaration / type / implementation, Ctrl+click | `register*DefinitionProvider`, `gotoLocation.*`, `definitionLinkOpensInPeek` | P2 | partial: definition in the same text (F12, Ctrl+click) |
 | References, peek view | `registerReferenceProvider`, `peekView` | P2 | todo |
-| Document highlights | `registerDocumentHighlightProvider` | P2 | todo |
+| Document highlights | `registerDocumentHighlightProvider` | P2 | done (replaces the word highlight when the services answer; LSP too) |
 | Rename (F2) | `registerRenameProvider`, `registerNewSymbolNameProvider` | P2 | done (same text) |
 | Code actions, lightbulb, quick fix | `registerCodeActionProvider`, `lightbulb.enabled` | P2 | todo |
 | Code lens | `registerCodeLensProvider`, `codeLens` | P2 | todo |

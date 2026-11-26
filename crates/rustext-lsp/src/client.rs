@@ -22,6 +22,7 @@ enum RequestKind {
     Rename,
     SignatureHelp,
     InlayHints,
+    DocumentHighlights,
 }
 
 /// What a request was about: answers for another key are not what the editor asks for now.
@@ -45,6 +46,8 @@ pub struct LspServices {
     syncs_incrementally: bool,
     /// The server announced `inlayHintProvider`.
     gives_inlay_hints: bool,
+    /// The server announced `documentHighlightProvider`.
+    gives_document_highlights: bool,
     request_ids: HashMap<RequestKey, u64>,
     results: HashMap<u64, Value>,
     /// The last `publishDiagnostics` for the document, not taken yet.
@@ -114,8 +117,12 @@ impl LspServices {
             .unwrap_or_default();
         let sync = &initialize_result["capabilities"]["textDocumentSync"];
         let syncs_incrementally = sync.as_u64().or(sync["change"].as_u64()) == Some(2);
-        let inlay_hint_provider = &initialize_result["capabilities"]["inlayHintProvider"];
-        let gives_inlay_hints = !inlay_hint_provider.is_null() && inlay_hint_provider != &Value::Bool(false);
+        let announces = |capability: &str| {
+            let provider = &initialize_result["capabilities"][capability];
+            !provider.is_null() && provider != &Value::Bool(false)
+        };
+        let gives_inlay_hints = announces("inlayHintProvider");
+        let gives_document_highlights = announces("documentHighlightProvider");
         connection.notify("initialized", json!({}))?;
         Ok(Self {
             connection,
@@ -126,6 +133,7 @@ impl LspServices {
             trigger_chars,
             syncs_incrementally,
             gives_inlay_hints,
+            gives_document_highlights,
             request_ids: HashMap::new(),
             results: HashMap::new(),
             published_diagnostics: None,
@@ -381,6 +389,41 @@ impl LanguageServices for LspServices {
         if self.connection.notify("textDocument/didChange", params).is_ok() {
             self.synced_revision = Some(text_revision_after);
         }
+    }
+
+    fn document_highlights(
+        &mut self,
+        text: &Text,
+        text_revision: u64,
+        position: Position,
+    ) -> Reply<Option<Vec<Range>>> {
+        if !self.gives_document_highlights {
+            return Reply::Ready(None);
+        }
+        let key =
+            RequestKey { kind: RequestKind::DocumentHighlights, text_revision, position, argument: String::new() };
+        let result = match self.ask(text, key, "textDocument/documentHighlight") {
+            Reply::Ready(result) => result,
+            Reply::Pending => return Reply::Pending,
+        };
+        let position_of = |value: &Value| -> Option<Position> {
+            let line = value["line"].as_u64()? as usize;
+            (line < text.line_count()).then(|| {
+                Position::new(line, char_column(text, line, value["character"].as_u64().unwrap_or(0) as usize))
+            })
+        };
+        let ranges = result.as_array().map(|highlights| {
+            highlights
+                .iter()
+                .filter_map(|highlight| {
+                    Some(Range::new(
+                        position_of(&highlight["range"]["start"])?,
+                        position_of(&highlight["range"]["end"])?,
+                    ))
+                })
+                .collect()
+        });
+        Reply::Ready(ranges)
     }
 
     fn inlay_hints(&mut self, text: &Text, text_revision: u64, lines: std::ops::Range<usize>) -> Reply<Vec<InlayHint>> {

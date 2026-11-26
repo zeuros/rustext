@@ -291,6 +291,15 @@ impl CodeEditor<'_> {
             if !self.config.occurrences_highlight {
                 return Vec::new();
             }
+            let service_ranges = self.view.document_highlights.ranges_for(self.state.text_revision(), primary.head);
+            if let Some(ranges) = service_ranges {
+                let color = to_rgba(self.theme.occurrence_background);
+                return ranges
+                    .iter()
+                    .filter(|&&(start, end)| end >= visible_start && start <= visible_end)
+                    .map(|&(start, end)| Decoration::new(start, end, DecorationKind::Background(color)))
+                    .collect();
+            }
             let Some((start, end)) = rustext_core::cursors::word_range_at(text, &self.state.config, primary.head)
             else {
                 return Vec::new();

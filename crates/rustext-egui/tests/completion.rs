@@ -68,6 +68,36 @@ impl LanguageServices for TestServices {
         Reply::Ready(Some(rustext_core::services::SignatureHelp { label, active_parameter, documentation: None }))
     }
 
+    /// On `helper`, its calls (`helper(`) only, unlike the word highlight; `None` elsewhere.
+    fn document_highlights(
+        &mut self,
+        text: &Text,
+        _revision: u64,
+        position: Position,
+    ) -> Reply<Option<Vec<rustext_core::Range>>> {
+        let line: Vec<char> = text.line_content(position.line).chars().collect();
+        let on_helper = WordCompletions::default()
+            .words
+            .word_at(&line, position.column)
+            .is_some_and(|(start, end)| line[start..end].iter().collect::<String>() == "helper");
+        if !on_helper {
+            return Reply::Ready(None);
+        }
+        let calls = (0..text.line_count())
+            .flat_map(|line| {
+                let content = text.line_content(line);
+                content
+                    .match_indices("helper(")
+                    .map(|(byte, _)| content[..byte].chars().count())
+                    .map(move |column| {
+                        rustext_core::Range::new(Position::new(line, column), Position::new(line, column + 6))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        Reply::Ready(Some(calls))
+    }
+
     /// `: i32` after the name of every `let`.
     fn inlay_hints(
         &mut self,
@@ -405,4 +435,22 @@ fn small_scrolls_reuse_the_inlay_hints_answer() {
     harness.state_mut().view.scroll_offset.y = 3_000.0;
     harness.run();
     assert_eq!(harness.state().services.inlay_hint_requests.last().map(|lines| lines.start), Some(100));
+}
+
+#[test]
+fn document_highlights_from_the_services_replace_the_word_highlight() {
+    let mut harness = harness("helper();\nlet helper = 1;\nhelper();\nplain plain\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(0, 2);
+    press(&mut harness, pos, Modifiers::NONE);
+
+    let highlights = |harness: &Harness<'_, Fixture>| {
+        let fixture = harness.state();
+        let head = fixture.state.selections().primary().head;
+        fixture.view.document_highlights.ranges_for(fixture.state.text_revision(), head).map(<[_]>::to_vec)
+    };
+    assert_eq!(highlights(&harness), Some(vec![(0, 6), (26, 32)]));
+
+    let pos = harness.state().view.geometry().unwrap().cell_center(3, 2);
+    press(&mut harness, pos, Modifiers::NONE);
+    assert_eq!(highlights(&harness), None);
 }

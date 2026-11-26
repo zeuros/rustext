@@ -39,7 +39,7 @@ fn main() {
         let position = &message["params"]["position"];
         let result = match method {
             "initialize" => {
-                json!({ "capabilities": { "textDocumentSync": 2, "inlayHintProvider": true, "completionProvider": { "triggerCharacters": ["."] }, "hoverProvider": true, "definitionProvider": true } })
+                json!({ "capabilities": { "textDocumentSync": 2, "inlayHintProvider": true, "documentHighlightProvider": true, "completionProvider": { "triggerCharacters": ["."] }, "hoverProvider": true, "definitionProvider": true } })
             }
             "fake/document" => json!(document.join("\n")),
             "textDocument/completion" => json!({ "isIncomplete": false, "items": [
@@ -67,6 +67,10 @@ fn main() {
                 "activeSignature": 0,
                 "activeParameter": 1,
             }),
+            "textDocument/documentHighlight" => {
+                let range = |line: u64| json!({ "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 2 } });
+                json!([{ "range": range(0), "kind": 3 }, { "range": range(1), "kind": 2 }])
+            }
             "textDocument/inlayHint" => {
                 let range = &message["params"]["range"];
                 let first = range["start"]["line"].as_u64().unwrap_or(0);

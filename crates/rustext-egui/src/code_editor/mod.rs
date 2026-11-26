@@ -236,6 +236,7 @@ pub struct EditorView {
     /// The signature help tooltip.
     pub signature: SignatureState,
     pub inlay_hints: assist::InlayHintsState,
+    pub document_highlights: assist::DocumentHighlightsState,
     wraps: wrapping::WrapState,
     /// Lines pinned at the top by sticky scroll in the last frame.
     sticky_lines: Vec<usize>,
@@ -579,7 +580,7 @@ impl<'a> CodeEditor<'a> {
         }
         self.after_outcome(ui, &outcome);
         self.refresh_service_diagnostics();
-        if self.refresh_inlay_hints(&metrics) {
+        if self.refresh_inlay_hints(&metrics) | self.refresh_document_highlights() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
         let typed = std::mem::take(&mut self.typed_this_frame);

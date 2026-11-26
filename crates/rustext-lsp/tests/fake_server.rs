@@ -112,3 +112,14 @@ fn inlay_hints_of_a_line_range() {
     assert_eq!(hints[0].position, Position::new(0, 1));
     assert_eq!(hints[1].position, Position::new(1, 2));
 }
+
+#[test]
+fn document_highlights() {
+    let mut services = start();
+    let text = Text::new("ab\nab c\n");
+
+    let ranges = until_ready(|| services.document_highlights(&text, 1, Position::new(0, 1))).expect("highlights");
+
+    assert_eq!(ranges.len(), 2);
+    assert_eq!(ranges[1], rustext_core::Range::new(Position::new(1, 0), Position::new(1, 2)));
+}

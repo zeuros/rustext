@@ -95,7 +95,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 ## M11. Language services (D9)
 - [x] `LanguageServices` trait, versioned async results — `Reply::Pending` makes the editor ask again on the next frames
 - [x] Completion widget (fuzzy filter, details, snippets with tab stops) — snippets with tab stops, mirrors and `$0`; word-based completions built in
-- [x] Hover, signature help, go to definition (Ctrl+click), document highlights, rename — hover, definition (F12, Ctrl+click, same text), rename (F2), signature help done; document highlights not yet
+- [x] Hover, signature help, go to definition (Ctrl+click), document highlights, rename — hover, definition (F12, Ctrl+click, same text), rename (F2), signature help, document highlights done
 - [x] LSP client implementation (stdio) — `rustext-lsp`: completion, hover, definition, full document sync; tested against a fake server binary; playground `--lsp "<server>"`
 
 ## M12. Extras
@@ -118,8 +118,9 @@ in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case
 change their seeds locally to hunt for rarer bugs). Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. LSP: references (a peek list) and document highlights. (Done: diagnostics, rename, signature
-   help, incremental sync through `LanguageServices::text_changed` and `Outcome::texts_before`.)
+1. LSP: references (Shift+F12, a peek list). (Done: diagnostics, rename, signature help,
+   document highlights, inlay hints, incremental sync through `LanguageServices::text_changed`
+   and `Outcome::texts_before`.)
 2. (done since: snippets — `rustext_core::snippet`, `Command::InsertSnippet`; their tab stops aren't highlighted yet.)
 3. (done since: injected text, ghost text, inlay hints with LSP.) Next: code lens as a row above
    lines (a new `RowContent`).

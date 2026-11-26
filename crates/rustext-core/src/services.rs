@@ -199,6 +199,17 @@ pub trait LanguageServices {
         Reply::Ready(Vec::new())
     }
 
+    /// The symbol at `position` and its other uses in the text, highlighted while the cursor
+    /// is on it; `None` when the service doesn't know (the editor highlights the same word).
+    fn document_highlights(
+        &mut self,
+        _text: &Text,
+        _text_revision: u64,
+        _position: Position,
+    ) -> Reply<Option<Vec<crate::position::Range>>> {
+        Reply::Ready(None)
+    }
+
     /// Where the symbol at `position` is defined, in the same text (F12, Ctrl+click).
     fn definition(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Option<Position>> {
         Reply::Ready(None)
