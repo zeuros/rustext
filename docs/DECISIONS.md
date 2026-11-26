@@ -255,6 +255,33 @@ string) from one line to the next.
 - Accepted: raw strings (`r#"..."#`), nested comments and heredocs are not understood; a
   language-aware parser (tree-sitter, D13) can replace the lexer later.
 
+## D23. LSP messages are `lsp-types` values
+
+The client builds and reads `lsp-types` structs instead of hand-written JSON: one generic
+`ask::<R: Request>(text, key, R::Params) -> Reply<R::Result>` sends any request and parses its
+answer, keyed by `R::METHOD` and the text revision and position asked about. A result that
+doesn't parse counts as empty, like a server that has nothing to say.
+
+- The protocol's shapes (`CompletionResponse` as a list or an array, three `HoverContents`,
+  `GotoDefinitionResponse` links, `documentChanges` operations) are enums the compiler
+  checks, not `value["key"]` lookups that return null on a typo.
+- The fake server stays hand-written JSON on purpose: it checks the wire format independently
+  of the types the client uses. `tests/rust_analyzer.rs` (ignored, needs `rust-analyzer`)
+  checks that a real server's answers parse.
+- Rejected: `async-lsp`/`tower-lsp` (async runtimes for servers; the client is poll-based, D9).
+
+## D24. Fuzzy matching with `nucleo`, search with `regex-cursor`
+
+Both come from Helix's authors and are published as standalone crates.
+
+- `FuzzyQuery` wraps a `nucleo_matcher` atom and its matcher, so one query scores many
+  candidates (completions, palette entries) without allocating. Case is ignored, prefixes
+  are preferred; equal scores put the shorter label first.
+- `find_matches` runs a `regex-cursor` regex over the rope's chunks: nothing is copied, and
+  match offsets come back as bytes of the rope, converted to chars by the rope in O(log n).
+  The `regex` crate stays for expanding `$1` groups in one match's replacement, from the same
+  pattern (`SearchQuery::regex_pattern`).
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

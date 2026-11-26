@@ -1,0 +1,85 @@
+//! Talks to a real language server, rust-analyzer, on a small cargo project: what the fake
+//! server can't prove is that real answers parse. Ignored: it needs `rust-analyzer` on the PATH
+//! and takes seconds to index.
+//! `cargo test -p rustext-lsp --test rust_analyzer -- --ignored`.
+
+use std::time::{Duration, Instant};
+
+use rustext_core::services::{LanguageServices, Reply};
+use rustext_core::{Position, Text};
+use rustext_lsp::LspServices;
+
+const SOURCE: &str = "struct Point {\n    x: i32,\n}\n\nfn length(point: &Point) -> i32 {\n    point.x\n}\n\nfn main() {\n    let origin = Point { x: 1 };\n    length(&origin);\n}\n";
+
+/// A cargo project holding `SOURCE` as `src/main.rs`; returns the path of that file.
+fn project() -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("rustext-rust-analyzer-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"probe\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
+        .unwrap();
+    let main = root.join("src/main.rs");
+    std::fs::write(&main, SOURCE).unwrap();
+    main
+}
+
+/// Asks until the answer is ready and `is_complete` (rust-analyzer answers empty while it
+/// indexes), asking again on a new request each time.
+fn until_answered<T>(mut ask: impl FnMut(u64) -> Reply<T>, is_complete: impl Fn(&T) -> bool) -> T {
+    let deadline = Instant::now() + Duration::from_secs(120);
+    let mut attempt = 0;
+    loop {
+        if let Reply::Ready(answer) = ask(attempt) {
+            if is_complete(&answer) {
+                return answer;
+            }
+            attempt += 1;
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        assert!(Instant::now() < deadline, "rust-analyzer gave no complete answer");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+#[ignore = "needs rust-analyzer; slow"]
+fn rust_analyzer_answers_parse() {
+    let main = project();
+    let mut services =
+        LspServices::start("rust-analyzer", &[], &main, "rust", Duration::from_secs(30)).expect("rust-analyzer starts");
+    let text = Text::new(SOURCE);
+    let call = Position::new(10, 5);
+
+    // Each attempt is a new revision of the same text: a new request, not the cached answer.
+    let hover = until_answered(|attempt| services.hover(&text, attempt, call), Option::is_some);
+    assert!(hover.unwrap().contains("fn length"));
+
+    let definition = until_answered(|attempt| services.definition(&text, attempt, call), Option::is_some);
+    assert_eq!(definition, Some(Position::new(4, 3)));
+
+    let references = until_answered(|attempt| services.references(&text, attempt, call), |found| found.len() == 2);
+    assert_eq!(references.len(), 2);
+
+    let completions =
+        until_answered(|attempt| services.completions(&text, attempt, Position::new(5, 10)), |items| !items.is_empty());
+    assert!(completions.iter().any(|item| item.label == "x"));
+
+    let hints = until_answered(|attempt| services.inlay_hints(&text, attempt, 0..12), |hints| !hints.is_empty());
+    assert!(hints.iter().any(|hint| hint.label.contains("Point")));
+
+    let edits = until_answered(|attempt| services.rename(&text, attempt, call, "size"), |edits| !edits.is_empty());
+    assert_eq!(edits.len(), 2);
+
+    let inside_call = Position::new(10, 11);
+    let signature = until_answered(|attempt| services.signature_help(&text, attempt, inside_call), Option::is_some);
+    let signature = signature.unwrap();
+    let (start, end) = signature.active_parameter.unwrap();
+    assert_eq!(signature.label.chars().skip(start).take(end - start).collect::<String>(), "point: &Point");
+
+    let highlights = until_answered(
+        |attempt| services.document_highlights(&text, attempt, call),
+        |ranges| ranges.as_ref().is_some_and(|ranges| ranges.len() == 2),
+    );
+    assert_eq!(highlights.map(|ranges| ranges.len()), Some(2));
+
+    let _ = std::fs::remove_dir_all(main.parent().unwrap().parent().unwrap());
+}

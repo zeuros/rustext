@@ -1,63 +1,89 @@
 //! A language server as `LanguageServices` (DECISIONS D9): requests go out tagged with the text
 //! revision and position they ask about; the editor gets `Reply::Pending` until the answer
-//! arrives on a later frame. Positions are converted between chars (rustext, D5) and UTF-16
-//! (LSP) here only.
+//! arrives on a later frame. Messages are `lsp-types` values (D23); positions are converted
+//! between chars (rustext, D5) and UTF-16 (LSP) here only.
 
 use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 
+use lsp_types::notification::{self, Notification};
+use lsp_types::request::{self, Request};
+use lsp_types::{self as lsp, OneOf, Uri};
 use rustext_core::services::{
     CompletionItem, CompletionKind, Diagnostic, InlayHint, LanguageServices, Reply, Severity, SignatureHelp, TextEdit,
 };
-use rustext_core::{Position, Range, Text};
-use serde_json::{Value, json};
+use rustext_core::{ChangeSet, Position, Range, Text};
+use serde_json::Value;
 
 use crate::transport::Connection;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum RequestKind {
-    Completion,
-    Hover,
-    Definition,
-    Rename,
-    SignatureHelp,
-    InlayHints,
-    DocumentHighlights,
-    References,
-}
 
 /// What a request was about: answers for another key are not what the editor asks for now.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RequestKey {
-    kind: RequestKind,
+    method: &'static str,
     text_revision: u64,
     position: Position,
-    /// The new name of a rename.
+    /// What else tells two requests apart: the new name of a rename, the end of a line range.
     argument: String,
+}
+
+impl RequestKey {
+    fn new<R: Request>(text_revision: u64, position: Position) -> Self {
+        Self { method: R::METHOD, text_revision, position, argument: String::new() }
+    }
+
+    fn with_argument(self, argument: impl Into<String>) -> Self {
+        Self { argument: argument.into(), ..self }
+    }
 }
 
 pub struct LspServices {
     connection: Connection,
-    document_uri: String,
+    document_uri: Uri,
     language_id: String,
     synced_revision: Option<u64>,
-    document_version: i64,
+    document_version: i32,
     trigger_chars: Vec<char>,
-    /// The server takes incremental changes (`textDocumentSync.change == 2`).
+    /// The server takes incremental changes.
     syncs_incrementally: bool,
-    /// The server announced `inlayHintProvider`.
     gives_inlay_hints: bool,
-    /// The server announced `documentHighlightProvider`.
     gives_document_highlights: bool,
     request_ids: HashMap<RequestKey, u64>,
     results: HashMap<u64, Value>,
     /// The last `publishDiagnostics` for the document, not taken yet.
-    published_diagnostics: Option<Vec<Value>>,
+    published_diagnostics: Option<Vec<lsp::Diagnostic>>,
 }
 
-/// `file:///path` for an absolute path.
+/// `file:///path` for an absolute path, percent-encoding what a URI path can't hold (spaces).
 pub fn file_uri(path: &std::path::Path) -> String {
-    format!("file://{}", path.display())
+    let encoded: String = path
+        .to_string_lossy()
+        .bytes()
+        .map(|byte| match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'/' | b'-' | b'.' | b'_' | b'~' => (byte as char).to_string(),
+            _ => format!("%{byte:02X}"),
+        })
+        .collect();
+    format!("file://{encoded}")
+}
+
+fn document_uri(path: &std::path::Path) -> std::io::Result<Uri> {
+    Uri::from_str(&file_uri(path)).map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
+}
+
+/// Chars in the first `utf16_units` UTF-16 code units of `content`.
+fn chars_in_utf16_prefix(content: &str, utf16_units: usize) -> usize {
+    let mut units = 0;
+    content
+        .chars()
+        .take_while(|character| {
+            let starts_inside = units < utf16_units;
+            units += character.len_utf16();
+            starts_inside
+        })
+        .count()
 }
 
 /// Column in UTF-16 code units of char `column` on `line`.
@@ -67,16 +93,68 @@ pub fn utf16_column(text: &Text, line: usize, column: usize) -> usize {
 
 /// Char column of UTF-16 column `utf16_column` on `line`.
 pub fn char_column(text: &Text, line: usize, utf16_column: usize) -> usize {
-    let mut units = 0;
-    let mut column = 0;
-    for character in text.line_content(line).chars() {
-        if units >= utf16_column {
-            break;
-        }
-        units += character.len_utf16();
-        column += 1;
+    chars_in_utf16_prefix(&text.line_content(line), utf16_column)
+}
+
+fn lsp_position(text: &Text, position: Position) -> lsp::Position {
+    lsp::Position::new(position.line as u32, utf16_column(text, position.line, position.column) as u32)
+}
+
+fn lsp_position_of_offset(text: &Text, offset: usize) -> lsp::Position {
+    lsp_position(text, text.position(offset))
+}
+
+/// The position an LSP position names, its line clamped to the text (a diagnostic at the end
+/// of the file may name the line after the last).
+fn position_of(text: &Text, position: lsp::Position) -> Position {
+    let line = (position.line as usize).min(text.last_line());
+    Position::new(line, char_column(text, line, position.character as usize))
+}
+
+fn range_of(text: &Text, range: lsp::Range) -> Range {
+    Range::new(position_of(text, range.start), position_of(text, range.end))
+}
+
+/// Whether a capability announced as `true` or as options is there.
+fn is_announced<Options>(provider: &Option<OneOf<bool, Options>>) -> bool {
+    !matches!(provider, None | Some(OneOf::Left(false)))
+}
+
+fn client_capabilities() -> lsp::ClientCapabilities {
+    let completion_item = lsp::CompletionItemCapability { snippet_support: Some(true), ..Default::default() };
+    let signature_information = lsp::SignatureInformationSettings {
+        parameter_information: Some(lsp::ParameterInformationSettings { label_offset_support: Some(true) }),
+        active_parameter_support: Some(true),
+        ..Default::default()
+    };
+    lsp::ClientCapabilities {
+        text_document: Some(lsp::TextDocumentClientCapabilities {
+            synchronization: Some(lsp::TextDocumentSyncClientCapabilities {
+                did_save: Some(false),
+                ..Default::default()
+            }),
+            completion: Some(lsp::CompletionClientCapabilities {
+                completion_item: Some(completion_item),
+                ..Default::default()
+            }),
+            hover: Some(lsp::HoverClientCapabilities {
+                content_format: Some(vec![lsp::MarkupKind::PlainText, lsp::MarkupKind::Markdown]),
+                ..Default::default()
+            }),
+            signature_help: Some(lsp::SignatureHelpClientCapabilities {
+                signature_information: Some(signature_information),
+                ..Default::default()
+            }),
+            rename: Some(Default::default()),
+            inlay_hint: Some(Default::default()),
+            document_highlight: Some(Default::default()),
+            references: Some(Default::default()),
+            definition: Some(Default::default()),
+            publish_diagnostics: Some(Default::default()),
+            ..Default::default()
+        }),
+        ..Default::default()
     }
-    column
 }
 
 impl LspServices {
@@ -90,55 +168,77 @@ impl LspServices {
         initialize_timeout: Duration,
     ) -> std::io::Result<Self> {
         let mut connection = Connection::spawn(program, arguments)?;
-        let root_uri = file_path.parent().map(file_uri);
-        let capabilities = json!({
-            "textDocument": {
-                "completion": { "completionItem": { "snippetSupport": true } },
-                "hover": { "contentFormat": ["plaintext", "markdown"] },
-                "synchronization": { "didSave": false },
-            }
+        let root = file_path.parent().map(document_uri).transpose()?;
+        let workspace_folders = root.clone().map(|uri| {
+            let name = file_path.parent().and_then(|parent| parent.file_name()).unwrap_or_default();
+            vec![lsp::WorkspaceFolder { uri, name: name.to_string_lossy().into_owned() }]
         });
-        let initialize_id = connection.request(
-            "initialize",
-            json!({ "processId": std::process::id(), "rootUri": root_uri, "capabilities": capabilities }),
-        )?;
+        #[allow(deprecated)] // `rootUri`, for servers older than workspace folders.
+        let params = lsp::InitializeParams {
+            process_id: Some(std::process::id()),
+            root_uri: root,
+            workspace_folders,
+            capabilities: client_capabilities(),
+            client_info: Some(lsp::ClientInfo { name: "rustext".into(), version: None }),
+            ..Default::default()
+        };
+        let initialize_id = connection.request(request::Initialize::METHOD, serde_json::to_value(params)?)?;
         let deadline = Instant::now() + initialize_timeout;
         let initialize_result = loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            let message = connection.incoming.recv_timeout(remaining).map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::TimedOut, "the language server did not initialize")
+            let message = connection.incoming.recv_timeout(remaining).map_err(|error| match error {
+                RecvTimeoutError::Timeout => {
+                    std::io::Error::new(std::io::ErrorKind::TimedOut, "the language server did not initialize")
+                }
+                RecvTimeoutError::Disconnected => std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "the language server exited before initializing",
+                ),
             })?;
-            if message["id"] == json!(initialize_id) {
-                break message["result"].clone();
+            if message["id"] == initialize_id {
+                break serde_json::from_value::<lsp::InitializeResult>(message["result"].clone())?;
             }
         };
-        let trigger_chars = initialize_result["capabilities"]["completionProvider"]["triggerCharacters"]
-            .as_array()
-            .map(|chars| chars.iter().filter_map(|value| value.as_str()?.chars().next()).collect())
+        let capabilities = initialize_result.capabilities;
+        let trigger_chars = capabilities
+            .completion_provider
+            .and_then(|provider| provider.trigger_characters)
+            .map(|triggers| triggers.iter().filter_map(|trigger| trigger.chars().next()).collect())
             .unwrap_or_default();
-        let sync = &initialize_result["capabilities"]["textDocumentSync"];
-        let syncs_incrementally = sync.as_u64().or(sync["change"].as_u64()) == Some(2);
-        let announces = |capability: &str| {
-            let provider = &initialize_result["capabilities"][capability];
-            !provider.is_null() && provider != &Value::Bool(false)
+        let syncs_incrementally = match capabilities.text_document_sync {
+            Some(lsp::TextDocumentSyncCapability::Kind(kind)) => kind == lsp::TextDocumentSyncKind::INCREMENTAL,
+            Some(lsp::TextDocumentSyncCapability::Options(options)) => {
+                options.change == Some(lsp::TextDocumentSyncKind::INCREMENTAL)
+            }
+            None => false,
         };
-        let gives_inlay_hints = announces("inlayHintProvider");
-        let gives_document_highlights = announces("documentHighlightProvider");
-        connection.notify("initialized", json!({}))?;
+        connection.notify(notification::Initialized::METHOD, serde_json::to_value(lsp::InitializedParams {})?)?;
         Ok(Self {
             connection,
-            document_uri: file_uri(file_path),
+            document_uri: document_uri(file_path)?,
             language_id: language_id.to_string(),
             synced_revision: None,
             document_version: 0,
             trigger_chars,
             syncs_incrementally,
-            gives_inlay_hints,
-            gives_document_highlights,
+            gives_inlay_hints: is_announced(&capabilities.inlay_hint_provider),
+            gives_document_highlights: is_announced(&capabilities.document_highlight_provider),
             request_ids: HashMap::new(),
             results: HashMap::new(),
             published_diagnostics: None,
         })
+    }
+
+    fn notify<N: Notification>(&mut self, params: N::Params) -> std::io::Result<()> {
+        self.connection.notify(N::METHOD, serde_json::to_value(params)?)
+    }
+
+    fn text_document(&self) -> lsp::TextDocumentIdentifier {
+        lsp::TextDocumentIdentifier::new(self.document_uri.clone())
+    }
+
+    fn text_document_position(&self, text: &Text, position: Position) -> lsp::TextDocumentPositionParams {
+        lsp::TextDocumentPositionParams::new(self.text_document(), lsp_position(text, position))
     }
 
     /// Sends the text when it changed since the last sync (full sync).
@@ -149,245 +249,284 @@ impl LspServices {
         self.document_version += 1;
         let (uri, version) = (self.document_uri.clone(), self.document_version);
         let _ = if self.synced_revision.is_none() {
-            let item =
-                json!({ "uri": uri, "languageId": self.language_id, "version": version, "text": text.to_string() });
-            self.connection.notify("textDocument/didOpen", json!({ "textDocument": item }))
+            let item = lsp::TextDocumentItem::new(uri, self.language_id.clone(), version, text.to_string());
+            self.notify::<notification::DidOpenTextDocument>(lsp::DidOpenTextDocumentParams { text_document: item })
         } else {
-            let params = json!({ "textDocument": { "uri": uri, "version": version }, "contentChanges": [{ "text": text.to_string() }] });
-            self.connection.notify("textDocument/didChange", params)
+            let whole_text =
+                lsp::TextDocumentContentChangeEvent { range: None, range_length: None, text: text.to_string() };
+            self.notify::<notification::DidChangeTextDocument>(lsp::DidChangeTextDocumentParams {
+                text_document: lsp::VersionedTextDocumentIdentifier::new(uri, version),
+                content_changes: vec![whole_text],
+            })
         };
         self.synced_revision = Some(text_revision);
         self.request_ids.retain(|key, _| key.text_revision == text_revision);
     }
 
-    /// Takes what the server sent: results by request id; its own requests get a null result.
+    /// Takes what the server sent: results by request id, the document's diagnostics. The
+    /// server's own requests get empty answers.
     fn receive(&mut self) {
         while let Ok(message) = self.connection.incoming.try_recv() {
-            let id = message["id"].as_u64();
-            match (id, message.get("method")) {
+            match (message["id"].as_u64(), message["method"].as_str()) {
                 (Some(id), None) => {
                     self.results.insert(id, message.get("result").cloned().unwrap_or(Value::Null));
                 }
+                (_, Some(request::WorkspaceConfiguration::METHOD)) => {
+                    let item_count = message["params"]["items"].as_array().map_or(0, Vec::len);
+                    let _ = self.connection.respond(message["id"].clone(), Value::Array(vec![Value::Null; item_count]));
+                }
+                (None, Some(notification::PublishDiagnostics::METHOD)) => {
+                    let Ok(published) =
+                        serde_json::from_value::<lsp::PublishDiagnosticsParams>(message["params"].clone())
+                    else {
+                        continue;
+                    };
+                    if published.uri == self.document_uri {
+                        self.published_diagnostics = Some(published.diagnostics);
+                    }
+                }
+                (None, Some(_)) => {}
                 (Some(_), Some(_)) => {
                     let _ = self.connection.respond(message["id"].clone(), Value::Null);
                 }
-                (None, Some(method))
-                    if method == "textDocument/publishDiagnostics"
-                        && message["params"]["uri"].as_str() == Some(self.document_uri.as_str()) =>
-                {
-                    self.published_diagnostics = message["params"]["diagnostics"].as_array().cloned();
-                }
-                _ => {}
+                (None, None) => {}
             }
         }
     }
 
-    /// The result of the request for `key`, sending it the first time.
-    fn ask(&mut self, text: &Text, key: RequestKey, method: &str) -> Reply<Value> {
-        self.ask_with(text, key, method, json!({}))
-    }
-
-    /// `ask` with more request parameters (merged into the position parameters).
-    fn ask_with(&mut self, text: &Text, key: RequestKey, method: &str, extra_params: Value) -> Reply<Value> {
-        let line = key.position.line;
-        let mut params = json!({
-            "textDocument": { "uri": self.document_uri },
-            "position": { "line": line, "character": utf16_column(text, line, key.position.column) },
-        });
-        if let (Some(params), Some(extra)) = (params.as_object_mut(), extra_params.as_object()) {
-            params.extend(extra.clone());
-        }
-        self.request_once(text, key, method, params)
-    }
-
-    /// The result of the request for `key` with exactly `params`, sending it the first time.
-    fn request_once(&mut self, text: &Text, key: RequestKey, method: &str, params: Value) -> Reply<Value> {
+    /// The result of request `R` for `key`, sending it with `params` the first time. A result
+    /// that doesn't parse counts as empty.
+    fn ask<R: Request>(&mut self, text: &Text, key: RequestKey, params: R::Params) -> Reply<R::Result>
+    where
+        R::Result: Default,
+    {
         self.sync(text, key.text_revision);
         self.receive();
         if let Some(&id) = self.request_ids.get(&key) {
             return match self.results.remove(&id) {
                 Some(result) => {
                     self.request_ids.remove(&key);
-                    Reply::Ready(result)
+                    Reply::Ready(serde_json::from_value(result).unwrap_or_default())
                 }
                 None => Reply::Pending,
             };
         }
-        if let Ok(id) = self.connection.request(method, params) {
+        let sent = serde_json::to_value(params)
+            .map_err(std::io::Error::from)
+            .and_then(|params| self.connection.request(R::METHOD, params));
+        if let Ok(id) = sent {
             self.request_ids.insert(key, id);
         }
         Reply::Pending
     }
 }
 
-fn completion_kind(lsp_kind: u64) -> CompletionKind {
-    match lsp_kind {
-        2 => CompletionKind::Method,
-        3 | 4 => CompletionKind::Function,
-        5 | 10 => CompletionKind::Field,
-        6 => CompletionKind::Variable,
-        7 | 8 | 13 | 22 | 25 => CompletionKind::Type,
-        9 => CompletionKind::Module,
-        14 => CompletionKind::Keyword,
-        15 => CompletionKind::Snippet,
-        12 | 20 | 21 => CompletionKind::Constant,
+/// `reply`'s answer through `convert`.
+fn map_reply<T, U>(reply: Reply<T>, convert: impl FnOnce(T) -> U) -> Reply<U> {
+    match reply {
+        Reply::Ready(answer) => Reply::Ready(convert(answer)),
+        Reply::Pending => Reply::Pending,
+    }
+}
+
+fn completion_kind(kind: Option<lsp::CompletionItemKind>) -> CompletionKind {
+    use lsp::CompletionItemKind as Kind;
+    match kind.unwrap_or(Kind::TEXT) {
+        Kind::METHOD => CompletionKind::Method,
+        Kind::FUNCTION | Kind::CONSTRUCTOR => CompletionKind::Function,
+        Kind::FIELD | Kind::PROPERTY => CompletionKind::Field,
+        Kind::VARIABLE => CompletionKind::Variable,
+        Kind::CLASS | Kind::INTERFACE | Kind::ENUM | Kind::STRUCT | Kind::TYPE_PARAMETER => CompletionKind::Type,
+        Kind::MODULE => CompletionKind::Module,
+        Kind::KEYWORD => CompletionKind::Keyword,
+        Kind::SNIPPET => CompletionKind::Snippet,
+        Kind::VALUE | Kind::ENUM_MEMBER | Kind::CONSTANT => CompletionKind::Constant,
         _ => CompletionKind::Text,
     }
 }
 
-fn completion_items(result: &Value) -> Vec<CompletionItem> {
-    let items = result.get("items").unwrap_or(result).as_array().cloned().unwrap_or_default();
+fn completion_items(response: lsp::CompletionResponse) -> Vec<CompletionItem> {
+    let items = match response {
+        lsp::CompletionResponse::Array(items) => items,
+        lsp::CompletionResponse::List(list) => list.items,
+    };
     items
-        .iter()
-        .filter_map(|item| {
-            let label = item["label"].as_str()?.to_string();
-            let insert_text = item["textEdit"]["newText"].as_str().or(item["insertText"].as_str()).map(str::to_string);
-            Some(CompletionItem {
-                kind: completion_kind(item["kind"].as_u64().unwrap_or(1)),
-                detail: item["detail"].as_str().map(str::to_string),
-                is_snippet: item["insertTextFormat"].as_u64() == Some(2),
+        .into_iter()
+        .map(|item| {
+            let insert_text = match item.text_edit {
+                Some(lsp::CompletionTextEdit::Edit(edit)) => Some(edit.new_text),
+                Some(lsp::CompletionTextEdit::InsertAndReplace(edit)) => Some(edit.new_text),
+                None => item.insert_text,
+            };
+            CompletionItem {
+                kind: completion_kind(item.kind),
+                detail: item.detail,
+                is_snippet: item.insert_text_format == Some(lsp::InsertTextFormat::SNIPPET),
                 insert_text,
-                label,
-            })
+                label: item.label,
+            }
         })
         .collect()
 }
 
-/// Hover contents as text: a string, `{kind, value}`, a `MarkedString`, or a list of them.
-fn hover_text(contents: &Value) -> Option<String> {
-    match contents {
-        Value::String(text) => Some(text.clone()),
-        Value::Array(parts) => {
-            let texts: Vec<String> = parts.iter().filter_map(hover_text).collect();
-            (!texts.is_empty()).then(|| texts.join("\n\n"))
-        }
-        Value::Object(object) => object.get("value").and_then(Value::as_str).map(str::to_string),
-        _ => None,
+fn marked_string_text(marked: lsp::MarkedString) -> String {
+    match marked {
+        lsp::MarkedString::String(text) => text,
+        lsp::MarkedString::LanguageString(code) => code.value,
     }
+}
+
+/// Hover contents as text; `None` when blank.
+fn hover_text(contents: lsp::HoverContents) -> Option<String> {
+    let text = match contents {
+        lsp::HoverContents::Scalar(marked) => marked_string_text(marked),
+        lsp::HoverContents::Array(parts) => parts.into_iter().map(marked_string_text).collect::<Vec<_>>().join("\n\n"),
+        lsp::HoverContents::Markup(markup) => markup.value,
+    };
+    (!text.trim().is_empty()).then_some(text)
+}
+
+fn documentation_text(documentation: lsp::Documentation) -> String {
+    match documentation {
+        lsp::Documentation::String(text) => text,
+        lsp::Documentation::MarkupContent(markup) => markup.value,
+    }
+}
+
+/// The edits of a workspace edit that apply to `uri`.
+fn edits_for_document(edit: lsp::WorkspaceEdit, uri: &Uri) -> Vec<lsp::TextEdit> {
+    if let Some(edits) = edit.changes.and_then(|mut changes| changes.remove(uri)) {
+        return edits;
+    }
+    let document_edits = match edit.document_changes {
+        Some(lsp::DocumentChanges::Edits(edits)) => edits,
+        Some(lsp::DocumentChanges::Operations(operations)) => operations
+            .into_iter()
+            .filter_map(|operation| match operation {
+                lsp::DocumentChangeOperation::Edit(edit) => Some(edit),
+                lsp::DocumentChangeOperation::Op(_) => None,
+            })
+            .collect(),
+        None => Vec::new(),
+    };
+    document_edits
+        .into_iter()
+        .filter(|document_edit| document_edit.text_document.uri == *uri)
+        .flat_map(|document_edit| document_edit.edits)
+        .map(|edit| match edit {
+            OneOf::Left(edit) => edit,
+            OneOf::Right(annotated) => annotated.text_edit,
+        })
+        .collect()
+}
+
+/// The active signature, with its active parameter as a char range of its label.
+fn signature_help_of(help: lsp::SignatureHelp) -> Option<SignatureHelp> {
+    let signature_index = help.active_signature.unwrap_or(0) as usize;
+    let signature = help.signatures.into_iter().nth(signature_index)?;
+    let label = signature.label;
+    let parameter_index = signature.active_parameter.or(help.active_parameter).unwrap_or(0) as usize;
+    let parameter = signature.parameters.unwrap_or_default().into_iter().nth(parameter_index);
+    let active_parameter = parameter.and_then(|parameter| match parameter.label {
+        lsp::ParameterLabel::Simple(parameter_label) => {
+            let byte = label.find(&parameter_label)?;
+            let start = label[..byte].chars().count();
+            Some((start, start + parameter_label.chars().count()))
+        }
+        lsp::ParameterLabel::LabelOffsets([start, end]) => {
+            Some((chars_in_utf16_prefix(&label, start as usize), chars_in_utf16_prefix(&label, end as usize)))
+        }
+    });
+    let documentation = signature.documentation.map(documentation_text);
+    Some(SignatureHelp { label, active_parameter, documentation })
 }
 
 impl LanguageServices for LspServices {
     fn completions(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Vec<CompletionItem>> {
-        let key = RequestKey { kind: RequestKind::Completion, text_revision, position, argument: String::new() };
-        match self.ask(text, key, "textDocument/completion") {
-            Reply::Ready(result) => Reply::Ready(completion_items(&result)),
-            Reply::Pending => Reply::Pending,
-        }
+        let params = lsp::CompletionParams {
+            text_document_position: self.text_document_position(text, position),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        };
+        let reply = self.ask::<request::Completion>(
+            text,
+            RequestKey::new::<request::Completion>(text_revision, position),
+            params,
+        );
+        map_reply(reply, |response| response.map(completion_items).unwrap_or_default())
     }
 
     fn take_diagnostics(&mut self, text: &Text) -> Option<Vec<Diagnostic>> {
         self.receive();
         let published = self.published_diagnostics.take()?;
-        let position = |value: &Value| -> Option<Position> {
-            let line = (value["line"].as_u64()? as usize).min(text.last_line());
-            Some(Position::new(line, char_column(text, line, value["character"].as_u64()? as usize)))
-        };
         let diagnostics = published
-            .iter()
-            .filter_map(|item| {
-                let range = Range::new(position(&item["range"]["start"])?, position(&item["range"]["end"])?);
-                let severity = match item["severity"].as_u64() {
-                    Some(2) => Severity::Warning,
-                    Some(3) => Severity::Info,
-                    Some(4) => Severity::Hint,
+            .into_iter()
+            .map(|diagnostic| {
+                let severity = match diagnostic.severity {
+                    Some(lsp::DiagnosticSeverity::WARNING) => Severity::Warning,
+                    Some(lsp::DiagnosticSeverity::INFORMATION) => Severity::Info,
+                    Some(lsp::DiagnosticSeverity::HINT) => Severity::Hint,
                     _ => Severity::Error,
                 };
-                let message = item["message"].as_str().unwrap_or_default().to_string();
-                Some(Diagnostic { range, severity, message })
+                Diagnostic { range: range_of(text, diagnostic.range), severity, message: diagnostic.message }
             })
             .collect();
         Some(diagnostics)
     }
 
     fn rename(&mut self, text: &Text, text_revision: u64, position: Position, new_name: &str) -> Reply<Vec<TextEdit>> {
-        let key = RequestKey { kind: RequestKind::Rename, text_revision, position, argument: new_name.to_string() };
-        let result = match self.ask_with(text, key, "textDocument/rename", json!({ "newName": new_name })) {
-            Reply::Ready(result) => result,
-            Reply::Pending => return Reply::Pending,
+        let key = RequestKey::new::<request::Rename>(text_revision, position).with_argument(new_name);
+        let params = lsp::RenameParams {
+            text_document_position: self.text_document_position(text, position),
+            new_name: new_name.to_string(),
+            work_done_progress_params: Default::default(),
         };
         let uri = self.document_uri.clone();
-        let edits_of_document = result["changes"][uri.as_str()].as_array().cloned().or_else(|| {
-            let changes = result["documentChanges"].as_array()?;
-            let change = changes.iter().find(|change| change["textDocument"]["uri"].as_str() == Some(uri.as_str()))?;
-            change["edits"].as_array().cloned()
-        });
-        let position_of = |value: &Value| -> Option<Position> {
-            let line = value["line"].as_u64()? as usize;
-            Some(Position::new(line, char_column(text, line, value["character"].as_u64()? as usize)))
-        };
-        let edits = edits_of_document
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|edit| {
-                let range = Range::new(position_of(&edit["range"]["start"])?, position_of(&edit["range"]["end"])?);
-                Some(TextEdit { range, new_text: edit["newText"].as_str()?.to_string() })
-            })
-            .collect();
-        Reply::Ready(edits)
+        map_reply(self.ask::<request::Rename>(text, key, params), |edit| {
+            edits_for_document(edit.unwrap_or_default(), &uri)
+                .into_iter()
+                .map(|edit| TextEdit { range: range_of(text, edit.range), new_text: edit.new_text })
+                .collect()
+        })
     }
 
     fn signature_help(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Option<SignatureHelp>> {
-        let key = RequestKey { kind: RequestKind::SignatureHelp, text_revision, position, argument: String::new() };
-        let result = match self.ask(text, key, "textDocument/signatureHelp") {
-            Reply::Ready(result) => result,
-            Reply::Pending => return Reply::Pending,
+        let params = lsp::SignatureHelpParams {
+            context: None,
+            text_document_position_params: self.text_document_position(text, position),
+            work_done_progress_params: Default::default(),
         };
-        let signature_index = result["activeSignature"].as_u64().unwrap_or(0) as usize;
-        let Some(signature) = result["signatures"].get(signature_index) else { return Reply::Ready(None) };
-        let label = signature["label"].as_str().unwrap_or_default().to_string();
-        let parameter_index =
-            signature["activeParameter"].as_u64().or(result["activeParameter"].as_u64()).unwrap_or(0) as usize;
-        let active_parameter =
-            signature["parameters"].get(parameter_index).and_then(|parameter| match &parameter["label"] {
-                Value::String(parameter_label) => {
-                    let byte = label.find(parameter_label.as_str())?;
-                    let start = label[..byte].chars().count();
-                    Some((start, start + parameter_label.chars().count()))
-                }
-                Value::Array(offsets) => {
-                    let utf16_to_chars = |units: u64| {
-                        let mut seen = 0;
-                        label
-                            .chars()
-                            .take_while(|character| {
-                                seen += character.len_utf16() as u64;
-                                seen <= units
-                            })
-                            .count()
-                    };
-                    Some((utf16_to_chars(offsets.first()?.as_u64()?), utf16_to_chars(offsets.get(1)?.as_u64()?)))
-                }
-                _ => None,
-            });
-        let documentation = hover_text(&signature["documentation"]);
-        Reply::Ready(Some(SignatureHelp { label, active_parameter, documentation }))
+        let key = RequestKey::new::<request::SignatureHelpRequest>(text_revision, position);
+        map_reply(self.ask::<request::SignatureHelpRequest>(text, key, params), |help| help.and_then(signature_help_of))
     }
 
     /// Sends the edits as ranges (in reverse order, so each is relative to the text after the
     /// previous one) when the server takes them; otherwise the next request syncs in full.
-    fn text_changed(&mut self, texts_before: &[Text], changes: &[rustext_core::ChangeSet], text_revision_after: u64) {
+    fn text_changed(&mut self, texts_before: &[Text], changes: &[ChangeSet], text_revision_after: u64) {
         if !self.syncs_incrementally || self.synced_revision.is_none() || texts_before.len() != changes.len() {
             return;
         }
-        let position = |text: &Text, offset: usize| {
-            let position = text.position(offset);
-            json!({ "line": position.line, "character": utf16_column(text, position.line, position.column) })
-        };
-        let content_changes: Vec<Value> = texts_before
+        let content_changes = texts_before
             .iter()
             .zip(changes)
             .flat_map(|(before, change_set)| {
-                change_set
-                    .changes()
-                    .iter()
-                    .rev()
-                    .map(|change| json!({ "range": { "start": position(before, change.start), "end": position(before, change.end) }, "text": change.insert }))
-                    .collect::<Vec<_>>()
+                change_set.changes().iter().rev().map(|change| lsp::TextDocumentContentChangeEvent {
+                    range: Some(lsp::Range::new(
+                        lsp_position_of_offset(before, change.start),
+                        lsp_position_of_offset(before, change.end),
+                    )),
+                    range_length: None,
+                    text: change.insert.clone(),
+                })
             })
             .collect();
         self.document_version += 1;
-        let params = json!({ "textDocument": { "uri": self.document_uri, "version": self.document_version }, "contentChanges": content_changes });
-        if self.connection.notify("textDocument/didChange", params).is_ok() {
+        let params = lsp::DidChangeTextDocumentParams {
+            text_document: lsp::VersionedTextDocumentIdentifier::new(self.document_uri.clone(), self.document_version),
+            content_changes,
+        };
+        if self.notify::<notification::DidChangeTextDocument>(params).is_ok() {
             self.synced_revision = Some(text_revision_after);
         }
     }
@@ -401,103 +540,70 @@ impl LanguageServices for LspServices {
         if !self.gives_document_highlights {
             return Reply::Ready(None);
         }
-        let key =
-            RequestKey { kind: RequestKind::DocumentHighlights, text_revision, position, argument: String::new() };
-        let result = match self.ask(text, key, "textDocument/documentHighlight") {
-            Reply::Ready(result) => result,
-            Reply::Pending => return Reply::Pending,
+        let params = lsp::DocumentHighlightParams {
+            text_document_position_params: self.text_document_position(text, position),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
         };
-        let position_of = |value: &Value| -> Option<Position> {
-            let line = value["line"].as_u64()? as usize;
-            (line < text.line_count()).then(|| {
-                Position::new(line, char_column(text, line, value["character"].as_u64().unwrap_or(0) as usize))
-            })
-        };
-        let ranges = result.as_array().map(|highlights| {
+        let key = RequestKey::new::<request::DocumentHighlightRequest>(text_revision, position);
+        map_reply(self.ask::<request::DocumentHighlightRequest>(text, key, params), |highlights| {
             highlights
-                .iter()
-                .filter_map(|highlight| {
-                    Some(Range::new(
-                        position_of(&highlight["range"]["start"])?,
-                        position_of(&highlight["range"]["end"])?,
-                    ))
-                })
-                .collect()
-        });
-        Reply::Ready(ranges)
+                .map(|highlights| highlights.into_iter().map(|highlight| range_of(text, highlight.range)).collect())
+        })
     }
 
     fn references(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Vec<Range>> {
-        let key = RequestKey { kind: RequestKind::References, text_revision, position, argument: String::new() };
-        let params = json!({ "context": { "includeDeclaration": true } });
-        let result = match self.ask_with(text, key, "textDocument/references", params) {
-            Reply::Ready(result) => result,
-            Reply::Pending => return Reply::Pending,
+        let params = lsp::ReferenceParams {
+            text_document_position: self.text_document_position(text, position),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: lsp::ReferenceContext { include_declaration: true },
         };
-        let position_of = |value: &Value| -> Option<Position> {
-            let line = value["line"].as_u64()? as usize;
-            (line < text.line_count()).then(|| {
-                Position::new(line, char_column(text, line, value["character"].as_u64().unwrap_or(0) as usize))
-            })
-        };
-        let ranges = result
-            .as_array()
-            .map(|locations| {
-                locations
-                    .iter()
-                    .filter(|location| location["uri"].as_str() == Some(self.document_uri.as_str()))
-                    .filter_map(|location| {
-                        Some(Range::new(
-                            position_of(&location["range"]["start"])?,
-                            position_of(&location["range"]["end"])?,
-                        ))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        Reply::Ready(ranges)
+        let key = RequestKey::new::<request::References>(text_revision, position);
+        let uri = self.document_uri.clone();
+        map_reply(self.ask::<request::References>(text, key, params), |locations| {
+            locations
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|location| location.uri == uri)
+                .map(|location| range_of(text, location.range))
+                .collect()
+        })
     }
 
     fn inlay_hints(&mut self, text: &Text, text_revision: u64, lines: std::ops::Range<usize>) -> Reply<Vec<InlayHint>> {
         if !self.gives_inlay_hints || lines.is_empty() {
             return Reply::Ready(Vec::new());
         }
-        let key = RequestKey {
-            kind: RequestKind::InlayHints,
-            text_revision,
-            position: Position::new(lines.start, 0),
-            argument: lines.end.to_string(),
-        };
+        let key = RequestKey::new::<request::InlayHintRequest>(text_revision, Position::new(lines.start, 0))
+            .with_argument(lines.end.to_string());
         let end = if lines.end < text.line_count() {
-            json!({ "line": lines.end, "character": 0 })
+            lsp::Position::new(lines.end as u32, 0)
         } else {
-            let last = text.last_line();
-            json!({ "line": last, "character": utf16_column(text, last, text.line_len(last)) })
+            let last_line = text.last_line();
+            lsp_position(text, Position::new(last_line, text.line_len(last_line)))
         };
-        let params = json!({
-            "textDocument": { "uri": self.document_uri },
-            "range": { "start": { "line": lines.start, "character": 0 }, "end": end },
-        });
-        let result = match self.request_once(text, key, "textDocument/inlayHint", params) {
-            Reply::Ready(result) => result,
-            Reply::Pending => return Reply::Pending,
+        let params = lsp::InlayHintParams {
+            work_done_progress_params: Default::default(),
+            text_document: self.text_document(),
+            range: lsp::Range::new(lsp::Position::new(lines.start as u32, 0), end),
         };
-        let hint_of = |hint: &Value| {
-            let line = hint["position"]["line"].as_u64()? as usize;
-            if line >= text.line_count() {
-                return None;
-            }
-            let column = char_column(text, line, hint["position"]["character"].as_u64()? as usize);
-            let label = match &hint["label"] {
-                Value::String(label) => label.clone(),
-                Value::Array(parts) => parts.iter().filter_map(|part| part["value"].as_str()).collect(),
-                _ => return None,
-            };
-            let padding = |key: &str| if hint[key].as_bool() == Some(true) { " " } else { "" };
-            let label = format!("{}{label}{}", padding("paddingLeft"), padding("paddingRight"));
-            Some(InlayHint { position: Position::new(line, column), label })
-        };
-        Reply::Ready(result.as_array().map(|hints| hints.iter().filter_map(hint_of).collect()).unwrap_or_default())
+        map_reply(self.ask::<request::InlayHintRequest>(text, key, params), |hints| {
+            hints
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|hint| (hint.position.line as usize) < text.line_count())
+                .map(|hint| {
+                    let label = match hint.label {
+                        lsp::InlayHintLabel::String(label) => label,
+                        lsp::InlayHintLabel::LabelParts(parts) => parts.into_iter().map(|part| part.value).collect(),
+                    };
+                    let padding = |is_padded: Option<bool>| if is_padded == Some(true) { " " } else { "" };
+                    let label = format!("{}{label}{}", padding(hint.padding_left), padding(hint.padding_right));
+                    InlayHint { position: position_of(text, hint.position), label }
+                })
+                .collect()
+        })
     }
 
     fn completion_trigger_chars(&self) -> &[char] {
@@ -505,42 +611,44 @@ impl LanguageServices for LspServices {
     }
 
     fn hover(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Option<String>> {
-        let key = RequestKey { kind: RequestKind::Hover, text_revision, position, argument: String::new() };
-        match self.ask(text, key, "textDocument/hover") {
-            Reply::Ready(result) => {
-                Reply::Ready(hover_text(&result["contents"]).filter(|text| !text.trim().is_empty()))
-            }
-            Reply::Pending => Reply::Pending,
-        }
+        let params = lsp::HoverParams {
+            text_document_position_params: self.text_document_position(text, position),
+            work_done_progress_params: Default::default(),
+        };
+        let key = RequestKey::new::<request::HoverRequest>(text_revision, position);
+        map_reply(self.ask::<request::HoverRequest>(text, key, params), |hover| {
+            hover.and_then(|hover| hover_text(hover.contents))
+        })
     }
 
     fn definition(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Option<Position>> {
-        let key = RequestKey { kind: RequestKind::Definition, text_revision, position, argument: String::new() };
-        let result = match self.ask(text, key, "textDocument/definition") {
-            Reply::Ready(result) => result,
-            Reply::Pending => return Reply::Pending,
+        let params = lsp::GotoDefinitionParams {
+            text_document_position_params: self.text_document_position(text, position),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
         };
-        let locations = match &result {
-            Value::Array(locations) => locations.clone(),
-            Value::Null => Vec::new(),
-            location => vec![location.clone()],
-        };
-        let in_this_document = locations.iter().find(|location| {
-            let uri = location.get("uri").or(location.get("targetUri"));
-            uri.and_then(Value::as_str) == Some(self.document_uri.as_str())
-        });
-        let start = in_this_document.map(|location| {
-            location.get("range").or(location.get("targetSelectionRange")).map_or(&Value::Null, |range| &range["start"])
-        });
-        Reply::Ready(start.and_then(|start| {
-            let line = start["line"].as_u64()? as usize;
-            Some(Position::new(line, char_column(text, line, start["character"].as_u64()? as usize)))
-        }))
+        let key = RequestKey::new::<request::GotoDefinition>(text_revision, position);
+        let uri = self.document_uri.clone();
+        map_reply(self.ask::<request::GotoDefinition>(text, key, params), |response| {
+            let targets: Vec<(Uri, lsp::Range)> = match response? {
+                lsp::GotoDefinitionResponse::Scalar(location) => vec![(location.uri, location.range)],
+                lsp::GotoDefinitionResponse::Array(locations) => {
+                    locations.into_iter().map(|location| (location.uri, location.range)).collect()
+                }
+                lsp::GotoDefinitionResponse::Link(links) => {
+                    links.into_iter().map(|link| (link.target_uri, link.target_selection_range)).collect()
+                }
+            };
+            let (_, range) = targets.into_iter().find(|(target_uri, _)| *target_uri == uri)?;
+            Some(position_of(text, range.start))
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
@@ -552,24 +660,34 @@ mod tests {
     }
 
     #[test]
-    fn reads_completion_lists_and_arrays() {
-        let list =
-            json!({ "isIncomplete": false, "items": [{ "label": "push", "kind": 2, "detail": "fn(&mut self, T)" }] });
-        let array = json!([{ "label": "fn", "kind": 15, "insertText": "fn ${1:name}() {}", "insertTextFormat": 2 }]);
+    fn file_uris_percent_encode_spaces() {
+        assert_eq!(file_uri(std::path::Path::new("/my project/main.rs")), "file:///my%20project/main.rs");
+    }
 
-        assert_eq!(completion_items(&list)[0].kind, CompletionKind::Method);
-        let snippet = &completion_items(&array)[0];
+    #[test]
+    fn reads_completion_lists_and_arrays() {
+        let list: lsp::CompletionResponse = serde_json::from_value(
+            json!({ "isIncomplete": false, "items": [{ "label": "push", "kind": 2, "detail": "fn(&mut self, T)" }] }),
+        )
+        .unwrap();
+        let array: lsp::CompletionResponse = serde_json::from_value(
+            json!([{ "label": "fn", "kind": 15, "insertText": "fn ${1:name}() {}", "insertTextFormat": 2 }]),
+        )
+        .unwrap();
+
+        assert_eq!(completion_items(list)[0].kind, CompletionKind::Method);
+        let snippet = &completion_items(array)[0];
         assert!(snippet.is_snippet);
         assert_eq!(snippet.text_to_insert(), "fn ${1:name}() {}");
     }
 
     #[test]
     fn reads_hover_contents_in_every_shape() {
-        assert_eq!(hover_text(&json!("plain")), Some("plain".into()));
-        assert_eq!(hover_text(&json!({ "kind": "markdown", "value": "**bold**" })), Some("**bold**".into()));
-        assert_eq!(
-            hover_text(&json!([{ "language": "rust", "value": "fn a()" }, "doc"])),
-            Some("fn a()\n\ndoc".into())
-        );
+        let hover = |contents: Value| hover_text(serde_json::from_value(contents).unwrap());
+
+        assert_eq!(hover(json!("plain")), Some("plain".into()));
+        assert_eq!(hover(json!({ "kind": "markdown", "value": "**bold**" })), Some("**bold**".into()));
+        assert_eq!(hover(json!([{ "language": "rust", "value": "fn a()" }, "doc"])), Some("fn a()\n\ndoc".into()));
+        assert_eq!(hover(json!("  ")), None);
     }
 }
