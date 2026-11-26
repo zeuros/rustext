@@ -111,42 +111,52 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 
 ## Where to resume
 
-Last updated: 2026-11-26, after moving to Helix's crates (D22–D24).
+Last updated: 2026-11-26, after the language features round (D22–D26).
 
 **State**: M0–M10 done, M11 and M12 mostly done, M13 done (integration guide, performance).
-`scripts/check.sh` green; ~280 tests, including seeded random tests (`random_commands.rs`
+`scripts/check.sh` green; ~315 tests, including seeded random tests (`random_commands.rs`
 in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case counts or
-change their seeds locally to hunt for rarer bugs). Every feature is a commit on `main`.
+change their seeds locally to hunt for rarer bugs), and `crates/rustext-lsp/tests/
+rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP feature against a
+real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. Tree-sitter for bracket matching and colorization, replacing the lexer (D21) where a
-   grammar is bundled (folding by syntax is done).
-2. An accessible diff viewer (`accessibleDiffViewerNext`): the changes read one by one.
+1. A lightbulb in the gutter when the cursor's line has code actions (asked when the cursor
+   rests, D19), and LSP code lenses turned into `CodeLens` values.
+2. Tree-sitter for bracket matching and colorization where a grammar is bundled, replacing
+   the lexer (D21) there; language injections (JS in HTML, code blocks in Markdown).
+3. An accessible diff viewer (`accessibleDiffViewerNext`): the changes read one by one.
+4. Range formatting and format on type (`documentRangeFormatting`, `onTypeFormatting`).
 
-Done since: code actions (Ctrl+.); format document (Shift+Alt+F); Go to Symbol (Ctrl+Shift+O); word wrap in diffs (`--page diff --wrap N`); links (underlined URLs, Ctrl+click opens); the visible lines and the selection exposed to screen readers (AccessKit text
-runs); definitions and references in other documents (`open_request`, D26), F12 answered on a later frame; bracket pair guide of the cursor's pair (`--bracket-guides`); snippet placeholders highlighted; folding by syntax tree (`FoldingStrategy`), Fold from inside a block moves the
-cursor to its header; code lenses (D25, `--code-lens` in the demo); Helix's crates (D22–D24): tree-sitter highlighting for 18 languages, parsed on a
-thread; smart select (Shift+Alt+→/←); `lsp-types` messages, checked against a real
-rust-analyzer (`crates/rustext-lsp/tests/rust_analyzer.rs`, ignored); `nucleo` fuzzy matching;
-`regex-cursor` find over the rope.
-
-Done before that: same-text services (diagnostics, rename, signature
-help, document highlights, inlay hints, references on Shift+F12) with incremental LSP sync;
-brackets in strings and comments (D21); Up/Down by visual row when wrapping; snippets; ghost
-text; random tests.
+**Done in the last sessions** (newest first):
+- Language services: code actions (Ctrl+.), format document (Shift+Alt+F), Go to Symbol
+  (Ctrl+Shift+O, from LSP or tree-sitter tags), definitions and references in other
+  documents (`EditorResponse::open_request`, D26), F12 answered on a later frame.
+- Editing and display: links (Ctrl+click), word wrap in diffs, screen readers read the
+  visible lines and the selection, bracket pair guide (`--bracket-guides`), snippet
+  placeholders highlighted, folding by syntax tree, code lenses (D25, `--code-lens`).
+- Helix's crates (D22–D24): tree-sitter highlighting for 18 languages parsed on a thread,
+  smart select (Shift+Alt+→/←), `lsp-types` messages, `nucleo` fuzzy matching, `regex-cursor`
+  find over the rope.
+- Before that: same-text services (diagnostics, rename, signature help, document highlights,
+  inlay hints, references) with incremental LSP sync; brackets in strings and comments (D21);
+  Up/Down by visual row when wrapping; snippets; ghost text; random tests.
 
 **Known gaps / debts**:
-- Folding is indentation-only; `foldingStrategy: 'auto'` needs language structure.
 - Folding is off when the application passes its own `DisplayLayout` (diffs).
 - Text from egui's TextEdit (find input) can't use rustext's keymap (Ctrl+D etc. there are
   egui's).
 - The bracket lexer (D21) doesn't know raw strings, nested comments or heredocs.
-- Find References isn't visible in the demo without `--lsp` (word completions answer none).
+- Find References and code actions aren't visible in the demo without `--lsp` (word
+  completions answer none).
 - The references list shows `file:line` for other documents, not their line's text.
-- Tree-sitter: bracket matching and indentation could use the tree (D21's lexer is still
-  used); injections aren't run; highlight queries are the grammar crates' own.
+- Code actions that are server commands (`workspace/executeCommand`) are left out.
+- Tree-sitter highlight queries are the grammar crates' own (Helix's are richer, D22).
+- Screen readers get the visible lines only, not the lines scrolled out of view.
+- Another agent's worktrees live in `.claude/worktrees/` (ignored): don't commit them.
 
 **How to verify visually**: `scripts/screenshot.sh <png> [file] [--showcase | --find x |
 --page diff | --page merge | --inline | --diff old new | --blame | --wrap N | --complete |
---minimap | --scroll N | --code-lens | --bracket-guides]`, then look at the PNG. Performance: `cargo test --release -p
-rustext-egui --test performance -- --ignored --nocapture` (numbers in D19).
+--minimap | --scroll N | --code-lens | --bracket-guides]`, then look at the PNG.
+Performance: `cargo test --release -p rustext-egui --test performance -- --ignored
+--nocapture` (numbers in D19).
