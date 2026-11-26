@@ -1,9 +1,11 @@
-//! Find references (Shift+F12): the language services' references of the symbol at the cursor,
-//! listed under its line with each line's text; Up/Down choose, Enter or a click jumps.
+//! Going to definitions and references, from the language services' answers, which may arrive
+//! frames after the asking: F12 / Ctrl+click jump to the definition; Shift+F12 lists the
+//! references under the cursor's line (Up/Down choose, Enter or a click jumps). A target in
+//! another document becomes `EditorResponse::open_request`, for the application to open.
 
 use egui::{Area, Frame, Id, Key, Order, RichText, Ui, pos2};
-use rustext_core::services::Reply;
-use rustext_core::{Command, Outcome, Selection, Selections};
+use rustext_core::services::{Location, Reply};
+use rustext_core::{Command, Outcome, Position, Selection, Selections};
 
 use super::{CodeEditor, Metrics};
 
@@ -11,8 +13,9 @@ const VISIBLE_ITEMS: usize = 10;
 
 #[derive(Clone, Debug, Default)]
 pub struct ReferencesState {
-    /// Char offset ranges of the references, in text order; empty when the list is closed.
-    entries: Vec<(usize, usize)>,
+    /// The references, this document's first in text order, then the others'; empty when the
+    /// list is closed.
+    entries: Vec<Location>,
     selected: usize,
     /// The text revision the entries are for (an edit closes the list).
     revision: u64,
@@ -27,7 +30,7 @@ impl ReferencesState {
         !self.entries.is_empty()
     }
 
-    pub fn entries(&self) -> &[(usize, usize)] {
+    pub fn entries(&self) -> &[Location] {
         &self.entries
     }
 
@@ -40,7 +43,53 @@ impl ReferencesState {
     }
 }
 
+/// The last part of a document's name: `main.rs` for `file:///src/main.rs`.
+fn short_document_name(document: &str) -> &str {
+    document.rsplit('/').next().unwrap_or(document)
+}
+
 impl CodeEditor<'_> {
+    /// F12 / Ctrl+click: asks for the definition of the symbol at `position`; the answer
+    /// moves the cursor (or asks to open another document) when it comes.
+    pub(super) fn request_definition(&mut self, position: Position) {
+        self.view.definition_request = Some((self.state.text_revision(), position));
+    }
+
+    /// Goes to the definition once the services answer; an edit meanwhile drops the request.
+    /// Returns whether an answer is awaited.
+    pub(super) fn refresh_definition(&mut self) -> bool {
+        let Some((revision, position)) = self.view.definition_request else { return false };
+        let text = self.state.text();
+        let services = self.services.as_deref_mut().filter(|_| revision == self.state.text_revision());
+        let reply = services.map(|services| services.definition(text, revision, position));
+        match reply {
+            Some(Reply::Pending) => true,
+            Some(Reply::Ready(definition)) => {
+                self.view.definition_request = None;
+                if let Some(definition) = definition {
+                    self.go_to(definition, false);
+                }
+                false
+            }
+            None => {
+                self.view.definition_request = None;
+                false
+            }
+        }
+    }
+
+    /// Moves to `location`: selects its range (`selects`) or puts the cursor at its start in
+    /// this document; asks the application to open another one.
+    fn go_to(&mut self, location: Location, selects: bool) {
+        if location.document.is_some() {
+            self.open_request = Some(location);
+            return;
+        }
+        let (start, end) = self.state.text().range_offsets(location.range);
+        let selection = if selects { Selection::new(start, end) } else { Selection::cursor(start) };
+        self.execute_tracked(Command::SetSelections(Selections::single(selection)));
+    }
+
     /// Shift+F12: asks for the references of the symbol at the cursor.
     pub(super) fn open_references(&mut self) {
         let head = self.state.selections().primary().head;
@@ -63,12 +112,16 @@ impl CodeEditor<'_> {
         };
         let text = self.state.text();
         match services.references(text, revision, text.position(offset)) {
-            Reply::Ready(ranges) => {
-                let mut entries: Vec<(usize, usize)> =
-                    ranges.into_iter().map(|range| text.range_offsets(range)).collect();
-                entries.sort_unstable();
+            Reply::Ready(mut entries) => {
+                entries.sort_by(|first, second| {
+                    (&first.document, first.range.start).cmp(&(&second.document, second.range.start))
+                });
                 entries.dedup();
-                let selected = entries.iter().position(|&(start, end)| start <= offset && offset <= end).unwrap_or(0);
+                let holds_cursor = |location: &Location| {
+                    let (start, end) = text.range_offsets(location.range);
+                    location.document.is_none() && start <= offset && offset <= end
+                };
+                let selected = entries.iter().position(holds_cursor).unwrap_or(0);
                 *references = ReferencesState { entries, selected, revision, anchor: offset, request: None };
                 false
             }
@@ -101,13 +154,19 @@ impl CodeEditor<'_> {
     }
 
     fn jump_to_reference(&mut self, index: usize, outcome: &mut Outcome) {
-        let Some(&(start, end)) = self.view.references.entries.get(index) else { return };
+        let Some(location) = self.view.references.entries.get(index).cloned() else { return };
         self.view.references.close();
+        if location.document.is_some() {
+            self.open_request = Some(location);
+            return;
+        }
+        let (start, end) = self.state.text().range_offsets(location.range);
         let result = self.state.execute(Command::SetSelections(Selections::single(Selection::new(start, end))));
         *outcome = std::mem::take(outcome).merged(result);
     }
 
-    /// The list under the line it was asked at: `line  text` per reference, the reference in bold.
+    /// The list under the line it was asked at, one row per reference: `line  text` with the
+    /// reference in bold for this document, `name:line` for another.
     pub(super) fn show_references(&mut self, ui: &mut Ui, metrics: &Metrics, editor_id: Id, outcome: &mut Outcome) {
         if !self.view.references.is_open() {
             return;
@@ -124,17 +183,26 @@ impl CodeEditor<'_> {
             .enumerate()
             .skip(first_visible)
             .take(VISIBLE_ITEMS)
-            .map(|(index, &(start, end))| {
-                let position = text.position(start);
-                let content: Vec<char> = text.line_content(position.line).chars().collect();
-                let end_column = (position.column + end - start).min(content.len());
+            .map(|(index, location)| {
+                let start = location.range.start;
+                if let Some(document) = &location.document {
+                    let place = format!("{}:{}", short_document_name(document), start.line + 1);
+                    return (index, format!("{place}  "), String::new(), String::new(), String::new());
+                }
+                let content: Vec<char> = text.line_content(start.line).chars().collect();
+                let start_column = start.column.min(content.len());
+                let end_column = if location.range.end.line == start.line {
+                    location.range.end.column.clamp(start_column, content.len())
+                } else {
+                    content.len()
+                };
                 let piece = |range: std::ops::Range<usize>| content[range].iter().collect::<String>();
-                let before = piece(0..position.column).trim_start().to_string();
+                let before = piece(0..start_column).trim_start().to_string();
                 (
                     index,
-                    format!("{:>5}  ", position.line + 1),
+                    format!("{:>5}  ", start.line + 1),
                     before,
-                    piece(position.column..end_column),
+                    piece(start_column..end_column),
                     piece(end_column..content.len()),
                 )
             })
@@ -151,10 +219,10 @@ impl CodeEditor<'_> {
                     |ui| {
                         ui.set_width((metrics.text_rect.width() - 24.0).clamp(200.0, 720.0));
                         ui.label(RichText::new(format!("{count} references")).size(11.0).color(theme.line_number));
-                        for (index, line_number, before, reference, after) in rows {
+                        for (index, place, before, reference, after) in rows {
                             let row = ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 0.0;
-                                ui.label(RichText::new(line_number).monospace().color(theme.line_number));
+                                ui.label(RichText::new(place).monospace().color(theme.line_number));
                                 ui.label(RichText::new(before).monospace().color(theme.foreground));
                                 ui.label(RichText::new(reference).monospace().strong().color(theme.foreground));
                                 ui.label(RichText::new(after).monospace().color(theme.foreground));

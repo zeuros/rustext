@@ -14,9 +14,9 @@ mod completion;
 mod find;
 mod input;
 mod layout;
+mod navigation;
 mod paint;
 mod palette;
-mod references;
 mod smart_select;
 mod structure;
 mod wrapping;
@@ -24,7 +24,7 @@ mod wrapping;
 use egui::{CursorIcon, EventFilter, FontId, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 use rustext_core::decoration::{Decoration, DecorationKind};
 use rustext_core::display::{DisplayLayout, RowContent};
-use rustext_core::services::CodeLens;
+use rustext_core::services::{CodeLens, Location};
 use rustext_core::style::{LineStyler, Rgba};
 use rustext_core::{EditorState, Outcome, Position, Text};
 
@@ -259,7 +259,9 @@ pub struct EditorView {
     snippet_placeholders: Vec<Decoration>,
     pub document_highlights: assist::DocumentHighlightsState,
     /// The references list (Shift+F12).
-    pub references: references::ReferencesState,
+    pub references: navigation::ReferencesState,
+    /// A definition asked for (F12, Ctrl+click) and not answered yet: (text revision, position).
+    definition_request: Option<(u64, Position)>,
     /// Smart select's history (Shift+Alt+Right / Left).
     pub smart_select: smart_select::SmartSelectState,
     wraps: wrapping::WrapState,
@@ -395,6 +397,9 @@ pub struct EditorResponse {
     pub unhandled_actions: Vec<Action>,
     /// The index (in the slice given to `code_lenses`) of the code lens clicked this frame.
     pub clicked_code_lens: Option<usize>,
+    /// A definition or reference in another document the user went to: the application opens
+    /// it (the editor shows one document).
+    pub open_request: Option<Location>,
 }
 
 pub use rustext_core::services::Severity;
@@ -436,6 +441,8 @@ pub struct CodeEditor<'a> {
     code_lenses: &'a [CodeLens],
     /// The code lens under the pointer this frame, drawn brighter.
     hovered_code_lens: Option<usize>,
+    /// Another document to open, for `EditorResponse::open_request`.
+    open_request: Option<Location>,
     display_layout: Option<&'a DisplayLayout>,
     foreign: Option<Foreign<'a>>,
     glyph_margin: bool,
@@ -515,6 +522,7 @@ impl<'a> CodeEditor<'a> {
             decorations: &[],
             code_lenses: &[],
             hovered_code_lens: None,
+            open_request: None,
             display_layout: None,
             foreign: None,
             glyph_margin: false,
@@ -635,7 +643,11 @@ impl<'a> CodeEditor<'a> {
             .into_iter()
             .map(|(start, end)| Decoration::new(start, end, DecorationKind::Background(placeholder_background)))
             .collect();
-        if self.refresh_inlay_hints(&metrics) | self.refresh_document_highlights() | self.refresh_references() {
+        let is_awaiting_services = self.refresh_inlay_hints(&metrics)
+            | self.refresh_document_highlights()
+            | self.refresh_references()
+            | self.refresh_definition();
+        if is_awaiting_services {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
         let typed = std::mem::take(&mut self.typed_this_frame);
@@ -731,7 +743,8 @@ impl<'a> CodeEditor<'a> {
             Some(MouseTarget::CodeLens { index }) if response.clicked() => Some(index),
             _ => None,
         };
-        EditorResponse { response, outcome, pressed, hovered, unhandled_actions, clicked_code_lens }
+        let open_request = self.open_request.take();
+        EditorResponse { response, outcome, pressed, hovered, unhandled_actions, clicked_code_lens, open_request }
     }
 
     fn metrics(&self, ui: &Ui, rect: Rect) -> Metrics {
@@ -880,15 +893,6 @@ impl<'a> CodeEditor<'a> {
             _ => Vec::new(),
         };
         hovered.into_iter().filter_map(|decoration| decoration.hover_message.clone()).collect()
-    }
-
-    /// The definition of the symbol at `position`, from the services.
-    fn definition_of(&mut self, position: Position) -> Option<Position> {
-        let services = self.services.as_deref_mut()?;
-        match services.definition(self.state.text(), self.state.text_revision(), position) {
-            rustext_core::services::Reply::Ready(definition) => definition,
-            rustext_core::services::Reply::Pending => None,
-        }
     }
 
     /// Moves the cursor to the next (or previous) squiggle, wrapping around (F8).

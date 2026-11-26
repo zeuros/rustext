@@ -54,7 +54,7 @@ fn rust_analyzer_answers_parse() {
     assert!(hover.unwrap().contains("fn length"));
 
     let definition = until_answered(|attempt| services.definition(&text, attempt, call), Option::is_some);
-    assert_eq!(definition, Some(Position::new(4, 3)));
+    assert_eq!(definition.map(|location| (location.document, location.range.start)), Some((None, Position::new(4, 3))));
 
     let references = until_answered(|attempt| services.references(&text, attempt, call), |found| found.len() == 2);
     assert_eq!(references.len(), 2);

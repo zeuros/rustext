@@ -188,9 +188,8 @@ impl CodeEditor<'_> {
                 let (position, _) = self.position_at(ui, metrics, pos);
                 let offset = text.offset(position);
                 let is_definition_click = modifiers.command && !modifiers.shift && !modifiers.alt;
-                if let Some(definition) = is_definition_click.then(|| self.definition_of(position)).flatten() {
-                    self.execute(outcome, Command::SetSelections(Selections::cursor(text.offset(definition))));
-                    return;
+                if is_definition_click && self.services.is_some() {
+                    self.request_definition(position);
                 }
                 if modifiers.shift && modifiers.alt {
                     let anchor = text.position(self.state.selections().primary().anchor);
@@ -425,10 +424,8 @@ impl CodeEditor<'_> {
             Action::GrowSelection => self.grow_selections(outcome),
             Action::ShrinkSelection => self.shrink_selections(outcome),
             Action::GoToDefinition => {
-                let text = self.state.text().clone();
-                if let Some(definition) = self.definition_of(text.position(self.state.selections().primary().head)) {
-                    self.execute(outcome, Command::SetSelections(Selections::cursor(text.offset(definition))));
-                }
+                let head = self.state.selections().primary().head;
+                self.request_definition(self.state.text().position(head));
             }
             Action::NextProblem | Action::PreviousProblem => {
                 if let Some(start) = self.go_to_problem(action == Action::NextProblem) {

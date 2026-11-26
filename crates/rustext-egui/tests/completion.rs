@@ -3,7 +3,7 @@
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use rustext_core::services::{CompletionItem, CompletionKind, LanguageServices, Reply, WordCompletions};
+use rustext_core::services::{CompletionItem, CompletionKind, LanguageServices, Location, Reply, WordCompletions};
 use rustext_core::{EditorState, Position, Text};
 use rustext_egui::{CodeEditor, EditorTheme, EditorView, Keymap, ViewConfig};
 
@@ -98,15 +98,18 @@ impl LanguageServices for TestServices {
         Reply::Ready(Some(calls))
     }
 
-    /// Every whole-word `helper`.
-    fn references(&mut self, text: &Text, _revision: u64, _position: Position) -> Reply<Vec<rustext_core::Range>> {
+    /// Every whole-word `helper`, and one in another document.
+    fn references(&mut self, text: &Text, _revision: u64, _position: Position) -> Reply<Vec<Location>> {
         use rustext_core::find::{SearchQuery, find_matches};
         let query = SearchQuery { match_case: true, whole_word: true, ..SearchQuery::new("helper") };
         let found = find_matches(text, &query, None, 100).unwrap();
         Reply::Ready(
             found
                 .into_iter()
-                .map(|found| rustext_core::Range::new(text.position(found.start), text.position(found.end)))
+                .map(|found| {
+                    Location::here(rustext_core::Range::new(text.position(found.start), text.position(found.end)))
+                })
+                .chain([elsewhere()])
                 .collect(),
         )
     }
@@ -147,12 +150,28 @@ impl LanguageServices for TestServices {
         Reply::Ready(on_helper.then(|| "fn helper() -> u8".to_string()))
     }
 
-    fn definition(&mut self, _text: &Text, _revision: u64, _position: Position) -> Reply<Option<Position>> {
-        Reply::Ready(Some(Position::new(0, 3)))
+    /// `helper` is defined at 0:3; `imported` in another document.
+    fn definition(&mut self, text: &Text, _revision: u64, position: Position) -> Reply<Option<Location>> {
+        let line: Vec<char> = text.line_content(position.line).chars().collect();
+        let word = self
+            .words
+            .words
+            .word_at(&line, position.column)
+            .map(|(start, end)| line[start..end].iter().collect::<String>());
+        Reply::Ready(match word.as_deref() {
+            Some("imported") => Some(elsewhere()),
+            _ => Some(Location::here(rustext_core::Range::new(Position::new(0, 3), Position::new(0, 9)))),
+        })
     }
 }
 
+/// A place in another document.
+fn elsewhere() -> Location {
+    Location::in_document("file:///other/lib.rs", rustext_core::Range::new(Position::new(41, 4), Position::new(41, 10)))
+}
+
 struct Fixture {
+    open_requests: Vec<Location>,
     state: EditorState,
     view: EditorView,
     config: ViewConfig,
@@ -163,6 +182,7 @@ struct Fixture {
 
 fn harness(content: &str) -> Harness<'static, Fixture> {
     let fixture = Fixture {
+        open_requests: Vec::new(),
         state: EditorState::new(content),
         view: EditorView::default(),
         config: ViewConfig { cursor_blinking: false, ..ViewConfig::default() },
@@ -176,9 +196,16 @@ fn harness(content: &str) -> Harness<'static, Fixture> {
     };
     let mut harness = Harness::builder().with_size(Vec2::new(900.0, 500.0)).with_step_dt(1.0 / 60.0).build_ui_state(
         |ui, fixture: &mut Fixture| {
-            CodeEditor::new(&mut fixture.state, &mut fixture.view, &fixture.config, &fixture.theme, &fixture.keymap)
-                .services(&mut fixture.services)
-                .show(ui);
+            let response = CodeEditor::new(
+                &mut fixture.state,
+                &mut fixture.view,
+                &fixture.config,
+                &fixture.theme,
+                &fixture.keymap,
+            )
+            .services(&mut fixture.services)
+            .show(ui);
+            fixture.open_requests.extend(response.open_request);
         },
         fixture,
     );
@@ -477,9 +504,17 @@ fn shift_f12_lists_references_and_enter_jumps_to_one() {
     harness.key_press_modifiers(Modifiers::SHIFT, Key::F12);
     harness.run();
     let references = &harness.state().view.references;
-    assert_eq!(references.entries(), &[(3, 9), (15, 21), (33, 39)]);
+    let text = harness.state().state.text();
+    let here: Vec<(usize, usize)> = references
+        .entries()
+        .iter()
+        .filter(|location| location.document.is_none())
+        .map(|location| text.range_offsets(location.range))
+        .collect();
+    assert_eq!(here, vec![(3, 9), (15, 21), (33, 39)]);
+    assert_eq!(references.entries().last(), Some(&elsewhere()));
     assert_eq!(references.selected(), 1);
-    harness.get_by_label("3 references");
+    harness.get_by_label("4 references");
 
     harness.key_press(Key::ArrowDown);
     harness.key_press(Key::Enter);
@@ -487,6 +522,34 @@ fn shift_f12_lists_references_and_enter_jumps_to_one() {
     assert!(!harness.state().view.references.is_open());
     let primary = harness.state().state.selections().primary();
     assert_eq!((primary.anchor, primary.head), (33, 39));
+}
+
+#[test]
+fn a_reference_in_another_document_asks_the_application_to_open_it() {
+    let mut harness = harness("helper();\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(0, 2);
+    press(&mut harness, pos, Modifiers::NONE);
+
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::F12);
+    harness.run();
+    harness.key_press(Key::ArrowDown);
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    assert_eq!(harness.state().open_requests, vec![elsewhere()]);
+    assert!(!harness.state().view.references.is_open());
+}
+
+#[test]
+fn a_definition_in_another_document_asks_the_application_to_open_it() {
+    let mut harness = harness("imported();\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(0, 2);
+    press(&mut harness, pos, Modifiers::NONE);
+
+    harness.key_press(Key::F12);
+    harness.run();
+
+    assert_eq!(harness.state().open_requests, vec![elsewhere()]);
 }
 
 #[test]

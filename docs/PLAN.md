@@ -121,12 +121,10 @@ change their seeds locally to hunt for rarer bugs). Every feature is a commit on
 **Next, in order** (each a commit):
 1. Tree-sitter for bracket matching and colorization, replacing the lexer (D21) where a
    grammar is bundled (folding by syntax is done).
-2. Services across files: definitions and references in other documents need the application
-   to open them (an `EditorResponse` request; gitgud decides).
-3. Accessibility beyond the name and cursor line: expose the visible text and the selection to
+2. Accessibility beyond the name and cursor line: expose the visible text and the selection to
    AccessKit; an accessible diff viewer (`accessibleDiffViewerNext`).
 
-Done since: bracket pair guide of the cursor's pair (`--bracket-guides`); snippet placeholders highlighted; folding by syntax tree (`FoldingStrategy`), Fold from inside a block moves the
+Done since: definitions and references in other documents (`open_request`, D26), F12 answered on a later frame; bracket pair guide of the cursor's pair (`--bracket-guides`); snippet placeholders highlighted; folding by syntax tree (`FoldingStrategy`), Fold from inside a block moves the
 cursor to its header; code lenses (D25, `--code-lens` in the demo); Helix's crates (D22–D24): tree-sitter highlighting for 18 languages, parsed on a
 thread; smart select (Shift+Alt+→/←); `lsp-types` messages, checked against a real
 rust-analyzer (`crates/rustext-lsp/tests/rust_analyzer.rs`, ignored); `nucleo` fuzzy matching;
@@ -144,6 +142,7 @@ text; random tests.
   egui's).
 - The bracket lexer (D21) doesn't know raw strings, nested comments or heredocs.
 - Find References isn't visible in the demo without `--lsp` (word completions answer none).
+- The references list shows `file:line` for other documents, not their line's text.
 - Tree-sitter: bracket matching and indentation could use the tree (D21's lexer is still
   used); injections aren't run; highlight queries are the grammar crates' own.
 

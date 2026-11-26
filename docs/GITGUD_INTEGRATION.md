@@ -107,6 +107,22 @@ if let Some(rustext_egui::MouseTarget::LineNumber { line }) = response.pressed {
 
 The playground's "Blame demo" (`crates/rustext-demo/src/editor_page.rs`) does exactly this.
 
+### Code lenses (blame summaries, "Stage hunk")
+
+Labels in a row above their line; the click comes back as an index into the slice (D25).
+
+```rust
+use rustext_core::services::CodeLens;
+
+let lenses = vec![CodeLens::new(hunk_first_line, "Stage hunk"), CodeLens::new(hunk_first_line, "Discard")];
+let response = CodeEditor::new(&mut state, &mut view, &view_config, &theme, &keymap).code_lenses(&lenses).show(ui);
+match response.clicked_code_lens.map(|index| lenses[index].label.as_str()) {
+    Some("Stage hunk") => { /* build_patch(.., PatchDirection::Stage, ..) */ }
+    Some("Discard") => { /* .. */ }
+    _ => {}
+}
+```
+
 ## The merge editor
 
 gitgud: mismerge with `git show :1:/:2:/:3:` contents, "Save and mark resolved" (write the
@@ -146,6 +162,19 @@ let languages = LanguageRegistry::new(); // once, share by clone
 let language = languages.detect(&path, first_line);
 state.language = language.configuration.clone(); // comments, brackets
 let highlighter = SyntaxHighlighter::new(&languages, language, syntax_theme);
+```
+
+With a language server (`rustext_lsp::LspServices`), go to definition and references can
+land in another file: the editor shows one document, so it asks gitgud to open it.
+
+```rust
+let response = CodeEditor::new(&mut state, &mut view, &view_config, &theme, &keymap)
+    .services(&mut language_server)
+    .show(ui);
+if let Some(location) = response.open_request {
+    // location.document: the file URI (rustext_lsp::client::file_path_of gives its path);
+    // location.range: in chars. Open it, then select the range in its editor.
+}
 ```
 
 ## Still to do on the gitgud side

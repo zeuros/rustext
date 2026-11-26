@@ -340,6 +340,18 @@ what it means (gitgud: stage a hunk, show a commit). No command ids, no resolve 
 - Language servers' `codeLens` isn't requested yet: the application can turn its answers into
   `CodeLens` values.
 
+## D26. Other documents: the services name them, the application opens them
+
+`definition` and `references` answer `Location { document: Option<String>, range }`:
+`None` is the edited document, `Some` another one, named as the services name it (the LSP
+client: its file URI). The editor shows one document, so going to another one ends as
+`EditorResponse::open_request`; the application opens it (gitgud: in its file view).
+
+- Ranges are in chars in every document (D5): the LSP client reads another file once per
+  answer to convert its UTF-16 columns, and keeps the server's columns when it can't.
+- F12 and Ctrl+click are requests answered on a later frame, like Find References: a real
+  server rarely answers in the frame that asked. An edit before the answer drops it.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

@@ -181,6 +181,10 @@ impl EditorPage {
                 self.last_action =
                     format!("blame: line {} is from {} ({})", line + 1, commit.short_sha, commit.summary);
             }
+            if let Some(location) = &response.open_request {
+                let document = location.document.as_deref().unwrap_or_default();
+                self.last_action = format!("open {document} at line {}", location.range.start.line + 1);
+            }
             if let Some(lens) = response.clicked_code_lens.and_then(|index| code_lenses.get(index)) {
                 self.last_action = format!("code lens: {} (line {})", lens.label, lens.line + 1);
             }

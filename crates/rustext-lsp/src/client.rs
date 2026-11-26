@@ -12,7 +12,8 @@ use lsp_types::notification::{self, Notification};
 use lsp_types::request::{self, Request};
 use lsp_types::{self as lsp, OneOf, Uri};
 use rustext_core::services::{
-    CompletionItem, CompletionKind, Diagnostic, InlayHint, LanguageServices, Reply, Severity, SignatureHelp, TextEdit,
+    CompletionItem, CompletionKind, Diagnostic, InlayHint, LanguageServices, Location, Reply, Severity, SignatureHelp,
+    TextEdit,
 };
 use rustext_core::{ChangeSet, Position, Range, Text};
 use serde_json::Value;
@@ -67,6 +68,62 @@ pub fn file_uri(path: &std::path::Path) -> String {
         })
         .collect();
     format!("file://{encoded}")
+}
+
+/// The path of a `file://` URI, percent-decoded; `None` for another scheme.
+pub fn file_path_of(uri: &str) -> Option<std::path::PathBuf> {
+    let encoded = uri.strip_prefix("file://")?.as_bytes();
+    let mut decoded = Vec::with_capacity(encoded.len());
+    let mut index = 0;
+    while index < encoded.len() {
+        let escaped = (encoded[index] == b'%')
+            .then(|| std::str::from_utf8(encoded.get(index + 1..index + 3)?).ok())
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match escaped {
+            Some(byte) => {
+                decoded.push(byte);
+                index += 3;
+            }
+            None => {
+                decoded.push(encoded[index]);
+                index += 1;
+            }
+        }
+    }
+    Some(std::path::PathBuf::from(String::from_utf8(decoded).ok()?))
+}
+
+/// Turns LSP locations into rustext's: this document's columns from its text, another
+/// document's from its file, read once (`None` when it can't be: its columns stay as sent).
+struct LocationConverter<'text> {
+    text: &'text Text,
+    document_uri: &'text Uri,
+    other_texts: HashMap<Uri, Option<Text>>,
+}
+
+impl<'text> LocationConverter<'text> {
+    fn new(text: &'text Text, document_uri: &'text Uri) -> Self {
+        Self { text, document_uri, other_texts: HashMap::new() }
+    }
+
+    fn location(&mut self, uri: Uri, range: lsp::Range) -> Location {
+        if uri == *self.document_uri {
+            return Location::here(range_of(self.text, range));
+        }
+        let other_text = self.other_texts.entry(uri.clone()).or_insert_with(|| {
+            let content = std::fs::read_to_string(file_path_of(uri.as_str())?).ok()?;
+            Some(Text::new(&content))
+        });
+        let range = match other_text {
+            Some(other_text) => range_of(other_text, range),
+            None => Range::new(
+                Position::new(range.start.line as usize, range.start.character as usize),
+                Position::new(range.end.line as usize, range.end.character as usize),
+            ),
+        };
+        Location::in_document(uri.as_str(), range)
+    }
 }
 
 fn document_uri(path: &std::path::Path) -> std::io::Result<Uri> {
@@ -552,7 +609,7 @@ impl LanguageServices for LspServices {
         })
     }
 
-    fn references(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Vec<Range>> {
+    fn references(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Vec<Location>> {
         let params = lsp::ReferenceParams {
             text_document_position: self.text_document_position(text, position),
             work_done_progress_params: Default::default(),
@@ -562,11 +619,11 @@ impl LanguageServices for LspServices {
         let key = RequestKey::new::<request::References>(text_revision, position);
         let uri = self.document_uri.clone();
         map_reply(self.ask::<request::References>(text, key, params), |locations| {
+            let mut converter = LocationConverter::new(text, &uri);
             locations
                 .unwrap_or_default()
                 .into_iter()
-                .filter(|location| location.uri == uri)
-                .map(|location| range_of(text, location.range))
+                .map(|location| converter.location(location.uri, location.range))
                 .collect()
         })
     }
@@ -621,7 +678,7 @@ impl LanguageServices for LspServices {
         })
     }
 
-    fn definition(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Option<Position>> {
+    fn definition(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Option<Location>> {
         let params = lsp::GotoDefinitionParams {
             text_document_position_params: self.text_document_position(text, position),
             work_done_progress_params: Default::default(),
@@ -639,8 +696,8 @@ impl LanguageServices for LspServices {
                     links.into_iter().map(|link| (link.target_uri, link.target_selection_range)).collect()
                 }
             };
-            let (_, range) = targets.into_iter().find(|(target_uri, _)| *target_uri == uri)?;
-            Some(position_of(text, range.start))
+            let (target_uri, range) = targets.into_iter().next()?;
+            Some(LocationConverter::new(text, &uri).location(target_uri, range))
         })
     }
 }
@@ -662,6 +719,14 @@ mod tests {
     #[test]
     fn file_uris_percent_encode_spaces() {
         assert_eq!(file_uri(std::path::Path::new("/my project/main.rs")), "file:///my%20project/main.rs");
+    }
+
+    #[test]
+    fn file_uris_decode_back_to_their_path() {
+        let path = std::path::Path::new("/my project/é.rs");
+
+        assert_eq!(file_path_of(&file_uri(path)).as_deref(), Some(path));
+        assert_eq!(file_path_of("https://example.com/a.rs"), None);
     }
 
     #[test]

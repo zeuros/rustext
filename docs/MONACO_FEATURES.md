@@ -194,8 +194,8 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Completion (suggest widget, fuzzy filter, details, commit chars, snippets) | `registerCompletionItemProvider`, `quickSuggestions`, `suggest.*`, `acceptSuggestionOnEnter`, `tabCompletion`, `wordBasedSuggestions` | P2 | done |
 | Hover | `registerHoverProvider`, `hover.delay/sticky/above` | P2 | done |
 | Signature help | `registerSignatureHelpProvider`, `parameterHints` | P2 | done |
-| Go to definition / declaration / type / implementation, Ctrl+click | `register*DefinitionProvider`, `gotoLocation.*`, `definitionLinkOpensInPeek` | P2 | partial: definition in the same text (F12, Ctrl+click) |
-| References, peek view | `registerReferenceProvider`, `peekView` | P2 | partial: Shift+F12 lists the references in the same text (line and text), Enter/click jumps; no embedded peek editor |
+| Go to definition / declaration / type / implementation, Ctrl+click | `register*DefinitionProvider`, `gotoLocation.*`, `definitionLinkOpensInPeek` | P2 | partial: definition (F12, Ctrl+click), another document through `open_request` (D26); no declaration / type / implementation |
+| References, peek view | `registerReferenceProvider`, `peekView` | P2 | partial: Shift+F12 lists the references (this document's with their line's text, others' as `file:line`), Enter/click jumps or asks to open; no embedded peek editor |
 | Document highlights | `registerDocumentHighlightProvider` | P2 | done (replaces the word highlight when the services answer; LSP too) |
 | Rename (F2) | `registerRenameProvider`, `registerNewSymbolNameProvider` | P2 | done (same text) |
 | Code actions, lightbulb, quick fix | `registerCodeActionProvider`, `lightbulb.enabled` | P2 | todo |

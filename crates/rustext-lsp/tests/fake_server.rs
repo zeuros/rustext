@@ -40,7 +40,7 @@ fn completions_hover_and_definition_from_a_language_server() {
     assert_eq!(hover.as_deref(), Some("fake hover at 0:6 on \"fn 😀ab() {}\""));
 
     let definition = until_ready(|| services.definition(&text, 1, Position::new(1, 0)));
-    assert_eq!(definition, Some(Position::new(0, 3)));
+    assert_eq!(definition.map(|location| (location.document, location.range.start)), Some((None, Position::new(0, 3))));
 }
 
 #[test]
@@ -125,12 +125,13 @@ fn document_highlights() {
 }
 
 #[test]
-fn references_in_this_document() {
+fn references_in_this_document_and_others() {
     let mut services = start();
     let text = Text::new("ab\nab c\n");
 
-    let ranges = until_ready(|| services.references(&text, 1, Position::new(0, 1)));
+    let locations = until_ready(|| services.references(&text, 1, Position::new(0, 1)));
 
-    let lines: Vec<usize> = ranges.iter().map(|range| range.start.line).collect();
-    assert_eq!(lines, vec![0, 1]);
+    let found: Vec<(Option<&str>, usize)> =
+        locations.iter().map(|location| (location.document.as_deref(), location.range.start.line)).collect();
+    assert_eq!(found, vec![(None, 0), (Some("file:///elsewhere.rs"), 5), (None, 1)]);
 }

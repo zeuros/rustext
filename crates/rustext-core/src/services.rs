@@ -10,6 +10,24 @@ use crate::position::{Position, Range};
 use crate::text::Text;
 use crate::words::WordDefinition;
 
+/// A range of this document (`document: None`) or of another one, named as the services name
+/// it (an LSP client: by file URI). Columns are chars, in every document (D5).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Location {
+    pub document: Option<String>,
+    pub range: Range,
+}
+
+impl Location {
+    pub fn here(range: Range) -> Self {
+        Self { document: None, range }
+    }
+
+    pub fn in_document(document: impl Into<String>, range: Range) -> Self {
+        Self { document: Some(document.into()), range }
+    }
+}
+
 /// A clickable label shown above a line (Monaco's code lens): "3 references", "Run test", or
 /// the application's own ("Stage hunk", a blame summary).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -227,18 +245,14 @@ pub trait LanguageServices {
         Reply::Ready(None)
     }
 
-    /// The uses of the symbol at `position` in the text, its declaration included (Shift+F12).
-    fn references(
-        &mut self,
-        _text: &Text,
-        _text_revision: u64,
-        _position: Position,
-    ) -> Reply<Vec<crate::position::Range>> {
+    /// The uses of the symbol at `position`, its declaration included (Shift+F12), in this
+    /// document and others.
+    fn references(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Vec<Location>> {
         Reply::Ready(Vec::new())
     }
 
-    /// Where the symbol at `position` is defined, in the same text (F12, Ctrl+click).
-    fn definition(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Option<Position>> {
+    /// Where the symbol at `position` is defined (F12, Ctrl+click), in this document or another.
+    fn definition(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Option<Location>> {
         Reply::Ready(None)
     }
 }
