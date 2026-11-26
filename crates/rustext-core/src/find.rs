@@ -3,6 +3,9 @@
 //! widget's replace).
 
 use regex::{Regex, RegexBuilder};
+use regex_cursor::engines::meta::Regex as RopeRegex;
+use regex_cursor::regex_automata::util::syntax::Config as SyntaxConfig;
+use regex_cursor::{Input, RopeyCursor};
 
 use crate::change::{Change, ChangeSet};
 use crate::edit::Transaction;
@@ -37,20 +40,32 @@ impl SearchQuery {
         Self { pattern: pattern.into(), ..Self::default() }
     }
 
-    /// The regex this query searches with; an error message for an invalid regex.
-    pub fn regex(&self) -> Result<Regex, String> {
+    /// The pattern searched: the query escaped unless it is a regex, inside word boundaries
+    /// for whole words.
+    fn regex_pattern(&self) -> String {
         let pattern = if self.is_regex { self.pattern.clone() } else { regex::escape(&self.pattern) };
-        let pattern = if self.whole_word { format!(r"\b(?:{pattern})\b") } else { pattern };
-        RegexBuilder::new(&pattern)
+        if self.whole_word { format!(r"\b(?:{pattern})\b") } else { pattern }
+    }
+
+    /// The regex expanding `$1` groups in one match; an error message for an invalid regex.
+    pub fn regex(&self) -> Result<Regex, String> {
+        RegexBuilder::new(&self.regex_pattern())
             .case_insensitive(!self.match_case)
             .multi_line(true)
             .build()
             .map_err(|error| error.to_string())
     }
+
+    /// The regex searching the rope chunk by chunk (regex-cursor, Helix's), with the same
+    /// syntax as `regex`.
+    fn rope_regex(&self) -> Result<RopeRegex, String> {
+        let syntax = SyntaxConfig::new().case_insensitive(!self.match_case).multi_line(true);
+        RopeRegex::builder().syntax(syntax).build(&self.regex_pattern()).map_err(|error| error.to_string())
+    }
 }
 
 /// Every non-empty match of `query` in `text`, at most `limit`, optionally only inside the
-/// char offsets `within` (find in selection).
+/// char offsets `within` (find in selection). Searches the rope in place: nothing is copied.
 pub fn find_matches(
     text: &Text,
     query: &SearchQuery,
@@ -60,20 +75,19 @@ pub fn find_matches(
     if query.pattern.is_empty() {
         return Ok(Vec::new());
     }
-    let regex = query.regex()?;
+    let regex = query.rope_regex()?;
     let (start, end) = within.unwrap_or((0, text.len_chars()));
-    let content = text.slice(start, end);
+    let searched = text.rope().slice(start..end);
 
-    let mut matches = Vec::new();
-    let mut char_offset = start;
-    let mut byte_offset = 0;
-    for found in regex.find_iter(&content).filter(|found| !found.is_empty()).take(limit) {
-        char_offset += content[byte_offset..found.start()].chars().count();
-        let match_len = found.as_str().chars().count();
-        matches.push(Match { start: char_offset, end: char_offset + match_len });
-        char_offset += match_len;
-        byte_offset = found.end();
-    }
+    let matches = regex
+        .find_iter(Input::new(RopeyCursor::new(searched)))
+        .filter(|found| !found.is_empty())
+        .take(limit)
+        .map(|found| Match {
+            start: start + searched.byte_to_char(found.start()),
+            end: start + searched.byte_to_char(found.end()),
+        })
+        .collect();
     Ok(matches)
 }
 
@@ -192,6 +206,16 @@ mod tests {
         let query = SearchQuery { is_regex: true, ..SearchQuery::new(r"\d+") };
 
         assert_eq!(offsets(&find_matches(&text, &query, None, 100).unwrap()), vec![(1, 2), (4, 6)]);
+    }
+
+    #[test]
+    fn matches_across_rope_chunks_are_found_at_their_char_offsets() {
+        let filler = "é".repeat(5_000);
+        let text = Text::new(&format!("{filler}needle{filler}needle"));
+
+        let matches = find_matches(&text, &SearchQuery::new("needle"), None, 10).unwrap();
+
+        assert_eq!(offsets(&matches), vec![(5_000, 5_006), (10_006, 10_012)]);
     }
 
     #[test]

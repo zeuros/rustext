@@ -38,6 +38,11 @@ impl Text {
         Self { rope: Rope::from_str(content) }
     }
 
+    /// The rope itself, for the core's searches that read it in place.
+    pub(crate) fn rope(&self) -> &Rope {
+        &self.rope
+    }
+
     pub fn len_chars(&self) -> usize {
         self.rope.len_chars()
     }
