@@ -36,6 +36,9 @@ pub enum Action {
     /// Diff editors: the next / previous change (F7 / Shift+F7).
     NextChange,
     PreviousChange,
+    /// The next / previous diagnostic squiggle (F8 / Shift+F8).
+    NextProblem,
+    PreviousProblem,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -222,6 +225,8 @@ impl Keymap {
             (chord(command_shift, Key::CloseBracket), Action::Unfold),
             (chord(command_shift, Key::Backslash), Action::JumpToBracket),
             (chord(none, Key::F7), Action::NextChange),
+            (chord(none, Key::F8), Action::NextProblem),
+            (chord(shift, Key::F8), Action::PreviousProblem),
             (chord(shift, Key::F7), Action::PreviousChange),
         ];
         for (key_chord, action) in widget_actions {

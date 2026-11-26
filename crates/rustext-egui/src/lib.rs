@@ -5,7 +5,9 @@ pub mod diff_editor;
 pub mod keymap;
 pub mod theme;
 
-pub use code_editor::{CodeEditor, EditorGeometry, EditorResponse, EditorView, Foreign, MouseTarget, ViewConfig};
+pub use code_editor::{
+    CodeEditor, EditorGeometry, EditorResponse, EditorView, Foreign, MouseTarget, Severity, ViewConfig, diagnostic,
+};
 pub use diff_editor::{DiffDocument, DiffEditor, DiffResponse, DiffSide, DiffViewConfig, DiffViewMode};
 pub use keymap::{Action, Keymap};
 pub use theme::EditorTheme;

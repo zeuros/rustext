@@ -8,6 +8,7 @@ use rustext_core::{EditorState, Position, Selection};
 use rustext_egui::{CodeEditor, EditorGeometry, EditorTheme, EditorView, Keymap, ViewConfig};
 
 struct Fixture {
+    decorations: Vec<rustext_core::decoration::Decoration>,
     state: EditorState,
     view: EditorView,
     config: ViewConfig,
@@ -18,6 +19,7 @@ struct Fixture {
 
 fn harness(content: &str) -> Harness<'static, Fixture> {
     let fixture = Fixture {
+        decorations: Vec::new(),
         state: EditorState::new(content),
         view: EditorView::default(),
         config: ViewConfig { cursor_blinking: false, ..ViewConfig::default() },
@@ -34,6 +36,7 @@ fn harness(content: &str) -> Harness<'static, Fixture> {
                 &fixture.theme,
                 &fixture.keymap,
             )
+            .decorations(&fixture.decorations)
             .show(ui);
             if let Some(clipboard) = response.outcome.clipboard {
                 fixture.copied.push(clipboard.text);
@@ -384,4 +387,42 @@ fn ctrl_shift_backslash_jumps_to_the_matching_bracket() {
     harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Backslash);
     harness.run();
     assert_eq!(head(&harness), Position::new(0, 1));
+}
+
+#[test]
+fn f8_walks_the_diagnostics() {
+    let mut harness = harness("let a = 1;\nlet b = 2;\nlet c = 3;");
+    let theme = EditorTheme::dark();
+    harness.state_mut().decorations = vec![
+        rustext_egui::diagnostic(15, 16, rustext_egui::Severity::Error, "unused b", &theme),
+        rustext_egui::diagnostic(26, 27, rustext_egui::Severity::Warning, "unused c", &theme),
+    ];
+    click(&mut harness, 0, 0);
+
+    harness.key_press(Key::F8);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(1, 4));
+    harness.key_press(Key::F8);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(2, 4));
+    harness.key_press(Key::F8);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(1, 4));
+}
+
+#[test]
+fn hovering_a_diagnostic_shows_its_message() {
+    let mut harness = harness("let a = 1;");
+    let theme = EditorTheme::dark();
+    harness.state_mut().decorations =
+        vec![rustext_egui::diagnostic(4, 5, rustext_egui::Severity::Error, "unused variable", &theme)];
+    harness.run();
+    let pos = geometry(&harness).cell_center(0, 4);
+
+    harness.event(Event::PointerMoved(pos));
+    for _ in 0..60 {
+        harness.step();
+    }
+
+    assert!(harness.query_by_label("unused variable").is_some());
 }

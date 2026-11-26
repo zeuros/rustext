@@ -19,6 +19,31 @@ pub struct EditorPage {
     languages: LanguageRegistry,
     highlighter: SyntaxHighlighter,
     highlighted_theme: ThemeChoice,
+    shows_diagnostics: bool,
+    pub shows_blame: bool,
+}
+
+/// A made-up commit, for the blame demo.
+struct BlameCommit {
+    short_sha: &'static str,
+    author: &'static str,
+    age: &'static str,
+    summary: &'static str,
+}
+
+const BLAME_COMMITS: [BlameCommit; 4] = [
+    BlameCommit { short_sha: "a1b2c3d", author: "Ada", age: "2 years ago", summary: "Initial sample" },
+    BlameCommit { short_sha: "e4f5a6b", author: "Linus", age: "8 months ago", summary: "Count words" },
+    BlameCommit { short_sha: "c7d8e9f", author: "Grace", age: "3 weeks ago", summary: "Add shapes" },
+    BlameCommit { short_sha: "0a1b2c3", author: "Ken", age: "yesterday", summary: "Print totals" },
+];
+
+/// Which made-up commit last touched `line`: runs of a few lines each.
+fn blame_commit_index(line: usize) -> usize {
+    [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 0, 3, 3, 3, 3, 3, 3, 3]
+        .get(line)
+        .copied()
+        .unwrap_or(3)
 }
 
 impl EditorPage {
@@ -61,6 +86,8 @@ impl EditorPage {
             highlighter: SyntaxHighlighter::new(languages, language, theme_choice.syntax_theme()),
             languages: languages.clone(),
             highlighted_theme: *theme_choice,
+            shows_diagnostics: showcase,
+            shows_blame: false,
         }
     }
 
@@ -72,12 +99,20 @@ impl EditorPage {
         let theme = theme_choice.theme();
         egui::Panel::left("editor-options").resizable(true).default_size(220.0).show(ui, |ui| self.options_panel(ui));
         egui::Panel::bottom("editor-status").show(ui, |ui| self.status_bar(ui));
+        let decorations = self.demo_decorations(&theme);
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
             let response = CodeEditor::new(&mut self.state, &mut self.view, &self.view_config, &theme, keymap)
+                .decorations(&decorations)
+                .glyph_margin(self.shows_blame)
                 .styler(&mut self.highlighter)
                 .show(ui);
             if let Some(action) = response.unhandled_actions.last() {
                 self.last_action = format!("{action:?}");
+            }
+            if let (true, Some(rustext_egui::MouseTarget::LineNumber { line })) = (self.shows_blame, response.pressed) {
+                let commit = &BLAME_COMMITS[blame_commit_index(line)];
+                self.last_action =
+                    format!("blame: line {} is from {} ({})", line + 1, commit.short_sha, commit.summary);
             }
             if response.outcome.rejected_read_only {
                 self.last_action = "Cannot edit in read-only editor".into();
@@ -85,8 +120,62 @@ impl EditorPage {
         });
     }
 
+    /// Decorations of the demos: diagnostics on a few words, blame shading and glyphs.
+    fn demo_decorations(&self, theme: &rustext_egui::EditorTheme) -> Vec<rustext_core::decoration::Decoration> {
+        use rustext_core::decoration::{Decoration, DecorationKind};
+        use rustext_core::find::{SearchQuery, find_matches};
+        use rustext_egui::{Severity, diagnostic};
+
+        let text = self.state.text();
+        let mut decorations = Vec::new();
+        if self.shows_diagnostics {
+            let examples = [
+                ("HashMap::new()", Severity::Warning, "consider `HashMap::with_capacity` when the size is known"),
+                ("PI", Severity::Info, "`std::f64::consts::PI` could be imported"),
+                ("word_counts(\"the", Severity::Error, "mismatched types: expected `&str`, found `String` (made up)"),
+                ("counts", Severity::Hint, "variable `counts` is shadowed later"),
+            ];
+            for (pattern, severity, message) in examples {
+                let query = SearchQuery { match_case: true, ..SearchQuery::new(pattern) };
+                if let Some(found) =
+                    find_matches(text, &query, None, 1).ok().and_then(|matches| matches.first().copied())
+                {
+                    decorations.push(diagnostic(found.start, found.end, severity, message, theme));
+                }
+            }
+        }
+        if self.shows_blame {
+            let shade = rustext_egui::code_editor::to_rgba(theme.current_line_background).with_alpha(150);
+            let age_colors =
+                [theme.line_number.gamma_multiply(0.6), theme.line_number, theme.info, theme.active_line_number];
+            for line in 0..text.line_count() {
+                let commit_index = blame_commit_index(line);
+                let commit = &BLAME_COMMITS[commit_index];
+                let message = format!("{} {} · {}\n{}", commit.short_sha, commit.author, commit.age, commit.summary);
+                let age_color = rustext_egui::code_editor::to_rgba(age_colors[commit_index]);
+                if commit_index % 2 == 1 {
+                    decorations.push(Decoration::lines(text, line, line, DecorationKind::WholeLineBackground(shade)));
+                }
+                decorations.push(
+                    Decoration::lines(text, line, line, DecorationKind::LineNumberColor(age_color))
+                        .with_hover_message(message.clone()),
+                );
+                let starts_group = line == 0 || blame_commit_index(line - 1) != commit_index;
+                if starts_group {
+                    decorations.push(
+                        Decoration::lines(text, line, line, DecorationKind::Glyph(age_color))
+                            .with_hover_message(message),
+                    );
+                }
+            }
+        }
+        decorations
+    }
+
     fn options_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Editor");
+        ui.checkbox(&mut self.shows_diagnostics, "Diagnostics demo (F8)");
+        ui.checkbox(&mut self.shows_blame, "Blame demo");
         let mut language_name = self.highlighter.language().name.clone();
         egui::ComboBox::from_label("Language").selected_text(&language_name).height(400.0).show_ui(ui, |ui| {
             for name in self.languages.names() {

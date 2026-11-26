@@ -15,7 +15,7 @@ mod paint;
 mod structure;
 
 use egui::{CursorIcon, EventFilter, FontId, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
-use rustext_core::decoration::Decoration;
+use rustext_core::decoration::{Decoration, DecorationKind};
 use rustext_core::display::{DisplayLayout, RowContent};
 use rustext_core::style::{LineStyler, Rgba};
 use rustext_core::{EditorState, Outcome, Position, Text};
@@ -275,6 +275,33 @@ pub struct EditorResponse {
     pub unhandled_actions: Vec<Action>,
 }
 
+/// How bad a diagnostic is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Severity {
+    Error,
+    Warning,
+    Info,
+    Hint,
+}
+
+/// A diagnostic (Monaco's marker) as a decoration: a squiggle in the severity's color, an
+/// overview mark, and the message on hover.
+pub fn diagnostic(
+    start: usize,
+    end: usize,
+    severity: Severity,
+    message: impl Into<String>,
+    theme: &EditorTheme,
+) -> Decoration {
+    let color = to_rgba(match severity {
+        Severity::Error => theme.error,
+        Severity::Warning => theme.warning,
+        Severity::Info => theme.info,
+        Severity::Hint => theme.hint,
+    });
+    Decoration::new(start, end, DecorationKind::Squiggle(color)).with_overview_ruler(color).with_hover_message(message)
+}
+
 /// Lines of another text shown in this editor's foreign rows.
 pub struct Foreign<'a> {
     pub text: &'a Text,
@@ -446,6 +473,19 @@ impl<'a> CodeEditor<'a> {
         if matches!(hovered, Some(MouseTarget::Collapsed { .. })) {
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
+        let hovered_char = pointer_pos
+            .filter(|pos| metrics.text_rect.contains(*pos))
+            .and_then(|pos| self.char_under(ui, &metrics, pos));
+        let hover_messages = hovered.map(|target| self.hover_messages(target, hovered_char)).unwrap_or_default();
+        let response = if hover_messages.is_empty() {
+            response
+        } else {
+            response.on_hover_ui_at_pointer(|ui| {
+                for message in &hover_messages {
+                    ui.label(message);
+                }
+            })
+        };
         self.paint(ui, &metrics, response.has_focus());
         self.view.geometry = Some(EditorGeometry {
             text_rect: metrics.text_rect,
@@ -492,6 +532,49 @@ impl<'a> CodeEditor<'a> {
             gutter_width,
             text_rect,
             scrollbar_rect,
+        }
+    }
+
+    /// Messages of the decorations under the pointer: on the text, or in the gutter for glyphs.
+    fn hover_messages(&self, target: MouseTarget, hovered_char: Option<usize>) -> Vec<String> {
+        let text = self.state.text();
+        let decorations = self.decorations.iter().filter(|decoration| decoration.hover_message.is_some());
+        let hovered: Vec<&Decoration> = match target {
+            MouseTarget::Text { .. } => match hovered_char {
+                Some(offset) => decorations
+                    .filter(|decoration| {
+                        decoration.start <= offset && offset < decoration.end.max(decoration.start + 1)
+                    })
+                    .collect(),
+                None => Vec::new(),
+            },
+            MouseTarget::GlyphMargin { line } | MouseTarget::LineNumber { line } => decorations
+                .filter(|decoration| {
+                    let is_gutter_kind =
+                        matches!(decoration.kind, DecorationKind::Glyph(_) | DecorationKind::LineNumberColor(_));
+                    is_gutter_kind && decoration.first_line(text) == line
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        hovered.into_iter().filter_map(|decoration| decoration.hover_message.clone()).collect()
+    }
+
+    /// Moves the cursor to the next (or previous) squiggle, wrapping around (F8).
+    fn go_to_problem(&mut self, forward: bool) -> Option<usize> {
+        let mut starts: Vec<usize> = self
+            .decorations
+            .iter()
+            .filter(|decoration| matches!(decoration.kind, DecorationKind::Squiggle(_)))
+            .map(|decoration| decoration.start)
+            .collect();
+        starts.sort_unstable();
+        starts.dedup();
+        let head = self.state.selections().primary().head;
+        if forward {
+            starts.iter().find(|&&start| start > head).or(starts.first()).copied()
+        } else {
+            starts.iter().rev().find(|&&start| start < head).or(starts.last()).copied()
         }
     }
 

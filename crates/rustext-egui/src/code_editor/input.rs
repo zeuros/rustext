@@ -24,6 +24,21 @@ impl CodeEditor<'_> {
         (Position::new(line, column), x > layout.width() || is_below_text)
     }
 
+    /// Char offset of the char under `pos` (not the nearest boundary), if `pos` is over text.
+    pub(super) fn char_under(&mut self, ui: &Ui, metrics: &Metrics, pos: Pos2) -> Option<usize> {
+        let row = self.row_at_y(metrics, pos.y);
+        let RowContent::Line(line) = self.row_content(row) else { return None };
+        let layout = self.layout_line(ui, metrics, line);
+        let x = pos.x - self.text_left(metrics);
+        let nearest_column = layout.column_at_x(x);
+        let column = if nearest_column > 0 && x < layout.x_of_column(nearest_column) {
+            nearest_column - 1
+        } else {
+            nearest_column
+        };
+        (column < self.state.text().line_len(line)).then(|| self.state.text().line_start(line) + column)
+    }
+
     pub(super) fn target_at(&mut self, ui: &Ui, metrics: &Metrics, pos: Pos2) -> MouseTarget {
         if pos.x >= metrics.scrollbar_rect.left() {
             return MouseTarget::Scrollbar;
@@ -330,6 +345,11 @@ impl CodeEditor<'_> {
             Action::ZoomIn => self.view.font_size_delta += 1.0,
             Action::ZoomOut => self.view.font_size_delta -= 1.0,
             Action::ZoomReset => self.view.font_size_delta = 0.0,
+            Action::NextProblem | Action::PreviousProblem => {
+                if let Some(start) = self.go_to_problem(action == Action::NextProblem) {
+                    self.execute(outcome, Command::SetSelections(Selections::cursor(start)));
+                }
+            }
             Action::JumpToBracket => {
                 let head = self.state.selections().primary().head;
                 let pair = rustext_core::structure::matching_bracket_pair(

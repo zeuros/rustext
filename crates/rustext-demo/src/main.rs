@@ -4,7 +4,8 @@
 //! `rustext-demo [file]` opens a file (a sample when none is given);
 //! `rustext-demo --diff <old> <new>` opens a diff; `--page diff` starts on the diff page;
 //! `--inline` shows the diff inline; `--find <pattern>` opens the find widget;
-//! `--showcase` folds a block, shows whitespace and puts the cursor on a bracket.
+//! `--showcase` folds a block, shows whitespace and puts the cursor on a bracket; `--blame`
+//! turns the blame demo on.
 
 mod diff_page;
 mod editor_page;
@@ -61,11 +62,19 @@ struct Arguments {
     inline: bool,
     find: Option<String>,
     showcase: bool,
+    blame: bool,
 }
 
 fn parse_arguments() -> Arguments {
-    let mut arguments =
-        Arguments { file: None, diff_files: None, page: Page::Editor, inline: false, find: None, showcase: false };
+    let mut arguments = Arguments {
+        file: None,
+        diff_files: None,
+        page: Page::Editor,
+        inline: false,
+        find: None,
+        showcase: false,
+        blame: false,
+    };
     let mut raw = std::env::args().skip(1);
     while let Some(argument) = raw.next() {
         match argument.as_str() {
@@ -77,6 +86,7 @@ fn parse_arguments() -> Arguments {
             }
             "--find" => arguments.find = raw.next(),
             "--showcase" => arguments.showcase = true,
+            "--blame" => arguments.blame = true,
             "--inline" => {
                 arguments.inline = true;
                 arguments.page = Page::Diff;
@@ -125,14 +135,18 @@ fn main() -> eframe::Result {
             let theme_choice = ThemeChoice::Dark;
             Ok(Box::new(Playground {
                 page: arguments.page,
-                editor_page: EditorPage::new(
-                    &languages,
-                    &theme_choice,
-                    file_name,
-                    &content,
-                    arguments.find,
-                    arguments.showcase,
-                ),
+                editor_page: {
+                    let mut editor_page = EditorPage::new(
+                        &languages,
+                        &theme_choice,
+                        file_name,
+                        &content,
+                        arguments.find,
+                        arguments.showcase,
+                    );
+                    editor_page.shows_blame = arguments.blame;
+                    editor_page
+                },
                 diff_page: DiffPage::new(
                     &languages,
                     &theme_choice,
