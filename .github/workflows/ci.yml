@@ -31,6 +31,9 @@ jobs:
       - name: Unused dependencies
         run: cargo shear
 
+      - name: File sizes
+        run: scripts/file_size.sh
+
   test:
     strategy:
       fail-fast: false
