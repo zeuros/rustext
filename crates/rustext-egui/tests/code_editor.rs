@@ -426,3 +426,18 @@ fn hovering_a_diagnostic_shows_its_message() {
 
     assert!(harness.query_by_label("unused variable").is_some());
 }
+
+#[test]
+fn folds_below_an_edit_shift_with_it() {
+    let mut harness = harness(FOLDABLE);
+    click(&mut harness, 0, 0);
+    chord(&mut harness, Key::Num0);
+    assert_eq!(harness.state().view.folds.folded_header_lines(), vec![0, 4]);
+
+    harness.key_press(Key::Home);
+    harness.key_press(Key::Enter);
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    assert_eq!(harness.state().view.folds.folded_header_lines(), vec![2, 6]);
+}

@@ -323,6 +323,9 @@ pub struct CodeEditor<'a> {
     glyph_margin: bool,
     markers: bool,
     id_salt: Option<String>,
+    /// What commands run outside the keyboard and pointer handlers did this frame (the find
+    /// widget's replacements), to go through `after_outcome` like the others.
+    tracked_outcome: Outcome,
 }
 
 /// Sizes of one frame's layout.
@@ -381,6 +384,7 @@ impl<'a> CodeEditor<'a> {
             glyph_margin: false,
             markers: false,
             id_salt: None,
+            tracked_outcome: Outcome::default(),
         }
     }
 
@@ -454,12 +458,15 @@ impl<'a> CodeEditor<'a> {
         if has_focus || response.has_focus() {
             self.handle_keyboard(ui, &metrics, &mut outcome, &mut unhandled_actions);
         }
+        self.after_outcome(ui, &outcome);
         self.handle_scroll(ui, &response);
         self.refresh_find_matches();
         if self.show_find_widgets(ui, &metrics, id) {
             response.request_focus();
         }
-        self.after_outcome(ui, &outcome);
+        let widget_outcome = std::mem::take(&mut self.tracked_outcome);
+        self.after_outcome(ui, &widget_outcome);
+        let outcome = outcome.merged(widget_outcome);
         self.refresh_folding();
         if self.view.reveal_primary_cursor {
             self.reveal_primary_cursor(ui, &metrics);
@@ -533,6 +540,12 @@ impl<'a> CodeEditor<'a> {
             text_rect,
             scrollbar_rect,
         }
+    }
+
+    /// Runs a command whose outcome goes through `after_outcome` at the end of the frame.
+    fn execute_tracked(&mut self, command: rustext_core::Command) {
+        let result = self.state.execute(command);
+        self.tracked_outcome = std::mem::take(&mut self.tracked_outcome).merged(result);
     }
 
     /// Messages of the decorations under the pointer: on the text, or in the gutter for glyphs.

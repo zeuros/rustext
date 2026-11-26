@@ -28,5 +28,5 @@ pub use edit::{DeleteUnit, Transaction};
 pub use motion::Motion;
 pub use position::{Position, Range};
 pub use selection::{Selection, Selections};
-pub use state::{Command, EditorState, Outcome};
+pub use state::{Command, EditedLines, EditorState, Outcome};
 pub use text::{LineEnding, Text};

@@ -47,9 +47,14 @@ impl CodeEditor<'_> {
         let find_decorations = self.find_decorations(visible_start, visible_end.max(visible_start));
         let mut structure_decorations = self.occurrence_decorations(visible_start, visible_end.max(visible_start));
         structure_decorations.extend(self.bracket_decorations());
-        let indent_levels = if self.config.indent_guides { self.indent_levels() } else { Vec::new() };
-        let active_guide = rustext_core::structure::active_indent_guide(&indent_levels, primary_head.line);
-        let folded_headers = folded_header_lines(&text, &self.view.folds);
+        let first_visible_line = self.nearest_line(visible_rows.start);
+        let last_visible_line = self.nearest_line(visible_rows.end.saturating_sub(1)).max(first_visible_line);
+        let (indent_levels, active_guide) = if self.config.indent_guides {
+            self.indent_guides(first_visible_line..last_visible_line + 1, primary_head.line)
+        } else {
+            (Vec::new(), None)
+        };
+        let folded_headers = folded_header_lines(&self.view.folds);
 
         let mut rows = Vec::new();
         for row in visible_rows.clone() {
@@ -94,7 +99,9 @@ impl CodeEditor<'_> {
                         &structure_decorations,
                     );
                     self.paint_selections(&text_painter, metrics, &text, line, layout, top, &selections, has_focus);
-                    if let Some(&level) = indent_levels.get(line) {
+                    if let Some(&level) =
+                        line.checked_sub(first_visible_line).and_then(|index| indent_levels.get(index))
+                    {
                         self.paint_indent_guides(&text_painter, metrics, line, level, top, active_guide);
                     }
                     self.paint_galley(&text_painter, metrics, layout, top);
@@ -104,7 +111,7 @@ impl CodeEditor<'_> {
                     {
                         self.paint_end_of_line_label(&text_painter, metrics, layout, top, "CR", theme.whitespace);
                     }
-                    if folded_headers.contains(&line) {
+                    if folded_headers.binary_search(&line).is_ok() {
                         self.paint_end_of_line_label(&text_painter, metrics, layout, top, "⋯", theme.foreground);
                     }
                 }
@@ -174,7 +181,11 @@ impl CodeEditor<'_> {
         let paints_gutter_line =
             matches!(self.config.current_line_highlight, CurrentLineHighlight::Gutter | CurrentLineHighlight::All);
         let fold_header_lines = if metrics.fold_marker_width > 0.0 {
-            self.fold_ranges().iter().map(|range| range.header_line).collect()
+            let visible_lines = rows.iter().filter_map(|painted| match painted.content {
+                RowContent::Line(line) => Some(line),
+                _ => None,
+            });
+            visible_lines.filter(|&line| self.is_fold_header(line)).collect()
         } else {
             Vec::new()
         };
@@ -513,7 +524,7 @@ impl CodeEditor<'_> {
             if context.highlights_current_line && is_cursor_line && background.is_none() {
                 gutter_painter.rect_filled(row_rect, CornerRadius::ZERO, theme.current_line_background);
             }
-            let is_folded = context.folded_header_lines.contains(&line);
+            let is_folded = context.folded_header_lines.binary_search(&line).is_ok();
             if context.fold_header_lines.contains(&line) && (is_folded || context.is_hovered) {
                 let marker_x = metrics.text_rect.left() - metrics.char_width - metrics.fold_marker_width / 2.0;
                 let symbol = if is_folded { "▸" } else { "▾" };

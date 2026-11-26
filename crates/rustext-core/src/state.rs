@@ -142,11 +142,51 @@ impl Command {
     }
 }
 
+/// The lines one change set touched: `first_line..=old_last_line` of the text before it
+/// became `first_line..=new_last_line`. Lines after shift by `new_last_line - old_last_line`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct EditedLines {
+    pub first_line: usize,
+    pub old_last_line: usize,
+    pub new_last_line: usize,
+}
+
+impl EditedLines {
+    fn of(changes: &ChangeSet, old_text: &Text, new_text: &Text) -> Option<Self> {
+        let (first, last) = (changes.changes().first()?, changes.changes().last()?);
+        let new_end = changes.map_offset(last.end, crate::change::Bias::After);
+        Some(Self {
+            first_line: old_text.line_of_offset(first.start),
+            old_last_line: old_text.line_of_offset(last.end),
+            new_last_line: new_text.line_of_offset(new_end),
+        })
+    }
+
+    /// Lines added (positive) or removed (negative).
+    pub fn line_delta(&self) -> isize {
+        self.new_last_line as isize - self.old_last_line as isize
+    }
+
+    /// Where an untouched line of the text before is in the text after; `None` when the edit
+    /// touched it.
+    pub fn map_line(&self, line: usize) -> Option<usize> {
+        if line < self.first_line {
+            Some(line)
+        } else if line > self.old_last_line {
+            Some(line.saturating_add_signed(self.line_delta()))
+        } else {
+            None
+        }
+    }
+}
+
 /// What executing a command did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Outcome {
     /// The change sets applied to the text, in order (several for an undo of grouped typing).
     pub applied_changes: Vec<ChangeSet>,
+    /// The lines each change set touched, one per change set.
+    pub edited_lines: Vec<EditedLines>,
     pub selections_changed: bool,
     /// An editing command was rejected because the editor is read-only.
     pub rejected_read_only: bool,
@@ -162,6 +202,7 @@ impl Outcome {
     /// Merges what a later command did into this outcome.
     pub fn merged(mut self, later: Outcome) -> Outcome {
         self.applied_changes.extend(later.applied_changes);
+        self.edited_lines.extend(later.edited_lines);
         self.selections_changed |= later.selections_changed;
         self.rejected_read_only |= later.rejected_read_only;
         self.clipboard = later.clipboard.or(self.clipboard);
@@ -359,12 +400,13 @@ impl EditorState {
         auto_closed_offsets.dedup();
 
         let selections_changed = selections_after != self.selections;
+        let edited_lines = EditedLines::of(&transaction.changes, &self.text, &new_text).into_iter().collect();
         self.text_revision += 1;
         self.text = new_text;
         self.selections = selections_after;
         self.auto_closed_offsets = auto_closed_offsets;
         self.forget_auto_closed_away_from_cursors();
-        Outcome { applied_changes: vec![transaction.changes], selections_changed, ..Outcome::default() }
+        Outcome { applied_changes: vec![transaction.changes], edited_lines, selections_changed, ..Outcome::default() }
     }
 
     fn select(&mut self, selections: Selections) -> Outcome {
@@ -382,13 +424,16 @@ impl EditorState {
         let Some(replay) = replay else {
             return Outcome::default();
         };
+        let mut edited_lines = Vec::with_capacity(replay.changes.len());
         for changes in &replay.changes {
-            self.text = changes.apply(&self.text);
+            let new_text = changes.apply(&self.text);
+            edited_lines.extend(EditedLines::of(changes, &self.text, &new_text));
+            self.text = new_text;
         }
         self.text_revision += 1;
         self.selections = replay.selections.clamped(&self.text);
         self.auto_closed_offsets.clear();
-        Outcome { applied_changes: replay.changes, selections_changed: true, ..Outcome::default() }
+        Outcome { applied_changes: replay.changes, edited_lines, selections_changed: true, ..Outcome::default() }
     }
 
     /// Auto-closed chars only stay "typeable over" while a cursor is on their line.
@@ -588,6 +633,19 @@ mod tests {
 
         state.execute(Command::Outdent);
         assert_eq!(state.text().to_string(), "a\nb");
+    }
+
+    #[test]
+    fn outcomes_say_which_lines_an_edit_touched() {
+        let mut state = editor("a\nb\nc\nd", 2);
+
+        let outcome = state.execute(Command::Paste("x\ny\n".into()));
+
+        let edited = outcome.edited_lines[0];
+        assert_eq!((edited.first_line, edited.old_last_line, edited.new_last_line), (1, 1, 3));
+        assert_eq!(edited.map_line(0), Some(0));
+        assert_eq!(edited.map_line(3), Some(5));
+        assert_eq!(edited.map_line(1), None);
     }
 
     #[test]

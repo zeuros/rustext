@@ -106,7 +106,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 
 ## M13. Gitgud integration
 - [ ] An adapter matching gitgud's uses (table in MONACO_FEATURES.md)
-- [ ] Performance: 100k-line file opens and scrolls at 60 fps; 10k-line diff under 50 ms
+- [x] Performance: 100k-line file opens and scrolls at 60 fps (see D19 for the numbers) — 10k-line diff timing not measured yet
 
 ## Where to resume
 

@@ -68,7 +68,7 @@ impl EditorPage {
             let text = state.text().clone();
             let bracket_offset = text.offset(rustext_core::Position::new(5, 57));
             state.execute(rustext_core::Command::SetSelections(rustext_core::Selections::cursor(bracket_offset)));
-            view.folds.fold_at(text.line_start(19));
+            view.folds.fold_line(19);
             view_config.render_whitespace = WhitespaceRendering::All;
         }
         if let Some(pattern) = find {

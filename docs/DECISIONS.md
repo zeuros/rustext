@@ -201,6 +201,23 @@ unselected added lines are dropped; for reverting (unstage / discard, `apply -R`
 way round. `tests/git_apply.rs` applies every subset of changed lines of nine text pairs with
 the real `git apply --unidiff-zero` and checks the result.
 
+## D19. No whole-text work per keystroke
+
+Anything computed every frame or every edit reads only the visible lines, a bounded
+neighbourhood of the cursor, or the part of a cache an edit touched. Whole-text passes happen
+on explicit actions (fold all, replace all, a new diff) or behind a budget (the highlighter).
+
+- Commands report `Outcome::edited_lines` (first line, old last line, new last line per change
+  set). Caches keyed by lines shift with `EditedLines::map_line` and recompute only what the
+  edit touched (folded blocks, plain-text find matches).
+- Fold markers ask `is_fold_header(line)` per visible line; only folded blocks know their
+  extent. Indent guides cover the visible lines. `HiddenLines` are disjoint sorted ranges
+  (binary search).
+- `crates/rustext-egui/tests/performance.rs` (ignored, run in release) measures a 100k-line
+  file: idle 0.3 ms, typing 0.3 ms, typing with 20 000 folds 0.5 ms, typing with the find
+  widget open on 20 000 matches 4.6 ms, fold all 38 ms. Run it after touching anything
+  per-frame; a regression there is a bug.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

@@ -54,48 +54,69 @@ fn find_opening(text: &Text, close_offset: usize, open: char, close: char) -> Op
     None
 }
 
-/// Indentation level of every line, in indent units; blank lines take the smaller level of
-/// the nearest non-blank lines around them (so guides run through blank lines inside blocks).
-pub fn indent_levels(text: &Text, indentation: &Indentation) -> Vec<usize> {
+/// Visual width of the indentation of `line`, `None` for a blank line. Reads only the
+/// line's leading whitespace, without allocating.
+pub fn line_indent(text: &Text, indentation: &Indentation, line: usize) -> Option<usize> {
     let tab_size = indentation.tab_size.max(1);
-    let own_levels: Vec<Option<usize>> = text
-        .lines()
-        .map(|content| (!content.trim().is_empty()).then(|| indentation.indent_width(&content) / tab_size))
-        .collect();
-
-    let mut levels = vec![0; own_levels.len()];
-    let mut previous_level = 0;
-    for (line, level) in own_levels.iter().enumerate() {
-        if let Some(level) = level {
-            previous_level = *level;
-        }
-        levels[line] = level.unwrap_or(previous_level);
-    }
-    let mut next_level = 0;
-    for (line, level) in own_levels.iter().enumerate().rev() {
-        match level {
-            Some(level) => next_level = *level,
-            None => levels[line] = levels[line].min(next_level),
+    let mut width = 0;
+    for character in text.chars_from(text.line_start(line)) {
+        match character {
+            ' ' => width += 1,
+            '\t' => width = (width / tab_size + 1) * tab_size,
+            '\n' | '\r' => return None,
+            _ => return Some(width),
         }
     }
-    levels
+    None
 }
 
-/// The guide to highlight for a cursor on `cursor_line`: its level (guide index, 0-based) and
-/// the lines it spans. `None` at the top level.
-pub fn active_indent_guide(levels: &[usize], cursor_line: usize) -> Option<(usize, usize, usize)> {
-    let cursor_level = *levels.get(cursor_line)?;
-    let block_level = if cursor_level == 0 { return None } else { cursor_level };
-    let guide = block_level - 1;
-    let mut first_line = cursor_line;
-    while first_line > 0 && levels[first_line - 1] >= block_level {
-        first_line -= 1;
+/// Lines searched at most for the nearest non-blank line (keeps blank runs cheap).
+const MAX_BLANK_SEARCH: usize = 2_000;
+
+fn nearest_indent(text: &Text, indentation: &Indentation, lines: impl Iterator<Item = usize>) -> usize {
+    lines.take(MAX_BLANK_SEARCH).find_map(|line| line_indent(text, indentation, line)).unwrap_or(0)
+}
+
+/// Indentation level of a line, in indent units; a blank line takes the smaller level of the
+/// nearest non-blank lines around it (so guides run through blank lines inside blocks).
+pub fn indent_level(text: &Text, indentation: &Indentation, line: usize) -> usize {
+    let tab_size = indentation.tab_size.max(1);
+    let width = line_indent(text, indentation, line).unwrap_or_else(|| {
+        let above = nearest_indent(text, indentation, (0..line).rev());
+        let below = nearest_indent(text, indentation, line + 1..text.line_count());
+        above.min(below)
+    });
+    width / tab_size
+}
+
+/// Indentation levels of `lines` (the visible ones).
+pub fn indent_levels(text: &Text, indentation: &Indentation, lines: std::ops::Range<usize>) -> Vec<usize> {
+    lines.map(|line| indent_level(text, indentation, line)).collect()
+}
+
+/// The guide to highlight for a cursor on `cursor_line`, as (level, first line, last line),
+/// searching at most `max_lines` away from the cursor. `None` at the top level.
+pub fn active_indent_guide(
+    text: &Text,
+    indentation: &Indentation,
+    cursor_line: usize,
+    max_lines: usize,
+) -> Option<(usize, usize, usize)> {
+    let block_level = indent_level(text, indentation, cursor_line);
+    if block_level == 0 {
+        return None;
     }
-    let mut last_line = cursor_line;
-    while last_line + 1 < levels.len() && levels[last_line + 1] >= block_level {
-        last_line += 1;
-    }
-    Some((guide, first_line, last_line))
+    let is_in_block = |line: usize| indent_level(text, indentation, line) >= block_level;
+    let first_line = (cursor_line.saturating_sub(max_lines)..cursor_line)
+        .rev()
+        .take_while(|&line| is_in_block(line))
+        .last()
+        .unwrap_or(cursor_line);
+    let last_line = (cursor_line + 1..text.line_count().min(cursor_line + max_lines))
+        .take_while(|&line| is_in_block(line))
+        .last()
+        .unwrap_or(cursor_line);
+    Some((block_level - 1, first_line, last_line))
 }
 
 /// A foldable region: `header_line` stays visible, `first_hidden_line..=last_hidden_line` hide.
@@ -115,19 +136,71 @@ impl FoldRange {
     }
 }
 
-/// Indentation folding (Monaco's `foldingStrategy: 'indentation'`): a non-blank line followed
-/// by more indented lines folds them, up to the last of them that is not blank. Sorted by
-/// header line.
-pub fn indentation_fold_ranges(text: &Text, indentation: &Indentation) -> Vec<FoldRange> {
-    let widths: Vec<Option<usize>> =
-        text.lines().map(|content| (!content.trim().is_empty()).then(|| indentation.indent_width(&content))).collect();
+/// The next non-blank line after `line` with its indentation.
+fn next_non_blank(text: &Text, indentation: &Indentation, line: usize) -> Option<(usize, usize)> {
+    (line + 1..text.line_count())
+        .take(MAX_BLANK_SEARCH)
+        .find_map(|next| line_indent(text, indentation, next).map(|indent| (next, indent)))
+}
 
+/// Whether `line` starts an indentation fold: the next non-blank line is more indented. Local:
+/// cheap enough for every visible line.
+pub fn is_fold_header(text: &Text, indentation: &Indentation, line: usize) -> bool {
+    let Some(indent) = line_indent(text, indentation, line) else { return false };
+    next_non_blank(text, indentation, line).is_some_and(|(_, next_indent)| next_indent > indent)
+}
+
+/// The indentation fold starting at `header_line` (Monaco's `foldingStrategy: 'indentation'`):
+/// the more indented lines after it, up to the last of them that is not blank. Reads the
+/// whole block.
+pub fn fold_range_at(text: &Text, indentation: &Indentation, header_line: usize) -> Option<FoldRange> {
+    if !is_fold_header(text, indentation, header_line) {
+        return None;
+    }
+    let header_indent = line_indent(text, indentation, header_line)?;
+    let mut last_hidden_line = header_line;
+    for line in header_line + 1..text.line_count() {
+        match line_indent(text, indentation, line) {
+            Some(indent) if indent <= header_indent => break,
+            Some(_) => last_hidden_line = line,
+            None => {}
+        }
+    }
+    Some(FoldRange { header_line, last_hidden_line })
+}
+
+/// The innermost fold whose header is `line` or that hides `line`: looks up for headers less
+/// indented than the line.
+pub fn enclosing_fold_range(text: &Text, indentation: &Indentation, line: usize) -> Option<FoldRange> {
+    if let Some(range) = fold_range_at(text, indentation, line) {
+        return Some(range);
+    }
+    let mut indent =
+        line_indent(text, indentation, line).unwrap_or_else(|| nearest_indent(text, indentation, (0..line).rev()));
+    for candidate in (0..line).rev() {
+        let Some(candidate_indent) = line_indent(text, indentation, candidate) else { continue };
+        if candidate_indent >= indent {
+            continue;
+        }
+        if let Some(range) = fold_range_at(text, indentation, candidate).filter(|range| range.hides(line)) {
+            return Some(range);
+        }
+        indent = candidate_indent;
+        if indent == 0 {
+            break;
+        }
+    }
+    None
+}
+
+/// Every indentation fold of the text, sorted by header line (for "fold all").
+pub fn indentation_fold_ranges(text: &Text, indentation: &Indentation) -> Vec<FoldRange> {
     let mut ranges = Vec::new();
     // Headers whose block is still open, with their indentation width.
     let mut open_headers: Vec<(usize, usize)> = Vec::new();
     let mut last_non_blank_line = 0;
-    for (line, width) in widths.iter().enumerate() {
-        let Some(width) = *width else { continue };
+    for line in 0..text.line_count() {
+        let Some(width) = line_indent(text, indentation, line) else { continue };
         while let Some(&(header_line, header_width)) = open_headers.last() {
             if width > header_width {
                 break;
@@ -175,16 +248,51 @@ mod tests {
     fn blank_lines_take_the_smaller_neighbour_level() {
         let text = Text::new("a\n    b\n\n    c\n\nd");
 
-        assert_eq!(indent_levels(&text, &Indentation::default()), vec![0, 1, 1, 1, 0, 0]);
+        assert_eq!(indent_levels(&text, &Indentation::default(), 0..6), vec![0, 1, 1, 1, 0, 0]);
     }
 
     #[test]
     fn active_guide_spans_the_cursor_block() {
-        let levels = [0, 1, 2, 1, 1, 0];
+        let text = Text::new("a\n    b\n        c\n    d\n    e\nf");
+        let indentation = Indentation::default();
 
-        assert_eq!(active_indent_guide(&levels, 3), Some((0, 1, 4)));
-        assert_eq!(active_indent_guide(&levels, 2), Some((1, 2, 2)));
-        assert_eq!(active_indent_guide(&levels, 0), None);
+        assert_eq!(active_indent_guide(&text, &indentation, 3, 100), Some((0, 1, 4)));
+        assert_eq!(active_indent_guide(&text, &indentation, 2, 100), Some((1, 2, 2)));
+        assert_eq!(active_indent_guide(&text, &indentation, 0, 100), None);
+    }
+
+    #[test]
+    fn local_fold_queries_agree_with_the_whole_text_ranges() {
+        let text = Text::new("fn a() {\n    if x {\n        y();\n    }\n\n    z();\n}\nfn b() {}");
+        let indentation = Indentation::default();
+
+        for range in indentation_fold_ranges(&text, &indentation) {
+            assert!(is_fold_header(&text, &indentation, range.header_line));
+            assert_eq!(fold_range_at(&text, &indentation, range.header_line), Some(range));
+        }
+        assert_eq!(
+            enclosing_fold_range(&text, &indentation, 2),
+            Some(FoldRange { header_line: 1, last_hidden_line: 2 })
+        );
+        assert_eq!(
+            enclosing_fold_range(&text, &indentation, 5),
+            Some(FoldRange { header_line: 0, last_hidden_line: 5 })
+        );
+        assert_eq!(
+            enclosing_fold_range(&text, &indentation, 4),
+            Some(FoldRange { header_line: 0, last_hidden_line: 5 })
+        );
+        assert_eq!(enclosing_fold_range(&text, &indentation, 7), None);
+    }
+
+    #[test]
+    fn line_indent_expands_tabs_and_skips_blank_lines() {
+        let text = Text::new("\t  x\n   \ny");
+        let indentation = Indentation { tab_size: 4, insert_spaces: false };
+
+        assert_eq!(line_indent(&text, &indentation, 0), Some(6));
+        assert_eq!(line_indent(&text, &indentation, 1), None);
+        assert_eq!(line_indent(&text, &indentation, 2), Some(0));
     }
 
     #[test]

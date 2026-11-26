@@ -1,159 +1,201 @@
 //! Folding, indentation guides, the matching bracket and occurrence highlights: what the editor
-//! derives from the text's structure each frame, cached by text revision.
+//! derives from the text's structure. Everything here reads only the visible lines, the
+//! folded blocks, or a bounded neighbourhood of the cursor, so a keystroke in a huge file stays
+//! cheap; whole-text work happens only on explicit actions (fold all).
 
-use rustext_core::Text;
-use rustext_core::change::{Bias, ChangeSet};
+use rustext_core::EditedLines;
 use rustext_core::decoration::{Decoration, DecorationKind};
 use rustext_core::display::{DisplayLayout, DisplayRow, RowContent};
 use rustext_core::find::{self, SearchQuery};
 use rustext_core::motion::HiddenLines;
-use rustext_core::structure::{FoldRange, indent_levels, indentation_fold_ranges, matching_bracket_pair};
+use rustext_core::structure::{
+    FoldRange, active_indent_guide, fold_range_at, indent_level, indentation_fold_ranges, is_fold_header,
+    matching_bracket_pair,
+};
 
 use super::CodeEditor;
 use super::layout::to_rgba;
 use crate::keymap::Action;
 
-/// Per-view folding state and the caches derived from the text.
+/// How far from the cursor the active indent guide's block is searched.
+const MAX_ACTIVE_GUIDE_LINES: usize = 5_000;
+
+/// A folded block: its header line and last hidden line, shifted by edits above it.
+/// `needs_recompute` when an edit touched it (its extent may have changed).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FoldedBlock {
+    header_line: usize,
+    last_hidden_line: usize,
+    needs_recompute: bool,
+    /// Where the header may be instead, after an edit across its line (Enter before its text
+    /// moves it down): tried when `header_line` no longer starts a fold.
+    other_header_line: Option<usize>,
+}
+
+/// Per-view folding state and what is derived from it.
 #[derive(Clone, Debug, Default)]
 pub struct FoldState {
-    /// Char offsets of the starts of the folded header lines; they follow edits.
-    folded_header_offsets: Vec<usize>,
-    /// Fold ranges and indent levels of the text revision (and tab size) they were computed for.
-    ranges: Option<(u64, usize, Vec<FoldRange>)>,
-    indent_levels: Option<(u64, usize, Vec<usize>)>,
-    /// The rows when something is folded.
+    /// Sorted by header line, one per header.
+    blocks: Vec<FoldedBlock>,
+    /// The rows when something is folded, and the line count and ranges they were built for.
+    layout_key: Option<(usize, Vec<FoldRange>)>,
     pub(super) layout: Option<DisplayLayout>,
 }
 
 impl FoldState {
     pub fn folded_header_count(&self) -> usize {
-        self.folded_header_offsets.len()
+        self.blocks.len()
     }
 
-    /// Folds the region whose header line starts at char offset `header_line_start` (kept only
-    /// if a fold range starts there).
-    pub fn fold_at(&mut self, header_line_start: usize) {
-        self.folded_header_offsets.push(header_line_start);
+    /// Header lines of the folded blocks, sorted.
+    pub fn folded_header_lines(&self) -> Vec<usize> {
+        self.blocks.iter().map(|block| block.header_line).collect()
     }
 
-    /// Folded header offsets after the text changed.
-    pub(super) fn map_through(&mut self, changes: &ChangeSet) {
-        for offset in &mut self.folded_header_offsets {
-            *offset = changes.map_offset(*offset, Bias::Before);
+    /// Folds the region whose header is `header_line` (kept only if a fold range starts there).
+    pub fn fold_line(&mut self, header_line: usize) {
+        if let Err(index) = self.blocks.binary_search_by_key(&header_line, |block| block.header_line) {
+            let block = FoldedBlock {
+                header_line,
+                last_hidden_line: header_line,
+                needs_recompute: true,
+                other_header_line: None,
+            };
+            self.blocks.insert(index, block);
         }
+    }
+
+    fn is_folded(&self, header_line: usize) -> bool {
+        self.blocks.binary_search_by_key(&header_line, |block| block.header_line).is_ok()
+    }
+
+    fn unfold(&mut self, header_line: usize) {
+        if let Ok(index) = self.blocks.binary_search_by_key(&header_line, |block| block.header_line) {
+            self.blocks.remove(index);
+        }
+    }
+
+    /// Blocks after an edit: those below it shift, those it touched (or the line right after
+    /// them) are recomputed; a header the edit went across is looked for on the edit's first
+    /// and last lines.
+    pub(super) fn follow_edit(&mut self, edited: &EditedLines) {
+        for block in &mut self.blocks {
+            let touches_block =
+                edited.first_line <= block.last_hidden_line + 1 && edited.old_last_line >= block.header_line;
+            let (header_line, other_header_line) = match edited.map_line(block.header_line) {
+                Some(line) => (line, block.other_header_line),
+                None => {
+                    (edited.first_line, (edited.new_last_line != edited.first_line).then_some(edited.new_last_line))
+                }
+            };
+            let last_hidden_line =
+                edited.map_line(block.last_hidden_line).unwrap_or(edited.new_last_line.max(header_line));
+            *block = FoldedBlock {
+                header_line,
+                last_hidden_line,
+                needs_recompute: block.needs_recompute || touches_block,
+                other_header_line,
+            };
+        }
+        self.blocks.dedup_by_key(|block| block.header_line);
     }
 }
 
 impl CodeEditor<'_> {
-    pub(super) fn fold_ranges(&mut self) -> Vec<FoldRange> {
-        let revision = self.state.text_revision();
-        let tab_size = self.state.config.indentation.tab_size;
-        let folds = &mut self.view.folds;
-        match &folds.ranges {
-            Some((cached_revision, cached_tab_size, ranges))
-                if *cached_revision == revision && *cached_tab_size == tab_size =>
-            {
-                ranges.clone()
-            }
-            _ => {
-                let ranges = indentation_fold_ranges(self.state.text(), &self.state.config.indentation);
-                folds.ranges = Some((revision, tab_size, ranges.clone()));
-                ranges
-            }
-        }
-    }
-
-    pub(super) fn indent_levels(&mut self) -> Vec<usize> {
-        let revision = self.state.text_revision();
-        let tab_size = self.state.config.indentation.tab_size;
-        let folds = &mut self.view.folds;
-        match &folds.indent_levels {
-            Some((cached_revision, cached_tab_size, levels))
-                if *cached_revision == revision && *cached_tab_size == tab_size =>
-            {
-                levels.clone()
-            }
-            _ => {
-                let levels = indent_levels(self.state.text(), &self.state.config.indentation);
-                folds.indent_levels = Some((revision, tab_size, levels.clone()));
-                levels
-            }
-        }
-    }
-
-    /// The fold ranges currently folded.
+    /// The folded ranges: untouched blocks as they are, touched ones computed again (and
+    /// dropped when their header no longer starts a fold).
     fn folded_ranges(&mut self) -> Vec<FoldRange> {
         let text = self.state.text().clone();
-        let folded_lines: Vec<usize> =
-            self.view.folds.folded_header_offsets.iter().map(|&offset| text.line_of_offset(offset)).collect();
-        self.fold_ranges().into_iter().filter(|range| folded_lines.contains(&range.header_line)).collect()
+        let indentation = self.state.config.indentation;
+        let mut ranges = Vec::with_capacity(self.view.folds.blocks.len());
+        self.view.folds.blocks.retain_mut(|block| {
+            if !block.needs_recompute {
+                ranges.push(FoldRange { header_line: block.header_line, last_hidden_line: block.last_hidden_line });
+                return true;
+            }
+            let range = fold_range_at(&text, &indentation, block.header_line)
+                .or_else(|| block.other_header_line.and_then(|line| fold_range_at(&text, &indentation, line)));
+            match range {
+                Some(range) => {
+                    *block = FoldedBlock {
+                        header_line: range.header_line,
+                        last_hidden_line: range.last_hidden_line,
+                        needs_recompute: false,
+                        other_header_line: None,
+                    };
+                    ranges.push(range);
+                    true
+                }
+                None => false,
+            }
+        });
+        ranges
     }
 
-    /// The fold range whose header is `line`.
-    pub(super) fn fold_range_at(&mut self, line: usize) -> Option<FoldRange> {
-        self.fold_ranges().into_iter().find(|range| range.header_line == line)
+    /// Whether `line` starts a fold range (a local check, fine for every visible line).
+    pub(super) fn is_fold_header(&self, line: usize) -> bool {
+        is_fold_header(self.state.text(), &self.state.config.indentation, line)
     }
 
     pub(super) fn is_folded(&self, header_line: usize) -> bool {
-        let text = self.state.text();
-        self.view.folds.folded_header_offsets.iter().any(|&offset| text.line_of_offset(offset) == header_line)
+        self.view.folds.is_folded(header_line)
     }
 
     pub(super) fn toggle_fold(&mut self, header_line: usize) {
         if self.is_folded(header_line) {
             self.unfold(header_line);
-        } else if self.fold_range_at(header_line).is_some() {
-            let offset = self.state.text().line_start(header_line);
-            self.view.folds.folded_header_offsets.push(offset);
+        } else if self.is_fold_header(header_line) {
+            self.view.folds.fold_line(header_line);
         }
     }
 
     fn unfold(&mut self, header_line: usize) {
-        let text = self.state.text().clone();
-        self.view.folds.folded_header_offsets.retain(|&offset| text.line_of_offset(offset) != header_line);
+        self.view.folds.unfold(header_line);
     }
 
     /// Runs the folding actions; returns the actions it doesn't handle.
     pub(super) fn run_fold_action(&mut self, action: Action) -> Option<Action> {
-        let cursor_line = self.state.text().line_of_offset(self.state.selections().primary().head);
-        let innermost_range_at_cursor = |ranges: &[FoldRange]| {
-            ranges
-                .iter()
-                .filter(|range| range.header_line == cursor_line || range.hides(cursor_line))
-                .max_by_key(|range| range.header_line)
-                .copied()
-        };
+        let text = self.state.text().clone();
+        let indentation = self.state.config.indentation;
+        let cursor_line = text.line_of_offset(self.state.selections().primary().head);
+        let holds_cursor = |range: &FoldRange| range.header_line == cursor_line || range.hides(cursor_line);
         match action {
             Action::Fold => {
-                let ranges = self.fold_ranges();
-                let folded: Vec<FoldRange> = self.folded_ranges();
-                let unfolded: Vec<FoldRange> = ranges.into_iter().filter(|range| !folded.contains(range)).collect();
-                if let Some(range) = innermost_range_at_cursor(&unfolded) {
-                    self.toggle_fold(range.header_line);
+                // The innermost unfolded range holding the cursor: headers looked up from it.
+                let header = (0..=cursor_line).rev().find(|&line| {
+                    !self.is_folded(line)
+                        && fold_range_at(&text, &indentation, line).is_some_and(|range| holds_cursor(&range))
+                });
+                if let Some(header) = header {
+                    self.toggle_fold(header);
                 }
-                None
             }
             Action::Unfold => {
-                if let Some(range) = innermost_range_at_cursor(&self.folded_ranges()) {
+                let innermost =
+                    self.folded_ranges().into_iter().filter(holds_cursor).max_by_key(|range| range.header_line);
+                if let Some(range) = innermost {
                     self.unfold(range.header_line);
                 }
-                None
             }
             Action::FoldAll => {
-                let text = self.state.text().clone();
-                self.view.folds.folded_header_offsets =
-                    self.fold_ranges().iter().map(|range| text.line_start(range.header_line)).collect();
-                None
+                let ranges = indentation_fold_ranges(&text, &indentation);
+                self.view.folds.blocks = ranges
+                    .iter()
+                    .map(|range| FoldedBlock {
+                        header_line: range.header_line,
+                        last_hidden_line: range.last_hidden_line,
+                        needs_recompute: false,
+                        other_header_line: None,
+                    })
+                    .collect();
             }
-            Action::UnfoldAll => {
-                self.view.folds.folded_header_offsets.clear();
-                None
-            }
-            other => Some(other),
+            Action::UnfoldAll => self.view.folds.blocks.clear(),
+            other => return Some(other),
         }
+        None
     }
 
-    /// Rebuilds the folded rows: unfolds what hides a cursor, then hides the folded lines.
+    /// Unfolds what hides a cursor, then (when the folds changed) rebuilds the folded rows.
     pub(super) fn refresh_folding(&mut self) {
         if !self.config.folding || self.display_layout.is_some() {
             self.view.folds.layout = None;
@@ -169,25 +211,38 @@ impl CodeEditor<'_> {
             }
         }
         let folded = self.folded_ranges();
-        self.view
-            .folds
-            .folded_header_offsets
-            .retain(|&offset| folded.iter().any(|range| text.line_start(range.header_line) == offset));
-        self.view.folds.folded_header_offsets.dedup();
+        let folds = &mut self.view.folds;
         if folded.is_empty() {
-            self.view.folds.layout = None;
+            folds.layout = None;
+            folds.layout_key = None;
             self.state.hidden_lines = HiddenLines::default();
             return;
         }
+        let key = (text.line_count(), folded);
+        if folds.layout.is_some() && folds.layout_key.as_ref() == Some(&key) {
+            return;
+        }
+        let folded = key.1.clone();
 
         let hidden_lines =
             HiddenLines::new(folded.iter().map(|range| (range.first_hidden_line(), range.last_hidden_line)).collect());
-        let rows = (0..text.line_count())
-            .filter(|&line| !hidden_lines.is_hidden(line))
-            .map(|line| DisplayRow::new(RowContent::Line(line)))
-            .collect();
-        self.view.folds.layout = Some(DisplayLayout::new(rows, text.line_count()));
+        let rows =
+            hidden_lines.shown_lines(text.line_count()).map(|line| DisplayRow::new(RowContent::Line(line))).collect();
+        folds.layout = Some(DisplayLayout::new(rows, text.line_count()));
+        folds.layout_key = Some(key);
         self.state.hidden_lines = hidden_lines;
+    }
+
+    /// Indentation level of each line in `lines`, and the active guide as (level, first line,
+    /// last line).
+    pub(super) fn indent_guides(
+        &self,
+        lines: std::ops::Range<usize>,
+        cursor_line: usize,
+    ) -> (Vec<usize>, Option<(usize, usize, usize)>) {
+        let (text, indentation) = (self.state.text(), &self.state.config.indentation);
+        let levels = lines.map(|line| indent_level(text, indentation, line)).collect();
+        (levels, active_indent_guide(text, indentation, cursor_line, MAX_ACTIVE_GUIDE_LINES))
     }
 
     /// Borders around the bracket at the primary cursor and its match.
@@ -209,6 +264,7 @@ impl CodeEditor<'_> {
     /// Backgrounds on the other occurrences of the selected text, or of the word at the cursor,
     /// within the char offsets `visible_start..visible_end`.
     pub(super) fn occurrence_decorations(&self, visible_start: usize, visible_end: usize) -> Vec<Decoration> {
+        const MAX_HIGHLIGHTED: usize = 1_000;
         let text = self.state.text();
         let primary = self.state.selections().primary();
         let (query, own_start) = if primary.is_empty() {
@@ -227,7 +283,6 @@ impl CodeEditor<'_> {
             }
             (SearchQuery { match_case: true, ..SearchQuery::new(selected) }, primary.start())
         };
-        const MAX_HIGHLIGHTED: usize = 1_000;
         let Ok(matches) = find::find_matches(text, &query, Some((visible_start, visible_end)), MAX_HIGHLIGHTED) else {
             return Vec::new();
         };
@@ -239,7 +294,7 @@ impl CodeEditor<'_> {
     }
 }
 
-/// Lines a fold placeholder `⋯` follows: the folded headers.
-pub(super) fn folded_header_lines(text: &Text, folds: &FoldState) -> Vec<usize> {
-    folds.folded_header_offsets.iter().map(|&offset| text.line_of_offset(offset)).collect()
+/// Lines a fold placeholder `⋯` follows: the folded headers, sorted.
+pub(super) fn folded_header_lines(folds: &FoldState) -> Vec<usize> {
+    folds.blocks.iter().map(|block| block.header_line).collect()
 }

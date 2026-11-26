@@ -39,6 +39,7 @@ impl Motion {
 }
 
 /// Lines a view hides (folded regions), as inclusive ranges: vertical moves step over them.
+/// Kept sorted and disjoint (nested and overlapping folds merged), so lookups are binary searches.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HiddenLines {
     ranges: Vec<(usize, usize)>,
@@ -47,15 +48,37 @@ pub struct HiddenLines {
 impl HiddenLines {
     pub fn new(mut ranges: Vec<(usize, usize)>) -> Self {
         ranges.sort_unstable();
-        Self { ranges }
+        let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+        for (first_line, last_line) in ranges {
+            match merged.last_mut() {
+                Some((_, merged_last)) if first_line <= *merged_last + 1 => {
+                    *merged_last = (*merged_last).max(last_line)
+                }
+                _ => merged.push((first_line, last_line)),
+            }
+        }
+        Self { ranges: merged }
     }
 
+    /// Sorted, disjoint, inclusive ranges.
     pub fn ranges(&self) -> &[(usize, usize)] {
         &self.ranges
     }
 
     pub fn is_hidden(&self, line: usize) -> bool {
-        self.ranges.iter().any(|&(first_line, last_line)| (first_line..=last_line).contains(&line))
+        let after = self.ranges.partition_point(|&(first_line, _)| first_line <= line);
+        after > 0 && self.ranges[after - 1].1 >= line
+    }
+
+    /// Lines `0..line_count` that are not hidden, in order: O(lines + ranges).
+    pub fn shown_lines(&self, line_count: usize) -> impl Iterator<Item = usize> + '_ {
+        let mut range_index = 0;
+        (0..line_count).filter(move |&line| {
+            while self.ranges.get(range_index).is_some_and(|&(_, last_line)| last_line < line) {
+                range_index += 1;
+            }
+            self.ranges.get(range_index).is_none_or(|&(first_line, _)| first_line > line)
+        })
     }
 
     /// The line `line_delta` shown lines away from `line`, or `None` past the text's edges.
@@ -264,6 +287,17 @@ mod tests {
         assert_eq!(text.position(down.head), Position::new(3, 0));
         let up = apply_motion_over(&text, &config, &hidden_lines, &down, Motion::Up, false);
         assert_eq!(text.position(up.head), Position::new(0, 0));
+    }
+
+    #[test]
+    fn hidden_ranges_merge_and_answer_by_binary_search() {
+        let hidden_lines = HiddenLines::new(vec![(5, 6), (1, 3), (2, 8), (12, 12), (9, 9)]);
+
+        assert_eq!(hidden_lines.ranges(), &[(1, 9), (12, 12)]);
+        assert!(hidden_lines.is_hidden(9));
+        assert!(!hidden_lines.is_hidden(10));
+        assert!(!hidden_lines.is_hidden(0));
+        assert_eq!(hidden_lines.shown_lines(14).collect::<Vec<_>>(), vec![0, 10, 11, 13]);
     }
 
     #[test]

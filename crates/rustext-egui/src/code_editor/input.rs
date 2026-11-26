@@ -57,7 +57,7 @@ impl CodeEditor<'_> {
         }
         let fold_column_right = metrics.text_rect.left() - metrics.char_width;
         let is_in_fold_column = (fold_column_right - metrics.fold_marker_width..fold_column_right).contains(&pos.x);
-        if is_in_fold_column && self.fold_range_at(line).is_some() {
+        if is_in_fold_column && self.is_fold_header(line) {
             return MouseTarget::FoldMarker { line };
         }
         if pos.x < metrics.text_rect.left() {
@@ -398,8 +398,11 @@ impl CodeEditor<'_> {
             .filter_map(|changes| changes.changes().first())
             .map(|change| change.start)
             .min();
-        for changes in &outcome.applied_changes {
-            self.view.folds.map_through(changes);
+        for edited in &outcome.edited_lines {
+            self.view.folds.follow_edit(edited);
+        }
+        if let [changes] = outcome.applied_changes.as_slice() {
+            self.update_find_matches_after(changes);
         }
         if let (Some(styler), Some(first_changed_offset)) = (self.styler.as_deref_mut(), first_changed_offset) {
             styler.invalidate_from(self.state.text().line_of_offset(first_changed_offset));

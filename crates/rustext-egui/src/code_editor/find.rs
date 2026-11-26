@@ -173,7 +173,7 @@ impl CodeEditor<'_> {
     fn select_all_matches(&mut self) {
         self.refresh_find_matches();
         if let Some(selections) = find::select_matches(&self.view.find.matches, self.view.find.current_index) {
-            self.state.execute(Command::SetSelections(selections));
+            self.execute_tracked(Command::SetSelections(selections));
         }
     }
 
@@ -186,7 +186,7 @@ impl CodeEditor<'_> {
         match current {
             Some(found) => {
                 let transaction = find::replace_one(self.state.text(), found, &find.query, &find.replacement);
-                self.state.execute(Command::Apply(transaction));
+                self.execute_tracked(Command::Apply(transaction));
                 self.refresh_find_matches();
                 self.go_to_match(true);
             }
@@ -198,8 +198,59 @@ impl CodeEditor<'_> {
         self.refresh_find_matches();
         let find = &self.view.find;
         if let Some(transaction) = find::replace_all(self.state.text(), &find.matches, &find.query, &find.replacement) {
-            self.state.execute(Command::Apply(transaction));
+            self.execute_tracked(Command::Apply(transaction));
         }
+    }
+
+    /// After one edit, for a plain query (matches never span lines): shifts the matches past
+    /// the edit and searches only the edited lines again, instead of the whole text.
+    pub(super) fn update_find_matches_after(&mut self, changes: &rustext_core::ChangeSet) {
+        let text = self.state.text().clone();
+        let revision = self.state.text_revision();
+        let find = &mut self.view.find;
+        let is_previous_revision = find
+            .matches_key
+            .as_ref()
+            .is_some_and(|key| key.text_revision + 1 == revision && key.query == find.query && key.scope.is_none());
+        let (Some(first_change), Some(last_change)) = (changes.changes().first(), changes.changes().last()) else {
+            return;
+        };
+        if !find.is_open || find.query.is_regex || find.query.pattern.contains('\n') || !is_previous_revision {
+            return;
+        }
+
+        let new_start = changes.map_offset(first_change.start, rustext_core::Bias::Before);
+        let new_end = changes.map_offset(last_change.end, rustext_core::Bias::After);
+        let search_start = text.line_start(text.line_of_offset(new_start));
+        let search_end = text.line_content_end(text.line_of_offset(new_end));
+        let Ok(found_again) = find::find_matches(&text, &find.query, Some((search_start, search_end)), MAX_MATCHES)
+        else {
+            return;
+        };
+
+        let (old_touched_start, old_touched_end) = (first_change.start, last_change.end);
+        let mut matches: Vec<Match> = Vec::with_capacity(find.matches.len() + found_again.len());
+        for found in &find.matches {
+            if found.end < old_touched_start {
+                if found.end < search_start {
+                    matches.push(*found);
+                }
+            } else if found.start > old_touched_end {
+                let start = changes.map_offset(found.start, rustext_core::Bias::After);
+                let end = changes.map_offset(found.end, rustext_core::Bias::After);
+                if start > search_end {
+                    matches.push(Match { start, end });
+                }
+            }
+        }
+        let insert_at = matches.partition_point(|found| found.start < search_start);
+        matches.splice(insert_at..insert_at, found_again);
+        matches.truncate(MAX_MATCHES);
+        find.matches = matches;
+        find.matches_key = Some(MatchesKey { query: find.query.clone(), scope: None, text_revision: revision });
+        let cursor = self.state.selections().primary().start();
+        let find = &mut self.view.find;
+        find.current_index = find.matches.iter().position(|found| found.start <= cursor && cursor <= found.end);
     }
 
     pub(super) fn close_find(&mut self) {
@@ -438,7 +489,7 @@ impl CodeEditor<'_> {
             });
         if let Some(position) = target {
             let offset = self.state.text().offset(position);
-            self.state.execute(Command::SetSelections(Selections::cursor(offset)));
+            self.execute_tracked(Command::SetSelections(Selections::cursor(offset)));
             self.view.reveal_cursor();
         }
         if closes {
