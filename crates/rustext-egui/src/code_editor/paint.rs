@@ -160,6 +160,8 @@ impl CodeEditor<'_> {
             }
         }
 
+        self.paint_bracket_pair_guide(&text_painter, metrics);
+
         let text_left = self.text_left(metrics);
         if let Some(placeholder) = self.config.placeholder.as_ref().filter(|_| text.is_empty()) {
             let top = self.row_top(metrics, 0) + metrics.row_height / 2.0;

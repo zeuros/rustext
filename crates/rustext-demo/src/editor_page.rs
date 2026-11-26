@@ -190,6 +190,13 @@ impl EditorPage {
         });
     }
 
+    /// Turns bracket pair guides on and puts the cursor at `position`.
+    pub fn show_bracket_guides_at(&mut self, position: rustext_core::Position) {
+        self.view_config.bracket_pair_guides = true;
+        let offset = self.state.text().offset(position);
+        self.state.execute(rustext_core::Command::SetSelections(rustext_core::Selections::cursor(offset)));
+    }
+
     /// The code lens demo: "Run" and a count of uses above each function, computed again when
     /// the text changes.
     fn refresh_code_lenses(&mut self) {
@@ -334,6 +341,7 @@ impl EditorPage {
         ui.checkbox(&mut self.view_config.folding, "Folding");
         ui.checkbox(&mut self.view_config.indent_guides, "Indent guides");
         ui.checkbox(&mut self.view_config.match_brackets, "Match brackets");
+        ui.checkbox(&mut self.view_config.bracket_pair_guides, "Bracket pair guides");
         ui.checkbox(&mut self.view_config.occurrences_highlight, "Highlight occurrences");
         ui.checkbox(&mut self.view_config.cursor_blinking, "Cursor blinking");
         ui.checkbox(&mut self.view_config.scroll_beyond_last_line, "Scroll beyond last line");

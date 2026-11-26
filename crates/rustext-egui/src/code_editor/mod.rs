@@ -138,6 +138,9 @@ pub struct ViewConfig {
     pub show_carriage_returns: bool,
     /// Colors brackets by nesting depth.
     pub bracket_pair_colorization: bool,
+    /// A line in the bracket's color along the multi-line bracket pair holding the cursor
+    /// (Monaco's `guides.bracketPairs: 'active'`).
+    pub bracket_pair_guides: bool,
     pub word_wrap: WordWrap,
     /// Pins the headers of the blocks enclosing the top line (Monaco's `stickyScroll`).
     /// Ask the language services for inlay hints (parameter names, inferred types).
@@ -179,6 +182,7 @@ impl Default for ViewConfig {
             render_whitespace: WhitespaceRendering::default(),
             show_carriage_returns: false,
             bracket_pair_colorization: true,
+            bracket_pair_guides: false,
             word_wrap: WordWrap::default(),
             inlay_hints: true,
             sticky_scroll: true,
@@ -267,6 +271,8 @@ pub struct EditorView {
     ghost_text: Option<GhostText>,
     ghost_request: Option<(u64, usize)>,
     bracket_line_starts: rustext_core::structure::BracketLineStarts,
+    /// The bracket pair holding the primary cursor, for (text revision, cursor offset).
+    active_bracket_pair: Option<((u64, usize), Option<rustext_core::structure::EnclosingBracketPair>)>,
     /// The text revision the view's caches follow; another one means the text changed outside
     /// the widget (`set_text`, an application command) and the caches start over.
     seen_text_revision: Option<u64>,

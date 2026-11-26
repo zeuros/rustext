@@ -80,19 +80,88 @@ fn find_opening(
     (open, close): (char, char),
 ) -> Option<usize> {
     let mut depth = 0usize;
+    let is_the_opening = |character: char| {
+        if character == close {
+            depth += 1;
+        } else if character == open {
+            if depth == 0 {
+                return true;
+            }
+            depth -= 1;
+        }
+        false
+    };
+    find_bracket_before(text, language, line_starts, (close_line, close_column), close_line_brackets, is_the_opening)
+}
+
+/// The code bracket of the innermost pair holding `offset` (after its opening bracket, not
+/// after its closing one): its offsets and nesting depth (for its color). `None` outside any
+/// pair, or when the line states before `offset` would take more than `budget_lines`.
+pub fn enclosing_bracket_pair(
+    text: &Text,
+    offset: usize,
+    language: &LanguageConfiguration,
+    line_starts: &mut BracketLineStarts,
+    budget_lines: &mut usize,
+) -> Option<EnclosingBracketPair> {
+    let line = text.line_of_offset(offset);
+    let column = offset - text.line_start(line);
+    let start = line_starts.state_at(text, language, line, budget_lines)?;
+    let brackets = scan_line_chars(line_chars(text, line), start.context, language).brackets;
+    let mut unmatched_closers: Vec<char> = Vec::new();
+    let is_unclosed_opening = |character: char| {
+        if language.is_closing_bracket(character) {
+            unmatched_closers.push(character);
+            return false;
+        }
+        unmatched_closers.pop().is_none()
+    };
+    let open = find_bracket_before(text, language, line_starts, (line, column), brackets, is_unclosed_opening)?;
+
+    let open_line = text.line_of_offset(open);
+    let open_column = open - text.line_start(open_line);
+    // The scan went through the opening bracket's line: its state is known, no budget needed.
+    let mut unlimited = usize::MAX;
+    let open_start = line_starts.state_at(text, language, open_line, &mut unlimited)?;
+    let open_char = text.char_at(open)?;
+    let pair = *language.brackets.iter().find(|(opening, _)| *opening == open_char)?;
+    let open_line_content: String = line_chars(text, open_line).collect();
+    let depth = bracket_columns(&open_line_content, open_start, language)
+        .into_iter()
+        .find_map(|(column, depth)| (column == open_column).then_some(depth))?;
+    let open_scan = scan_line_chars(open_line_content.chars(), open_start.context, language);
+    let close = find_closing(text, language, open_line, open_column, open_scan, pair)?;
+    Some(EnclosingBracketPair { open, close, depth })
+}
+
+/// A bracket pair holding a position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct EnclosingBracketPair {
+    pub open: usize,
+    pub close: usize,
+    /// Nesting depth of the pair, 0 for the outermost.
+    pub depth: usize,
+}
+
+/// Visits the code brackets before `(line, column)`, nearest first, starting with
+/// `line_brackets` (those of `line`), until `is_target` says yes; returns that bracket's
+/// offset. Bounded by `MAX_BRACKET_DISTANCE`.
+fn find_bracket_before(
+    text: &Text,
+    language: &LanguageConfiguration,
+    line_starts: &mut BracketLineStarts,
+    (start_line, start_column): (usize, usize),
+    line_brackets: Vec<(usize, char)>,
+    mut is_target: impl FnMut(char) -> bool,
+) -> Option<usize> {
     let mut scanned_chars = 0;
-    let mut brackets = close_line_brackets;
-    let mut line = close_line;
+    let mut brackets = line_brackets;
+    let mut line = start_line;
     loop {
-        let before_close = |&&(column, _): &&(usize, char)| line != close_line || column < close_column;
-        for &(column, character) in brackets.iter().filter(before_close).rev() {
-            if character == close {
-                depth += 1;
-            } else if character == open {
-                if depth == 0 {
-                    return Some(text.line_start(line) + column);
-                }
-                depth -= 1;
+        let before_start = |&&(column, _): &&(usize, char)| line != start_line || column < start_column;
+        for &(column, character) in brackets.iter().filter(before_start).rev() {
+            if is_target(character) {
+                return Some(text.line_start(line) + column);
             }
         }
         scanned_chars += text.line_len(line) + 1;
@@ -402,6 +471,30 @@ mod tests {
             &mut BracketLineStarts::default(),
             &mut 100,
         )
+    }
+
+    /// `(open, close, depth)` of the pair holding `offset`.
+    fn enclosing(text: &str, offset: usize) -> Option<(usize, usize, usize)> {
+        let text = Text::new(text);
+        let language = LanguageConfiguration::c_like();
+        enclosing_bracket_pair(&text, offset, &language, &mut BracketLineStarts::default(), &mut 100)
+            .map(|pair| (pair.open, pair.close, pair.depth))
+    }
+
+    #[test]
+    fn the_enclosing_pair_is_the_innermost_holding_the_cursor() {
+        let source = "fn f() {\n    g(a,\n      b);\n}";
+
+        assert_eq!(enclosing(source, 15), Some((14, 25, 1)));
+        assert_eq!(enclosing(source, 10), Some((7, 28, 0)));
+        assert_eq!(enclosing(source, 29), None);
+    }
+
+    #[test]
+    fn the_enclosing_pair_skips_closed_pairs_and_brackets_in_strings() {
+        let source = "{ f(x) \"{\" [1] | }";
+
+        assert_eq!(enclosing(source, 16), Some((0, 17, 0)));
     }
 
     fn depth(starts: &mut BracketLineStarts, text: &Text, line: usize, budget: &mut usize) -> Option<usize> {

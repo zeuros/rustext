@@ -9,7 +9,10 @@ use rustext_core::display::{DisplayLayout, DisplayRow, RowContent};
 use rustext_core::find::{self, SearchQuery};
 use rustext_core::indentation::Indentation;
 use rustext_core::motion::HiddenLines;
-use rustext_core::structure::{FoldRange, active_indent_guide, fold_range_at, indent_level, matching_bracket_pair};
+use rustext_core::structure::{
+    EnclosingBracketPair, FoldRange, active_indent_guide, enclosing_bracket_pair, fold_range_at, indent_level,
+    matching_bracket_pair,
+};
 use rustext_core::style::LineStyler;
 use rustext_core::{Selections, Text};
 
@@ -292,6 +295,51 @@ impl CodeEditor<'_> {
         let (text, indentation) = (self.state.text(), &self.state.config.indentation);
         let levels = lines.map(|line| indent_level(text, indentation, line)).collect();
         (levels, active_indent_guide(text, indentation, cursor_line, MAX_ACTIVE_GUIDE_LINES))
+    }
+
+    /// The bracket pair holding the primary cursor, kept until the text or the cursor changes;
+    /// asked again next frame when the bracket line states ran out of this frame's budget.
+    fn active_bracket_pair(&mut self) -> Option<EnclosingBracketPair> {
+        let head = self.state.selections().primary().head;
+        let key = (self.state.text_revision(), head);
+        if let Some((cached_key, pair)) = self.view.active_bracket_pair
+            && cached_key == key
+        {
+            return pair;
+        }
+        let language = &self.state.language;
+        let line_starts = &mut self.view.bracket_line_starts;
+        let pair =
+            enclosing_bracket_pair(self.state.text(), head, language, line_starts, &mut self.bracket_budget_lines);
+        if pair.is_some() || self.bracket_budget_lines > 0 {
+            self.view.active_bracket_pair = Some((key, pair));
+        }
+        pair
+    }
+
+    /// The bracket pair guide: a vertical line in the pair's color, at the leftmost of its
+    /// brackets' columns, along the lines between them.
+    pub(super) fn paint_bracket_pair_guide(&mut self, painter: &egui::Painter, metrics: &super::Metrics) {
+        if !self.config.bracket_pair_guides {
+            return;
+        }
+        let Some(pair) = self.active_bracket_pair() else { return };
+        let text = self.state.text();
+        let (open, close) = (text.position(pair.open), text.position(pair.close));
+        if close.line <= open.line {
+            return;
+        }
+        let indentation = &self.state.config.indentation;
+        let visual_column = |position: rustext_core::Position| {
+            indentation.visual_column(&text.line_content(position.line), position.column)
+        };
+        let column = visual_column(open).min(visual_column(close));
+        let x = (self.text_left(metrics) + column as f32 * metrics.char_width).round() + 0.5;
+        let top = self.row_top(metrics, self.row_of_line(open.line)) + metrics.row_height;
+        let bottom = self.row_top(metrics, self.row_of_line(close.line));
+        let colors = &self.theme.bracket_pair_colors;
+        let color = if colors.is_empty() { self.theme.active_indent_guide } else { colors[pair.depth % colors.len()] };
+        painter.vline(x, top..=bottom, egui::Stroke::new(1.0, color));
     }
 
     /// Borders around the bracket at the primary cursor and its match.
