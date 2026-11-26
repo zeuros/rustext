@@ -12,6 +12,10 @@ Start here, in this order:
 ## Commands
 
 - `scripts/check.sh`: what CI runs (fmt check, clippy `-D warnings`, tests), stopping at the first failure. Run it before every commit; `cargo fmt --all` fixes formatting.
+  Commit in a separate command after it printed success: chaining `check.sh; …; git commit` in one
+  shell line commits broken code when the check fails.
+- Scripted edits (python `str.replace`) must assert the old text is present: rustfmt reflows long
+  lines, and a silent no-op replacement has already lost two edits in this repository.
 - `cargo run -p rustext-demo --release`: the playground app. `-- <file>` opens a file; `-- --diff <old> <new>` a diff.
 - Screenshots without touching the desktop: run the demo on a private Xvfb
   (`scripts/screenshot.sh <out.png> [demo args…]`), then read the PNG.
