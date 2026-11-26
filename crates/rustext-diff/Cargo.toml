@@ -1,8 +1,15 @@
 [package]
 name = "rustext-diff"
+description = "Diff computation for the rustext diff editor: hunks, inner changes, aligned rows, patches"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustext-core.workspace = true
+imara-diff.workspace = true
 
 [lints]
 workspace = true
