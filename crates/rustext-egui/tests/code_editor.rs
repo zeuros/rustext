@@ -576,3 +576,23 @@ fn injected_text_shifts_what_follows_but_is_not_text() {
     type_text(&mut harness, "Z");
     assert_eq!(content(&harness), "f(aZb)");
 }
+
+#[test]
+fn find_over_a_multi_line_selection_searches_only_in_it() {
+    let mut harness = harness("a x\nb x\nc x");
+    click(&mut harness, 0, 0);
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowDown);
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::End);
+    harness.run();
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::H);
+    harness.run();
+    harness.state_mut().view.find.query.pattern = "x".into();
+    harness.state_mut().view.find.replacement = "y".into();
+    harness.run();
+    assert_eq!(harness.state().view.find.matches().len(), 2);
+
+    harness.get_by_label("Replace all").click();
+    harness.run();
+    assert_eq!(content(&harness), "a y\nb y\nc x");
+}

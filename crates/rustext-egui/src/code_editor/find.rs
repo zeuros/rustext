@@ -111,10 +111,14 @@ impl CodeEditor<'_> {
         } else {
             Some(text.slice(primary.start(), primary.end())).filter(|selected| !selected.contains('\n'))
         };
+        let spans_lines =
+            !primary.is_empty() && text.line_of_offset(primary.start()) != text.line_of_offset(primary.end());
         let find = &mut self.view.find;
         if let Some(seed) = seed {
             find.query.pattern = if find.query.is_regex { find::escape(&seed) } else { seed };
         }
+        // Monaco's `autoFindInSelection: 'multiline'`.
+        find.scope = spans_lines.then(|| (primary.start(), primary.end()));
         find.is_open = true;
         find.is_replace_shown = shows_replace;
         find.focus_requested = true;
@@ -199,6 +203,14 @@ impl CodeEditor<'_> {
         let find = &self.view.find;
         if let Some(transaction) = find::replace_all(self.state.text(), &find.matches, &find.query, &find.replacement) {
             self.execute_tracked(Command::Apply(transaction));
+        }
+    }
+
+    /// The find-in-selection scope after an edit.
+    pub(super) fn map_find_scope(&mut self, changes: &rustext_core::ChangeSet) {
+        if let Some((start, end)) = self.view.find.scope {
+            let start = changes.map_offset(start, rustext_core::Bias::Before);
+            self.view.find.scope = Some((start, changes.map_offset(end, rustext_core::Bias::After).max(start)));
         }
     }
 
@@ -315,6 +327,8 @@ impl CodeEditor<'_> {
             }
             (None, count, None) => format!("? of {count}"),
         };
+        let primary = self.state.selections().primary();
+        let selected_range = (!primary.is_empty()).then(|| (primary.start(), primary.end()));
         let find = &mut self.view.find;
 
         Area::new(editor_id.with("find-widget"))
@@ -374,6 +388,12 @@ impl CodeEditor<'_> {
                                     *flag = !*flag;
                                     requests.push(Request::QueryChanged);
                                 }
+                            }
+                            let in_selection =
+                                ui.selectable_label(find.scope.is_some(), "sel").on_hover_text("Find in selection");
+                            if in_selection.clicked() {
+                                find.scope = if find.scope.is_some() { None } else { selected_range };
+                                requests.push(Request::QueryChanged);
                             }
                             let color =
                                 if find.error.is_some() || find.matches.is_empty() && !find.query.pattern.is_empty() {

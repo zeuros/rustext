@@ -155,7 +155,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Case, whole word, regex toggles | Alt+C, Alt+W, Alt+R | P1 | done |
 | Replace, replace all, regex groups `$1` | `editor.action.startFindReplaceAction` (Ctrl+H) | P1 | done |
 | Preserve case in replace | Alt+P | P2 | done |
-| Find in selection | `find.autoFindInSelection` | P1 | partial: `FindState::scope`, no toggle button yet |
+| Find in selection | `find.autoFindInSelection` | P1 | done (toggle, and automatic for multi-line selections) |
 | Seed from selection / word | `find.seedSearchStringFromSelection` | P1 | done |
 | Match count "3 of 17", highlights in overview ruler | — | P1 | done |
 | Select all matches as cursors | Alt+Enter | P1 | done |

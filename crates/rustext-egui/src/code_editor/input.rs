@@ -478,6 +478,9 @@ impl CodeEditor<'_> {
         if outcome.text_changed() {
             self.view.seen_text_revision = Some(self.state.text_revision());
         }
+        for changes in &outcome.applied_changes {
+            self.map_find_scope(changes);
+        }
         if let [changes] = outcome.applied_changes.as_slice() {
             self.update_find_matches_after(changes);
         }
