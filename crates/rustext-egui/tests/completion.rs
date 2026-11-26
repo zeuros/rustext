@@ -4,7 +4,7 @@ use egui::{Event, Key, Modifiers, PointerButton, Pos2, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use rustext_core::services::{
-    CompletionItem, CompletionKind, LanguageServices, Location, Reply, TextEdit, WordCompletions,
+    CodeAction, CompletionItem, CompletionKind, LanguageServices, Location, Reply, TextEdit, WordCompletions,
 };
 use rustext_core::{EditorState, Position, Text};
 use rustext_egui::{CodeEditor, EditorTheme, EditorView, Keymap, ViewConfig};
@@ -150,6 +150,22 @@ impl LanguageServices for TestServices {
             .word_at(&line, position.column)
             .is_some_and(|(start, end)| line[start..end].iter().collect::<String>() == "helper");
         Reply::Ready(on_helper.then(|| "fn helper() -> u8".to_string()))
+    }
+
+    /// A refactoring, then a preferred fix that ends the cursor's line with `;`.
+    fn code_actions(&mut self, text: &Text, _revision: u64, range: rustext_core::Range) -> Reply<Vec<CodeAction>> {
+        let line_end = Position::new(range.start.line, text.line_len(range.start.line));
+        let at_line_end = rustext_core::Range::new(line_end, line_end);
+        let edit = |new_text: &str| vec![TextEdit { range: at_line_end, new_text: new_text.into() }];
+        Reply::Ready(vec![
+            CodeAction { title: "Add semicolon".into(), is_quick_fix: true, is_preferred: true, edits: edit(";") },
+            CodeAction {
+                title: "Add comment".into(),
+                is_quick_fix: false,
+                is_preferred: false,
+                edits: edit(" // note"),
+            },
+        ])
     }
 
     /// Puts a header line on top, saying the tab size.
@@ -582,6 +598,25 @@ fn shift_alt_f_formats_keeping_the_cursor_on_its_text_and_undoes_in_one_step() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert_eq!(harness.state().state.text().to_string(), "let x = 1;\n");
+}
+
+#[test]
+fn ctrl_period_lists_code_actions_and_enter_applies_one() {
+    let mut harness = harness("let x = 1\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(0, 4);
+    press(&mut harness, pos, Modifiers::NONE);
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Period);
+    harness.run();
+    harness.get_by_label("Add semicolon");
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    assert_eq!(harness.state().state.text().to_string(), "let x = 1;\n");
+    assert!(!harness.state().view.code_actions.is_open());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(harness.state().state.text().to_string(), "let x = 1\n");
 }
 
 #[test]

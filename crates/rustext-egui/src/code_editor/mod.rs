@@ -10,11 +10,13 @@
 
 mod accessibility;
 mod assist;
+mod code_actions;
 mod code_lens;
 mod completion;
 mod find;
 mod input;
 mod layout;
+mod list_at_cursor;
 mod navigation;
 mod paint;
 mod palette;
@@ -264,6 +266,8 @@ pub struct EditorView {
     pub document_highlights: assist::DocumentHighlightsState,
     /// The references list (Shift+F12).
     pub references: navigation::ReferencesState,
+    /// The code actions list (Ctrl+.).
+    pub code_actions: code_actions::CodeActionsState,
     /// A definition asked for (F12, Ctrl+click) and not answered yet: (text revision, position).
     definition_request: Option<(u64, Position)>,
     /// Formatting asked for (Shift+Alt+F) and not answered yet: the text revision.
@@ -666,7 +670,8 @@ impl<'a> CodeEditor<'a> {
             | self.refresh_document_highlights()
             | self.refresh_references()
             | self.refresh_definition()
-            | self.refresh_formatting();
+            | self.refresh_formatting()
+            | self.refresh_code_actions();
         if is_awaiting_services {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
@@ -692,6 +697,7 @@ impl<'a> CodeEditor<'a> {
         }
         self.show_signature_help(ui, &metrics, id);
         self.show_references(ui, &metrics, id, &mut completion_outcome);
+        self.show_code_actions(ui, &metrics, id);
         let (picked, palette_closed) = self.show_palette(ui, &metrics, id);
         if palette_closed {
             response.request_focus();

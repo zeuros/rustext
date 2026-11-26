@@ -161,3 +161,17 @@ fn formatting_sends_the_indentation_and_reads_the_edits() {
     assert_eq!(edits.len(), 1);
     assert_eq!(edits[0].new_text, "// tab size 2\n");
 }
+
+#[test]
+fn code_actions_with_edits_come_preferred_first() {
+    let mut services = start();
+    let text = Text::new("ab\n");
+    let cursor = rustext_core::Range::new(Position::new(0, 1), Position::new(0, 1));
+
+    let actions = until_ready(|| services.code_actions(&text, 1, cursor));
+
+    let titles: Vec<&str> = actions.iter().map(|action| action.title.as_str()).collect();
+    assert_eq!(titles, vec!["Fix it", "Extract"]);
+    assert!(actions[0].is_quick_fix && actions[0].is_preferred);
+    assert_eq!(actions[0].edits[0].new_text, "// fixed\n");
+}

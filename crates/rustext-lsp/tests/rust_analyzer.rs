@@ -96,5 +96,14 @@ fn rust_analyzer_answers_parse() {
     let formatted = rustext_core::services::transaction_of_edits(&messy, &edits).unwrap().changes.apply(&messy);
     assert!(formatted.to_string().contains("fn length(point: &Point) -> i32 {\n    point.x\n}"), "{formatted}");
 
+    let on_point = rustext_core::Range::new(Position::new(0, 8), Position::new(0, 8));
+    let actions =
+        until_answered(|attempt| services.code_actions(&text, attempt, on_point), |actions| !actions.is_empty());
+    assert!(actions.iter().all(|action| !action.edits.is_empty()));
+    eprintln!(
+        "rust-analyzer's actions on `Point`: {:?}",
+        actions.iter().map(|action| &action.title).collect::<Vec<_>>()
+    );
+
     let _ = std::fs::remove_dir_all(main.parent().unwrap().parent().unwrap());
 }

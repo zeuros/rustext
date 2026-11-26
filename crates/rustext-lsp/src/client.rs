@@ -12,8 +12,8 @@ use lsp_types::notification::{self, Notification};
 use lsp_types::request::{self, Request};
 use lsp_types::{self as lsp, OneOf, Uri};
 use rustext_core::services::{
-    CompletionItem, CompletionKind, Diagnostic, DocumentSymbol, InlayHint, LanguageServices, Location, Reply, Severity,
-    SignatureHelp, SymbolKind, TextEdit,
+    CodeAction, CompletionItem, CompletionKind, Diagnostic, DocumentSymbol, InlayHint, LanguageServices, Location,
+    Reply, Severity, SignatureHelp, SymbolKind, TextEdit,
 };
 use rustext_core::{ChangeSet, Position, Range, Text};
 use serde_json::Value;
@@ -206,6 +206,24 @@ fn client_capabilities() -> lsp::ClientCapabilities {
             inlay_hint: Some(Default::default()),
             document_highlight: Some(Default::default()),
             references: Some(Default::default()),
+            code_action: Some(lsp::CodeActionClientCapabilities {
+                code_action_literal_support: Some(lsp::CodeActionLiteralSupport {
+                    code_action_kind: lsp::CodeActionKindLiteralSupport {
+                        value_set: [
+                            "quickfix",
+                            "refactor",
+                            "refactor.extract",
+                            "refactor.inline",
+                            "refactor.rewrite",
+                            "source",
+                        ]
+                        .map(String::from)
+                        .to_vec(),
+                    },
+                }),
+                is_preferred_support: Some(true),
+                ..Default::default()
+            }),
             document_symbol: Some(lsp::DocumentSymbolClientCapabilities {
                 hierarchical_document_symbol_support: Some(true),
                 ..Default::default()
@@ -696,6 +714,47 @@ impl LanguageServices for LspServices {
                     InlayHint { position: position_of(text, hint.position), label }
                 })
                 .collect()
+        })
+    }
+
+    /// Code actions with edits to this document (commands to run on the server are left out).
+    fn code_actions(&mut self, text: &Text, text_revision: u64, range: Range) -> Reply<Vec<CodeAction>> {
+        let params = lsp::CodeActionParams {
+            text_document: self.text_document(),
+            range: lsp::Range::new(lsp_position(text, range.start), lsp_position(text, range.end)),
+            context: lsp::CodeActionContext {
+                trigger_kind: Some(lsp::CodeActionTriggerKind::INVOKED),
+                ..Default::default()
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        let key = RequestKey::new::<request::CodeActionRequest>(text_revision, range.start)
+            .with_argument(format!("{:?}", range.end));
+        let uri = self.document_uri.clone();
+        map_reply(self.ask::<request::CodeActionRequest>(text, key, params), |actions| {
+            let mut code_actions: Vec<CodeAction> = actions
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|action| match action {
+                    lsp::CodeActionOrCommand::CodeAction(action) => Some(action),
+                    lsp::CodeActionOrCommand::Command(_) => None,
+                })
+                .filter_map(|action| {
+                    let edits: Vec<TextEdit> = edits_for_document(action.edit?, &uri)
+                        .into_iter()
+                        .map(|edit| TextEdit { range: range_of(text, edit.range), new_text: edit.new_text })
+                        .collect();
+                    (!edits.is_empty()).then(|| CodeAction {
+                        title: action.title,
+                        is_quick_fix: action.kind.is_some_and(|kind| kind.as_str().starts_with("quickfix")),
+                        is_preferred: action.is_preferred == Some(true),
+                        edits,
+                    })
+                })
+                .collect();
+            code_actions.sort_by_key(|action| (!action.is_preferred, !action.is_quick_fix));
+            code_actions
         })
     }
 

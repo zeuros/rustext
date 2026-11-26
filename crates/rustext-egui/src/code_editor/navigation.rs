@@ -3,45 +3,15 @@
 //! references under the cursor's line (Up/Down choose, Enter or a click jumps). A target in
 //! another document becomes `EditorResponse::open_request`, for the application to open.
 
-use egui::{Area, Frame, Id, Key, Order, RichText, Ui, pos2};
+use egui::{Id, Key, Ui, pos2};
 use rustext_core::services::{Location, Reply};
 use rustext_core::{Command, Outcome, Position, Selection, Selections};
 
+use super::list_at_cursor::{ListAtCursor, ListKey, ListPlace, Piece, show_list};
 use super::{CodeEditor, Metrics};
 
-const VISIBLE_ITEMS: usize = 10;
-
-#[derive(Clone, Debug, Default)]
-pub struct ReferencesState {
-    /// The references, this document's first in text order, then the others'; empty when the
-    /// list is closed.
-    entries: Vec<Location>,
-    selected: usize,
-    /// The text revision the entries are for (an edit closes the list).
-    revision: u64,
-    /// The cursor offset the list was asked at, where it shows.
-    anchor: usize,
-    /// Waiting for the service's answer: (text revision, cursor offset).
-    request: Option<(u64, usize)>,
-}
-
-impl ReferencesState {
-    pub fn is_open(&self) -> bool {
-        !self.entries.is_empty()
-    }
-
-    pub fn entries(&self) -> &[Location] {
-        &self.entries
-    }
-
-    pub fn selected(&self) -> usize {
-        self.selected
-    }
-
-    fn close(&mut self) {
-        *self = ReferencesState::default();
-    }
-}
+/// The references list (Shift+F12): this document's first in text order, then the others'.
+pub type ReferencesState = ListAtCursor<Location>;
 
 /// The last part of a document's name: `main.rs` for `file:///src/main.rs`.
 fn short_document_name(document: &str) -> &str {
@@ -93,21 +63,16 @@ impl CodeEditor<'_> {
     /// Shift+F12: asks for the references of the symbol at the cursor.
     pub(super) fn open_references(&mut self) {
         let head = self.state.selections().primary().head;
-        self.view.references =
-            ReferencesState { anchor: head, request: Some((self.state.text_revision(), head)), ..Default::default() };
+        self.view.references = ListAtCursor::asked(self.state.text_revision(), head);
     }
 
     /// Takes the service's answer; closes the list after an edit. Returns whether an answer is
     /// awaited.
     pub(super) fn refresh_references(&mut self) -> bool {
         let revision = self.state.text_revision();
-        let references = &mut self.view.references;
-        if references.is_open() && references.revision != revision {
-            references.close();
-        }
-        let Some((request_revision, offset)) = references.request else { return false };
-        let Some(services) = self.services.as_deref_mut().filter(|_| request_revision == revision) else {
-            references.close();
+        let Some(offset) = self.view.references.pending_request(revision) else { return false };
+        let Some(services) = self.services.as_deref_mut() else {
+            self.view.references.close();
             return false;
         };
         let text = self.state.text();
@@ -122,7 +87,7 @@ impl CodeEditor<'_> {
                     location.document.is_none() && start <= offset && offset <= end
                 };
                 let selected = entries.iter().position(holds_cursor).unwrap_or(0);
-                *references = ReferencesState { entries, selected, revision, anchor: offset, request: None };
+                self.view.references.answer(entries, selected, revision);
                 false
             }
             Reply::Pending => true,
@@ -131,31 +96,18 @@ impl CodeEditor<'_> {
 
     /// Up/Down/Enter/Escape while the list is open; returns whether the key was taken.
     pub(super) fn references_key(&mut self, key: Key, outcome: &mut Outcome) -> bool {
-        let references = &mut self.view.references;
-        if !references.is_open() {
-            return false;
+        match self.view.references.key(key) {
+            ListKey::Ignored => false,
+            ListKey::Handled => true,
+            ListKey::Picked(index) => {
+                self.jump_to_reference(index, outcome);
+                true
+            }
         }
-        let last_index = references.entries.len() - 1;
-        match key {
-            Key::ArrowDown => {
-                references.selected = if references.selected == last_index { 0 } else { references.selected + 1 }
-            }
-            Key::ArrowUp => {
-                references.selected = if references.selected == 0 { last_index } else { references.selected - 1 }
-            }
-            Key::Enter => {
-                let selected = references.selected;
-                self.jump_to_reference(selected, outcome);
-            }
-            Key::Escape => references.close(),
-            _ => return false,
-        }
-        true
     }
 
     fn jump_to_reference(&mut self, index: usize, outcome: &mut Outcome) {
-        let Some(location) = self.view.references.entries.get(index).cloned() else { return };
-        self.view.references.close();
+        let Some(location) = self.view.references.take(index) else { return };
         if location.document.is_some() {
             self.open_request = Some(location);
             return;
@@ -168,26 +120,18 @@ impl CodeEditor<'_> {
     /// The list under the line it was asked at, one row per reference: `line  text` with the
     /// reference in bold for this document, `name:line` for another.
     pub(super) fn show_references(&mut self, ui: &mut Ui, metrics: &Metrics, editor_id: Id, outcome: &mut Outcome) {
-        if !self.view.references.is_open() {
+        let references = &self.view.references;
+        if !references.is_open() {
             return;
         }
         let text = self.state.text();
-        let anchor = text.position(self.view.references.anchor);
-        let top = self.row_top(metrics, self.row_of_position(anchor.line, anchor.column)) + metrics.row_height;
-        let theme = self.theme.clone();
-        let references = &self.view.references;
-        let first_visible = references.selected.saturating_sub(VISIBLE_ITEMS - 1);
-        let rows: Vec<(usize, String, String, String, String)> = references
-            .entries
+        let rows: Vec<Vec<(String, Piece)>> = references
+            .entries()
             .iter()
-            .enumerate()
-            .skip(first_visible)
-            .take(VISIBLE_ITEMS)
-            .map(|(index, location)| {
+            .map(|location| {
                 let start = location.range.start;
                 if let Some(document) = &location.document {
-                    let place = format!("{}:{}", short_document_name(document), start.line + 1);
-                    return (index, format!("{place}  "), String::new(), String::new(), String::new());
+                    return vec![(format!("{}:{}", short_document_name(document), start.line + 1), Piece::Dim)];
                 }
                 let content: Vec<char> = text.line_content(start.line).chars().collect();
                 let start_column = start.column.min(content.len());
@@ -197,49 +141,29 @@ impl CodeEditor<'_> {
                     content.len()
                 };
                 let piece = |range: std::ops::Range<usize>| content[range].iter().collect::<String>();
-                let before = piece(0..start_column).trim_start().to_string();
-                (
-                    index,
-                    format!("{:>5}  ", start.line + 1),
-                    before,
-                    piece(start_column..end_column),
-                    piece(end_column..content.len()),
-                )
+                vec![
+                    (format!("{:>5}  ", start.line + 1), Piece::Dim),
+                    (piece(0..start_column).trim_start().to_string(), Piece::Normal),
+                    (piece(start_column..end_column), Piece::Strong),
+                    (piece(end_column..content.len()), Piece::Normal),
+                ]
             })
             .collect();
-        let (selected, count) = (references.selected, references.entries.len());
-        let mut clicked = None;
-        Area::new(editor_id.with("references"))
-            .order(Order::Foreground)
-            .fade_in(false)
-            .fixed_pos(pos2(metrics.text_rect.left() + 8.0, top))
-            .show(ui.ctx(), |ui| {
-                Frame::popup(ui.style()).fill(theme.widget_background).stroke((1.0, theme.widget_border)).show(
-                    ui,
-                    |ui| {
-                        ui.set_width((metrics.text_rect.width() - 24.0).clamp(200.0, 720.0));
-                        ui.label(RichText::new(format!("{count} references")).size(11.0).color(theme.line_number));
-                        for (index, place, before, reference, after) in rows {
-                            let row = ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 0.0;
-                                ui.label(RichText::new(place).monospace().color(theme.line_number));
-                                ui.label(RichText::new(before).monospace().color(theme.foreground));
-                                ui.label(RichText::new(reference).monospace().strong().color(theme.foreground));
-                                ui.label(RichText::new(after).monospace().color(theme.foreground));
-                            });
-                            let rect = row.response.rect.with_max_x(ui.max_rect().right());
-                            if index == selected {
-                                ui.painter().rect_filled(rect, 2.0, theme.selection_background.gamma_multiply(0.5));
-                            }
-                            if ui.interact(rect, editor_id.with(("reference", index)), egui::Sense::click()).clicked() {
-                                clicked = Some(index);
-                            }
-                        }
-                    },
-                );
-            });
+        let title = format!("{} references", rows.len());
+        let top_left = self.below_cursor_line(metrics, references.anchor());
+        let width = (metrics.text_rect.width() - 24.0).clamp(200.0, 720.0);
+        let selected = references.selected();
+        let place = ListPlace { id: editor_id.with("references"), top_left, width, title: &title };
+        let clicked = show_list(ui, place, self.theme, &rows, selected);
         if let Some(index) = clicked {
             self.jump_to_reference(index, outcome);
         }
+    }
+
+    /// Where a list asked at `offset` shows: under its line, a little right of the text's left.
+    pub(super) fn below_cursor_line(&self, metrics: &Metrics, offset: usize) -> egui::Pos2 {
+        let position = self.state.text().position(offset);
+        let top = self.row_top(metrics, self.row_of_position(position.line, position.column)) + metrics.row_height;
+        pos2(metrics.text_rect.left() + 8.0, top)
     }
 }

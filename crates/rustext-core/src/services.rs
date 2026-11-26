@@ -28,6 +28,18 @@ impl Location {
     }
 }
 
+/// A change the services offer at a place (Ctrl+.): a quick fix, a refactoring.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CodeAction {
+    pub title: String,
+    /// Fixes a diagnostic.
+    pub is_quick_fix: bool,
+    /// The one to pick when unsure (VS Code's auto-fix).
+    pub is_preferred: bool,
+    /// Its edits to this document, applied as one undo step.
+    pub edits: Vec<TextEdit>,
+}
+
 /// What a document symbol is, for its icon or label.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SymbolKind {
@@ -310,6 +322,11 @@ pub trait LanguageServices {
     /// The uses of the symbol at `position`, its declaration included (Shift+F12), in this
     /// document and others.
     fn references(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Vec<Location>> {
+        Reply::Ready(Vec::new())
+    }
+
+    /// The actions offered for `range` (the selection, or the cursor), preferred ones first.
+    fn code_actions(&mut self, _text: &Text, _text_revision: u64, _range: Range) -> Reply<Vec<CodeAction>> {
         Reply::Ready(Vec::new())
     }
 

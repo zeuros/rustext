@@ -72,6 +72,15 @@ fn main() {
                 let location = |uri: Value, line: u64| json!({ "uri": uri, "range": { "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 2 } } });
                 json!([location(uri.clone(), 0), location(json!("file:///elsewhere.rs"), 5), location(uri, 1)])
             }
+            "textDocument/codeAction" => {
+                let uri = message["params"]["textDocument"]["uri"].as_str().unwrap_or_default().to_string();
+                let insert = |text: &str| json!({ uri.clone(): [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": text }] });
+                json!([
+                    { "title": "Run a command", "command": "fake.command" },
+                    { "title": "Extract", "kind": "refactor.extract", "edit": { "changes": insert("// extracted\n") } },
+                    { "title": "Fix it", "kind": "quickfix", "isPreferred": true, "edit": { "changes": insert("// fixed\n") } },
+                ])
+            }
             "textDocument/formatting" => {
                 let tab_size = message["params"]["options"]["tabSize"].as_u64().unwrap_or(0);
                 json!([{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": format!("// tab size {tab_size}\n") }])

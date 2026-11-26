@@ -198,7 +198,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | References, peek view | `registerReferenceProvider`, `peekView` | P2 | partial: Shift+F12 lists the references (this document's with their line's text, others' as `file:line`), Enter/click jumps or asks to open; no embedded peek editor |
 | Document highlights | `registerDocumentHighlightProvider` | P2 | done (replaces the word highlight when the services answer; LSP too) |
 | Rename (F2) | `registerRenameProvider`, `registerNewSymbolNameProvider` | P2 | done (same text) |
-| Code actions, lightbulb, quick fix | `registerCodeActionProvider`, `lightbulb.enabled` | P2 | todo |
+| Code actions, lightbulb, quick fix | `registerCodeActionProvider`, `lightbulb.enabled` | P2 | partial: Ctrl+. lists the services' actions with edits (LSP `codeAction`, preferred and quick fixes first), one undo step; no lightbulb, no server commands |
 | Code lens | `registerCodeLensProvider`, `codeLens` | P2 | partial (application-provided rows, clicks reported, D25; not from LSP yet) |
 | Formatting (document, range, on type, on paste) | `registerDocumentFormattingEditProvider`, `…Range…`, `…OnType…`, `formatOnType`, `formatOnPaste` | P2 | partial: document formatting (Shift+Alt+F) through the services (LSP `formatting`), one undo step, cursors kept on their text; no range / on-type / on-paste |
 | Inlay hints | `registerInlayHintsProvider`, `inlayHints.*` | P2 | done: `LanguageServices::inlay_hints` per block of visible lines, LSP `textDocument/inlayHint`; hints aren't clickable |

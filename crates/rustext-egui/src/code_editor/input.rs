@@ -364,6 +364,7 @@ impl CodeEditor<'_> {
         if modifiers.is_none()
             && (self.completion_key(key, outcome)
                 || self.references_key(key, outcome)
+                || self.code_actions_key(key)
                 || self.ghost_text_key(key, outcome))
         {
             return;
@@ -425,6 +426,7 @@ impl CodeEditor<'_> {
             Action::CommandPalette => self.view.palette.open(super::palette::PaletteMode::Commands),
             Action::GoToSymbol => self.view.palette.open(super::palette::PaletteMode::Symbols),
             Action::FormatDocument => self.view.format_request = Some(self.state.text_revision()),
+            Action::CodeActions => self.open_code_actions(),
             Action::Rename => self.open_rename(),
             Action::FindReferences => self.open_references(),
             Action::GrowSelection => self.grow_selections(outcome),
