@@ -109,13 +109,13 @@ impl CodeEditor<'_> {
         let spans = self.styler.as_deref_mut().map(|styler| styler.style_line(text, line)).unwrap_or_default();
         let content = text.line_content(line);
         let colors = &self.theme.bracket_pair_colors;
-        let brackets = &self.state.language.brackets;
+        let language = &self.state.language;
         let colorizes = self.config.bracket_pair_colorization && !colors.is_empty();
-        let depth = colorizes
-            .then(|| self.view.bracket_depths.depth_at(text, brackets, line, &mut self.bracket_budget_lines))
+        let line_start = colorizes
+            .then(|| self.view.bracket_line_starts.state_at(text, language, line, &mut self.bracket_budget_lines))
             .flatten();
-        let bracket_colors: Vec<(usize, Color32)> = match depth {
-            Some(depth) => rustext_core::structure::bracket_columns(&content, depth, brackets)
+        let bracket_colors: Vec<(usize, Color32)> = match line_start {
+            Some(line_start) => rustext_core::structure::bracket_columns(&content, line_start, language)
                 .into_iter()
                 .map(|(column, depth)| (column, colors[depth % colors.len()]))
                 .collect(),

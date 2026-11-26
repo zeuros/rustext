@@ -74,6 +74,11 @@ pub struct LanguageConfiguration {
     pub brackets: Vec<(char, char)>,
     pub auto_closing_pairs: Vec<AutoClosingPair>,
     pub surrounding_pairs: Vec<(char, char)>,
+    /// Quotes that open strings, which may span lines (brackets inside aren't code).
+    pub string_quotes: Vec<char>,
+    /// The quote of char literals (`'x'`, `'\n'`); elsewhere it is an ordinary char (a Rust
+    /// lifetime).
+    pub char_quote: Option<char>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,10 +102,17 @@ impl AutoClosingPair {
 impl LanguageConfiguration {
     /// Brackets and quotes common to C-like languages, `//` and `/* */` comments.
     pub fn c_like() -> Self {
-        Self { line_comment: Some("//".into()), block_comment: Some(("/*".into(), "*/".into())), ..Self::plain_text() }
+        Self {
+            line_comment: Some("//".into()),
+            block_comment: Some(("/*".into(), "*/".into())),
+            string_quotes: vec!['"', '`'],
+            char_quote: Some('\''),
+            ..Self::plain_text()
+        }
     }
 
-    /// Brackets and quotes, no comments.
+    /// Brackets and quotes (auto-closed), no comments and no strings (an apostrophe in prose
+    /// doesn't open one).
     pub fn plain_text() -> Self {
         let brackets = vec![('(', ')'), ('[', ']'), ('{', '}')];
         let quotes = [('"', '"'), ('\'', '\''), ('`', '`')];
@@ -114,6 +126,8 @@ impl LanguageConfiguration {
                 .collect(),
             surrounding_pairs: brackets.iter().copied().chain(quotes).collect(),
             brackets,
+            string_quotes: Vec::new(),
+            char_quote: None,
         }
     }
 
@@ -123,6 +137,11 @@ impl LanguageConfiguration {
 
     pub fn with_block_comment(self, open: &str, close: &str) -> Self {
         Self { block_comment: Some((open.into(), close.into())), ..self }
+    }
+
+    /// Strings open with any of `quotes`, and `'` no longer starts char literals.
+    pub fn with_string_quotes(self, quotes: &[char]) -> Self {
+        Self { string_quotes: quotes.to_vec(), char_quote: None, ..self }
     }
 
     pub fn without_block_comment(self) -> Self {

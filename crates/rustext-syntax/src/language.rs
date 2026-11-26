@@ -80,12 +80,16 @@ impl Default for LanguageRegistry {
 pub fn configuration_for(language_name: &str) -> LanguageConfiguration {
     let base = LanguageConfiguration::plain_text();
     let c_like = LanguageConfiguration::c_like();
+    let both_quotes = ['"', '\''];
     match language_name {
-        "Rust" | "C" | "C++" | "C#" | "Java" | "JavaScript" | "JavaScript (Babel)" | "TypeScript"
-        | "TypeScriptReact" | "Go" | "Swift" | "Kotlin" | "Scala" | "Dart" | "PHP" | "Objective-C"
-        | "Objective-C++" | "Groovy" | "Zig" | "JSON" | "Protocol Buffer" | "GLSL" | "Solidity" | "D" | "SCSS"
-        | "Less" | "Sass" | "Verilog" | "Odin" => c_like,
-        "CSS" => base.with_block_comment("/*", "*/"),
+        // `'` opens strings here, not char literals.
+        "JavaScript" | "JavaScript (Babel)" | "TypeScript" | "TypeScriptReact" | "PHP" | "Dart" | "Groovy" | "SCSS"
+        | "Less" | "Sass" => c_like.with_string_quotes(&['"', '\'', '`']),
+        "Rust" | "C" | "C++" | "C#" | "Java" | "Go" | "Swift" | "Kotlin" | "Scala" | "Objective-C"
+        | "Objective-C++" | "Zig" | "JSON" | "Protocol Buffer" | "GLSL" | "Solidity" | "D" | "Verilog" | "Odin" => {
+            c_like
+        }
+        "CSS" => base.with_block_comment("/*", "*/").with_string_quotes(&both_quotes),
         "Python"
         | "Ruby"
         | "Perl"
@@ -116,10 +120,13 @@ pub fn configuration_for(language_name: &str) -> LanguageConfiguration {
         | "Apache Conf"
         | "Puppet"
         | "Tcl"
-        | "AWK" => base.with_line_comment("#"),
-        "SQL" | "Lua" | "Haskell" | "Elm" | "Ada" | "VHDL" | "PureScript" => base.with_line_comment("--"),
+        | "AWK" => base.with_line_comment("#").with_string_quotes(&both_quotes),
+        "SQL" | "Lua" => base.with_line_comment("--").with_string_quotes(&both_quotes),
+        "Haskell" | "Elm" | "Ada" | "VHDL" | "PureScript" => {
+            LanguageConfiguration { char_quote: Some('\''), ..base.with_line_comment("--").with_string_quotes(&['"']) }
+        }
         "Lisp" | "Clojure" | "Scheme" | "Racket" | "Assembly (x86_64)" | "x86_64 Assembly" => {
-            base.with_line_comment(";")
+            base.with_line_comment(";").with_string_quotes(&['"'])
         }
         "Erlang" | "LaTeX" | "TeX" | "MATLAB" => base.with_line_comment("%"),
         "VimL" => base.with_line_comment("\""),
@@ -155,5 +162,16 @@ mod tests {
         assert_eq!(registry.detect("a.py", "").configuration.line_comment.as_deref(), Some("#"));
         assert_eq!(registry.detect("a.rs", "").configuration.line_comment.as_deref(), Some("//"));
         assert_eq!(registry.detect("a.html", "").configuration.block_comment, Some(("<!--".into(), "-->".into())));
+    }
+
+    #[test]
+    fn languages_know_their_string_quotes() {
+        let registry = LanguageRegistry::new();
+
+        let rust = registry.detect("a.rs", "").configuration;
+        assert_eq!((rust.string_quotes.contains(&'\''), rust.char_quote), (false, Some('\'')));
+        let typescript = registry.detect("a.ts", "").configuration;
+        assert_eq!((typescript.string_quotes.contains(&'\''), typescript.char_quote), (true, None));
+        assert!(registry.detect("notes.unknown-extension", "").configuration.string_quotes.is_empty());
     }
 }

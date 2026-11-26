@@ -259,12 +259,19 @@ impl CodeEditor<'_> {
     }
 
     /// Borders around the bracket at the primary cursor and its match.
-    pub(super) fn bracket_decorations(&self) -> Vec<Decoration> {
+    pub(super) fn bracket_decorations(&mut self) -> Vec<Decoration> {
         if !self.config.match_brackets {
             return Vec::new();
         }
         let head = self.state.selections().primary().head;
-        let Some((open, close)) = matching_bracket_pair(self.state.text(), head, &self.state.language.brackets) else {
+        let pair = matching_bracket_pair(
+            self.state.text(),
+            head,
+            &self.state.language,
+            &mut self.view.bracket_line_starts,
+            &mut self.bracket_budget_lines,
+        );
+        let Some((open, close)) = pair else {
             return Vec::new();
         };
         let color = to_rgba(self.theme.matching_bracket_border);

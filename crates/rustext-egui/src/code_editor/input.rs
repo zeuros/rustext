@@ -424,10 +424,14 @@ impl CodeEditor<'_> {
             }
             Action::JumpToBracket => {
                 let head = self.state.selections().primary().head;
+                // An explicit jump may compute every line state before the cursor.
+                let mut unlimited = usize::MAX;
                 let pair = rustext_core::structure::matching_bracket_pair(
                     self.state.text(),
                     head,
-                    &self.state.language.brackets,
+                    &self.state.language,
+                    &mut self.view.bracket_line_starts,
+                    &mut unlimited,
                 );
                 if let Some((open, close)) = pair {
                     let target = if head == open || head == open + 1 { close } else { open };
@@ -476,7 +480,7 @@ impl CodeEditor<'_> {
         for edited in &outcome.edited_lines {
             self.view.folds.follow_edit(edited);
             self.view.wraps.follow_edit(edited, self.state.text());
-            self.view.bracket_depths.invalidate_from(edited.first_line);
+            self.view.bracket_line_starts.invalidate_from(edited.first_line);
         }
         if outcome.text_changed() {
             self.view.seen_text_revision = Some(self.state.text_revision());

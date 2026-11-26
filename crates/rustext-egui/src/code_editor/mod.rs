@@ -240,7 +240,7 @@ pub struct EditorView {
     /// Suggested text at the cursor (inline completion), and the request waiting for one.
     ghost_text: Option<GhostText>,
     ghost_request: Option<(u64, usize)>,
-    bracket_depths: rustext_core::structure::BracketDepths,
+    bracket_line_starts: rustext_core::structure::BracketLineStarts,
     /// The text revision the view's caches follow; another one means the text changed outside
     /// the widget (`set_text`, an application command) and the caches start over.
     seen_text_revision: Option<u64>,
@@ -559,7 +559,7 @@ impl<'a> CodeEditor<'a> {
         }
 
         if self.view.seen_text_revision != Some(self.state.text_revision()) {
-            self.view.bracket_depths = Default::default();
+            self.view.bracket_line_starts = Default::default();
             if let Some(styler) = self.styler.as_deref_mut() {
                 styler.invalidate_from(0);
             }

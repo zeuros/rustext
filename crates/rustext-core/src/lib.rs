@@ -11,6 +11,7 @@ pub mod edit;
 pub mod find;
 pub mod history;
 pub mod indentation;
+pub mod lexical;
 pub mod lines;
 pub mod motion;
 pub mod position;

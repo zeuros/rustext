@@ -390,6 +390,17 @@ fn ctrl_shift_backslash_jumps_to_the_matching_bracket() {
 }
 
 #[test]
+fn jump_to_bracket_skips_brackets_in_strings_and_comments() {
+    let mut harness = harness("f(\"(\", // (\n x)");
+    harness.state_mut().state.language = rustext_core::LanguageConfiguration::c_like();
+    click(&mut harness, 0, 1);
+
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Backslash);
+    harness.run();
+    assert_eq!(head(&harness), Position::new(1, 2));
+}
+
+#[test]
 fn f8_walks_the_diagnostics() {
     let mut harness = harness("let a = 1;\nlet b = 2;\nlet c = 3;");
     let theme = EditorTheme::dark();

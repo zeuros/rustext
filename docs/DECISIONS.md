@@ -218,8 +218,9 @@ on explicit actions (fold all, replace all, a new diff) or behind a budget (the 
   (binary search).
 - `crates/rustext-egui/tests/performance.rs` (ignored, run in release) measures a 100k-line
   file: idle 0.3 ms, typing 0.3 ms, typing with 20 000 folds 0.5 ms, typing with the find
-  widget open on 20 000 matches 4.6 ms, fold all 38 ms. Run it after touching anything
-  per-frame; a regression there is a bug.
+  widget open on 20 000 matches 4.6 ms, fold all 38 ms, Ctrl+End 11 ms (the bracket line
+  states of 10 000 lines, the per-frame budget). Run it after touching anything per-frame; a
+  regression there is a bug.
 
 ## D20. Word wrap: continuation rows, column-based breaking
 
@@ -236,6 +237,23 @@ on explicit actions (fold all, replace all, a new diff) or behind a budget (the 
 - Up/Down move by visual row when wrapping, as in VS Code: the widget handles them (it knows
   the rows), keeping the visual column within the row in `Selection::preferred_visual_column`.
   The core's line-based vertical motion stays for unwrapped views.
+
+## D21. Brackets in strings and comments: a lexer from the language configuration
+
+Bracket colors and matching ignore brackets inside strings and comments, as Monaco does, but
+without asking the highlighter (which is budgeted, lazy and behind `LineStyler`): a small
+lexer (`rustext_core::lexical`) reads the comment markers and quotes of the
+`LanguageConfiguration`, line by line, carrying a `LexicalContext` (code, block comment,
+string) from one line to the next.
+
+- `string_quotes` open strings that may span lines (Rust, Python's `"""`, JS templates);
+  `char_quote` only opens a char literal when one follows (`'x'`, `'\n'`), so a Rust
+  lifetime `'a` stays code. Plain text has no strings (an apostrophe in prose opens nothing).
+- `BracketLineStarts` caches the depth and context at each line start, follows edits like
+  the highlighter (D19) and is shared by colorization and matching, so matching backwards
+  reads the states of earlier lines instead of guessing.
+- Accepted: raw strings (`r#"..."#`), nested comments and heredocs are not understood; a
+  language-aware parser (tree-sitter, D13) can replace the lexer later.
 
 ## Inspiration (read their code, don't copy it)
 

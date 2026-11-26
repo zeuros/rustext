@@ -123,8 +123,7 @@ change their seeds locally to hunt for rarer bugs). Every feature is a commit on
 2. (done since: snippets — `rustext_core::snippet`, `Command::InsertSnippet`; their tab stops aren't highlighted yet.)
 3. (done since: `DecorationKind::InjectedText`, ghost text.) Next: LSP `textDocument/inlayHint` → injected texts; code lens as a row above lines (a new `RowContent`).
 4. (done since: Up/Down by visual row when wrapping.)
-5. Brackets inside strings and comments should not color nor match: give `LineStyler` a way
-   to say which spans are strings/comments.
+5. (done since: brackets in strings and comments neither color nor match, D21.)
 6. Accessibility beyond the name and cursor line (done): expose the visible text and the
    selection to AccessKit, an accessible diff viewer (`accessibleDiffViewerNext`).
 
