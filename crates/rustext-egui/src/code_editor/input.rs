@@ -416,6 +416,8 @@ impl CodeEditor<'_> {
             Action::CommandPalette => self.view.palette.open(),
             Action::Rename => self.open_rename(),
             Action::FindReferences => self.open_references(),
+            Action::GrowSelection => self.grow_selections(outcome),
+            Action::ShrinkSelection => self.shrink_selections(outcome),
             Action::GoToDefinition => {
                 let text = self.state.text().clone();
                 if let Some(definition) = self.definition_of(text.position(self.state.selections().primary().head)) {

@@ -49,6 +49,10 @@ pub enum Action {
     Rename,
     /// Lists the references of the symbol at the cursor (Shift+F12).
     FindReferences,
+    /// Grows each selection to the syntax node holding it (Shift+Alt+Right).
+    GrowSelection,
+    /// Goes back to the selections the last growths started from (Shift+Alt+Left).
+    ShrinkSelection,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -241,6 +245,8 @@ impl Keymap {
             (chord(none, Key::F1), Action::CommandPalette),
             (chord(none, Key::F2), Action::Rename),
             (chord(shift, Key::F12), Action::FindReferences),
+            (chord(shift_alt, Key::ArrowRight), Action::GrowSelection),
+            (chord(shift_alt, Key::ArrowLeft), Action::ShrinkSelection),
             (chord(command_shift, Key::P), Action::CommandPalette),
             (chord(shift, Key::F8), Action::PreviousProblem),
             (chord(shift, Key::F7), Action::PreviousChange),

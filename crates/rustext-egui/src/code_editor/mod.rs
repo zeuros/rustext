@@ -16,6 +16,7 @@ mod layout;
 mod paint;
 mod palette;
 mod references;
+mod smart_select;
 mod structure;
 mod wrapping;
 
@@ -240,6 +241,8 @@ pub struct EditorView {
     pub document_highlights: assist::DocumentHighlightsState,
     /// The references list (Shift+F12).
     pub references: references::ReferencesState,
+    /// Smart select's history (Shift+Alt+Right / Left).
+    pub smart_select: smart_select::SmartSelectState,
     wraps: wrapping::WrapState,
     /// Lines pinned at the top by sticky scroll in the last frame.
     sticky_lines: Vec<usize>,

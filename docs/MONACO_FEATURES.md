@@ -64,7 +64,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Sticky column on vertical moves | implicit | P0 | done |
 | Cursor undo | `cursorUndo` / `cursorRedo` (Ctrl+U) | P2 | todo |
 | Selection anchor | `setSelectionAnchor`, `selectFromAnchorToCursor` | P3 | todo |
-| Smart select expand / shrink | `editor.action.smartSelect.expand/shrink` (Shift+Alt+→/←) | P2 | todo |
+| Smart select expand / shrink | `editor.action.smartSelect.expand/shrink` (Shift+Alt+→/←) | P2 | done (tree-sitter nodes; word, line, all without a grammar) |
 | Cursor style, blinking, width, smooth caret | `cursorStyle`, `cursorBlinking`, `cursorWidth`, `cursorSmoothCaretAnimation` | P1 | done |
 | Cursor surrounding lines | `cursorSurroundingLines` | P2 | done (`ViewConfig::cursor_surrounding_lines`) |
 
@@ -206,7 +206,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Links (Ctrl+click URLs) | `registerLinkProvider`, `links`, `registerLinkOpener` | P1 | todo |
 | Color decorators and picker | `registerColorProvider`, `colorDecorators` | P3 | todo |
 | Document symbols, outline, Go to symbol (Ctrl+Shift+O) | `registerDocumentSymbolProvider`, quick access `@` | P2 | todo |
-| Selection ranges (smart select) | `registerSelectionRangeProvider` | P2 | todo |
+| Selection ranges (smart select) | `registerSelectionRangeProvider` | P2 | partial (from the styler's syntax tree, not a service) |
 | LSP bridge | not in Monaco (monaco-languageclient) | P2 | done |
 
 ## 10. Commands, keybindings, menus

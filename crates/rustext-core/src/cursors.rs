@@ -60,6 +60,26 @@ pub fn select_words(text: &Text, config: &EditingConfig, selections: &Selections
     })
 }
 
+/// Smart select without a syntax tree: the smallest of the word at an empty cursor, the line's
+/// content and the whole text that strictly holds `start..end`.
+pub fn grown_range_without_syntax(
+    text: &Text,
+    config: &EditingConfig,
+    start: usize,
+    end: usize,
+) -> Option<(usize, usize)> {
+    let line = text.line_of_offset(start);
+    let word = if start == end { word_range_at(text, config, start) } else { None };
+    let line_content = (text.line_start(line), text.line_content_end(line));
+    [word, Some(line_content), Some((0, text.len_chars()))]
+        .into_iter()
+        .flatten()
+        .filter(|&(candidate_start, candidate_end)| {
+            candidate_start <= start && end <= candidate_end && (candidate_start, candidate_end) != (start, end)
+        })
+        .min_by_key(|&(candidate_start, candidate_end)| candidate_end - candidate_start)
+}
+
 /// Offsets of the word touching `offset`.
 pub fn word_range_at(text: &Text, config: &EditingConfig, offset: usize) -> Option<(usize, usize)> {
     let position = text.position(offset);
@@ -224,6 +244,19 @@ pub fn column_selection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn without_syntax_selections_grow_to_the_word_the_line_then_everything() {
+        let text = Text::new("one\n  two three\n");
+        let config = EditingConfig::default();
+
+        let word = grown_range_without_syntax(&text, &config, 7, 7).unwrap();
+        let line = grown_range_without_syntax(&text, &config, word.0, word.1).unwrap();
+        let everything = grown_range_without_syntax(&text, &config, line.0, line.1).unwrap();
+
+        assert_eq!((word, line, everything), ((6, 9), (4, 15), (0, 16)));
+        assert_eq!(grown_range_without_syntax(&text, &config, 0, 16), None);
+    }
 
     #[test]
     fn ctrl_d_selects_the_word_then_adds_next_occurrences() {
