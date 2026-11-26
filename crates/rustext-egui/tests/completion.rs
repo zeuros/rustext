@@ -3,7 +3,9 @@
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use rustext_core::services::{CompletionItem, CompletionKind, LanguageServices, Location, Reply, WordCompletions};
+use rustext_core::services::{
+    CompletionItem, CompletionKind, LanguageServices, Location, Reply, TextEdit, WordCompletions,
+};
 use rustext_core::{EditorState, Position, Text};
 use rustext_egui::{CodeEditor, EditorTheme, EditorView, Keymap, ViewConfig};
 
@@ -148,6 +150,18 @@ impl LanguageServices for TestServices {
             .word_at(&line, position.column)
             .is_some_and(|(start, end)| line[start..end].iter().collect::<String>() == "helper");
         Reply::Ready(on_helper.then(|| "fn helper() -> u8".to_string()))
+    }
+
+    /// Puts a header line on top, saying the tab size.
+    fn format_document(
+        &mut self,
+        _text: &Text,
+        _revision: u64,
+        indentation: rustext_core::indentation::Indentation,
+    ) -> Reply<Vec<TextEdit>> {
+        let start = Position::new(0, 0);
+        let header = format!("// tab size {}\n", indentation.tab_size);
+        Reply::Ready(vec![TextEdit { range: rustext_core::Range::new(start, start), new_text: header }])
     }
 
     /// `helper` is defined at 0:3; `imported` in another document.
@@ -550,6 +564,24 @@ fn a_definition_in_another_document_asks_the_application_to_open_it() {
     harness.run();
 
     assert_eq!(harness.state().open_requests, vec![elsewhere()]);
+}
+
+#[test]
+fn shift_alt_f_formats_keeping_the_cursor_on_its_text_and_undoes_in_one_step() {
+    let mut harness = harness("let x = 1;\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(0, 4);
+    press(&mut harness, pos, Modifiers::NONE);
+    let head_before = harness.state().state.selections().primary().head;
+
+    harness.key_press_modifiers(Modifiers::SHIFT | Modifiers::ALT, Key::F);
+    harness.run();
+    assert_eq!(harness.state().state.text().to_string(), "// tab size 4\nlet x = 1;\n");
+    let head = harness.state().state.selections().primary().head;
+    assert_eq!(head, head_before + "// tab size 4\n".chars().count());
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(harness.state().state.text().to_string(), "let x = 1;\n");
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 use egui::{Align2, Area, Frame, Id, Key, Order, RichText, Ui, pos2};
 use rustext_core::decoration::Decoration;
-use rustext_core::services::{Reply, SignatureHelp, transaction_of_edits};
+use rustext_core::services::{Reply, SignatureHelp, transaction_keeping_selections, transaction_of_edits};
 use rustext_core::{ChangeSet, Command, Outcome};
 
 use super::layout::to_rgba;
@@ -104,6 +104,27 @@ impl CodeEditor<'_> {
     }
 
     /// Applies the service's edits once they arrive.
+    /// Applies the formatting edits once the services answer (one undo step, the cursors kept
+    /// on their text); an edit meanwhile drops the request. Returns whether an answer is
+    /// awaited.
+    pub(super) fn refresh_formatting(&mut self) -> bool {
+        let Some(revision) = self.view.format_request else { return false };
+        let text = self.state.text().clone();
+        let indentation = self.state.config.indentation;
+        let services = self.services.as_deref_mut().filter(|_| revision == self.state.text_revision());
+        let reply = services.map(|services| services.format_document(&text, revision, indentation));
+        if matches!(reply, Some(Reply::Pending)) {
+            return true;
+        }
+        self.view.format_request = None;
+        if let Some(Reply::Ready(edits)) = reply
+            && let Some(transaction) = transaction_keeping_selections(&text, &edits, self.state.selections())
+        {
+            self.execute_tracked(Command::Apply(transaction));
+        }
+        false
+    }
+
     fn refresh_rename(&mut self, outcome: &mut Outcome) {
         let Some((revision, offset, new_name)) = self.view.rename.request.clone() else { return };
         if revision != self.state.text_revision() {

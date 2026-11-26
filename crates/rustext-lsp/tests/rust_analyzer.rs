@@ -85,5 +85,16 @@ fn rust_analyzer_answers_parse() {
     let names: Vec<&str> = symbols.iter().map(|symbol| symbol.name.as_str()).collect();
     assert!(names.starts_with(&["Point", "x", "length"]), "{names:?}");
 
+    // rust-analyzer formats with rustfmt.
+    let messy =
+        Text::new("struct Point {\n    x: i32,\n}\n\nfn  length( point: &Point ) -> i32 { point.x }\n\nfn main() {}\n");
+    let indentation = rustext_core::indentation::Indentation { tab_size: 4, insert_spaces: true };
+    let edits = until_answered(
+        |attempt| services.format_document(&messy, 1_000 + attempt, indentation),
+        |edits| !edits.is_empty(),
+    );
+    let formatted = rustext_core::services::transaction_of_edits(&messy, &edits).unwrap().changes.apply(&messy);
+    assert!(formatted.to_string().contains("fn length(point: &Point) -> i32 {\n    point.x\n}"), "{formatted}");
+
     let _ = std::fs::remove_dir_all(main.parent().unwrap().parent().unwrap());
 }

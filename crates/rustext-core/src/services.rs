@@ -185,16 +185,40 @@ pub struct InlayHint {
 /// The edits of `edits` as one transaction (they must not overlap), the cursor after the
 /// first one.
 pub fn transaction_of_edits(text: &Text, edits: &[TextEdit]) -> Option<crate::edit::Transaction> {
-    use crate::change::{Bias, Change, ChangeSet};
+    use crate::change::Bias;
     let first = edits.first()?;
-    let changes = ChangeSet::new(edits.iter().map(|edit| {
-        let (start, end) = text.range_offsets(edit.range);
-        Change::new(start, end, edit.new_text.clone())
-    }));
+    let changes = changes_of_edits(text, edits);
     let cursor = changes.map_offset(text.offset(first.range.start), Bias::Before) + first.new_text.chars().count();
     Some(crate::edit::Transaction {
         changes,
         selections: crate::selection::Selections::cursor(cursor),
+        kind: crate::history::EditKind::Other,
+        auto_closed_offsets: Vec::new(),
+    })
+}
+
+/// Edits as one change set on `text`.
+fn changes_of_edits(text: &Text, edits: &[TextEdit]) -> crate::change::ChangeSet {
+    crate::change::ChangeSet::new(edits.iter().map(|edit| {
+        let (start, end) = text.range_offsets(edit.range);
+        crate::change::Change::new(start, end, edit.new_text.clone())
+    }))
+}
+
+/// Edits that rewrite parts of the text (formatting) as one transaction keeping `selections`
+/// where they were (mapped through the edits); `None` without edits.
+pub fn transaction_keeping_selections(
+    text: &Text,
+    edits: &[TextEdit],
+    selections: &crate::selection::Selections,
+) -> Option<crate::edit::Transaction> {
+    if edits.is_empty() {
+        return None;
+    }
+    let changes = changes_of_edits(text, edits);
+    Some(crate::edit::Transaction {
+        selections: selections.map(&changes),
+        changes,
         kind: crate::history::EditKind::Other,
         auto_closed_offsets: Vec::new(),
     })
@@ -286,6 +310,16 @@ pub trait LanguageServices {
     /// The uses of the symbol at `position`, its declaration included (Shift+F12), in this
     /// document and others.
     fn references(&mut self, _text: &Text, _text_revision: u64, _position: Position) -> Reply<Vec<Location>> {
+        Reply::Ready(Vec::new())
+    }
+
+    /// Edits formatting the whole document with this indentation (Shift+Alt+F).
+    fn format_document(
+        &mut self,
+        _text: &Text,
+        _text_revision: u64,
+        _indentation: crate::indentation::Indentation,
+    ) -> Reply<Vec<TextEdit>> {
         Reply::Ready(Vec::new())
     }
 
@@ -399,6 +433,21 @@ mod tests {
     #[test]
     fn an_empty_fuzzy_query_matches_everything() {
         assert_eq!(FuzzyQuery::new("").score("anything"), Some(0));
+    }
+
+    #[test]
+    fn formatting_edits_keep_the_cursor_on_its_text() {
+        let text = Text::new("fn  main(){}");
+        let edits = [
+            TextEdit { range: Range::new(Position::new(0, 2), Position::new(0, 4)), new_text: " ".into() },
+            TextEdit { range: Range::new(Position::new(0, 10), Position::new(0, 10)), new_text: " ".into() },
+        ];
+        let cursor = crate::selection::Selections::cursor(6); // In `main`.
+
+        let transaction = transaction_keeping_selections(&text, &edits, &cursor).unwrap();
+
+        assert_eq!(transaction.changes.apply(&text).to_string(), "fn main() {}");
+        assert_eq!(transaction.selections, crate::selection::Selections::cursor(5));
     }
 
     #[test]

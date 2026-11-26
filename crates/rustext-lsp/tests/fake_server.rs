@@ -149,3 +149,15 @@ fn document_symbols_are_flattened_with_their_containers() {
         .collect();
     assert_eq!(found, vec![("Shape", None, 0), ("area", Some("Shape"), 1)]);
 }
+
+#[test]
+fn formatting_sends_the_indentation_and_reads_the_edits() {
+    let mut services = start();
+    let text = Text::new("ab\n");
+    let indentation = rustext_core::indentation::Indentation { tab_size: 2, insert_spaces: true };
+
+    let edits = until_ready(|| services.format_document(&text, 1, indentation));
+
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].new_text, "// tab size 2\n");
+}

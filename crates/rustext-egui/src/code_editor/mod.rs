@@ -266,6 +266,8 @@ pub struct EditorView {
     pub references: navigation::ReferencesState,
     /// A definition asked for (F12, Ctrl+click) and not answered yet: (text revision, position).
     definition_request: Option<(u64, Position)>,
+    /// Formatting asked for (Shift+Alt+F) and not answered yet: the text revision.
+    format_request: Option<u64>,
     /// Smart select's history (Shift+Alt+Right / Left).
     pub smart_select: smart_select::SmartSelectState,
     pub(crate) wraps: wrapping::WrapState,
@@ -663,7 +665,8 @@ impl<'a> CodeEditor<'a> {
         let is_awaiting_services = self.refresh_inlay_hints(&metrics)
             | self.refresh_document_highlights()
             | self.refresh_references()
-            | self.refresh_definition();
+            | self.refresh_definition()
+            | self.refresh_formatting();
         if is_awaiting_services {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }

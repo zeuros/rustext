@@ -424,6 +424,7 @@ impl CodeEditor<'_> {
             Action::TriggerSuggest => self.view.completion.request(),
             Action::CommandPalette => self.view.palette.open(super::palette::PaletteMode::Commands),
             Action::GoToSymbol => self.view.palette.open(super::palette::PaletteMode::Symbols),
+            Action::FormatDocument => self.view.format_request = Some(self.state.text_revision()),
             Action::Rename => self.open_rename(),
             Action::FindReferences => self.open_references(),
             Action::GrowSelection => self.grow_selections(outcome),

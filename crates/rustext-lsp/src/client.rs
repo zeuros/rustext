@@ -699,6 +699,31 @@ impl LanguageServices for LspServices {
         })
     }
 
+    fn format_document(
+        &mut self,
+        text: &Text,
+        text_revision: u64,
+        indentation: rustext_core::indentation::Indentation,
+    ) -> Reply<Vec<TextEdit>> {
+        let params = lsp::DocumentFormattingParams {
+            text_document: self.text_document(),
+            options: lsp::FormattingOptions {
+                tab_size: indentation.tab_size as u32,
+                insert_spaces: indentation.insert_spaces,
+                ..Default::default()
+            },
+            work_done_progress_params: Default::default(),
+        };
+        let key = RequestKey::new::<request::Formatting>(text_revision, Position::new(0, 0));
+        map_reply(self.ask::<request::Formatting>(text, key, params), |edits| {
+            edits
+                .unwrap_or_default()
+                .into_iter()
+                .map(|edit| TextEdit { range: range_of(text, edit.range), new_text: edit.new_text })
+                .collect()
+        })
+    }
+
     fn document_symbols(&mut self, text: &Text, text_revision: u64) -> Reply<Vec<DocumentSymbol>> {
         let params = lsp::DocumentSymbolParams {
             text_document: self.text_document(),
