@@ -130,6 +130,8 @@ pub struct ViewConfig {
     pub folding_strategy: FoldingStrategy,
     pub indent_guides: bool,
     pub match_brackets: bool,
+    /// Underlines URLs; Ctrl+click opens them (Monaco's `links`).
+    pub links: bool,
     /// Highlights the other occurrences of the word at the cursor.
     pub occurrences_highlight: bool,
     /// Highlights the other occurrences of the selected text.
@@ -184,6 +186,7 @@ impl Default for ViewConfig {
             show_carriage_returns: false,
             bracket_pair_colorization: true,
             bracket_pair_guides: false,
+            links: true,
             word_wrap: WordWrap::default(),
             inlay_hints: true,
             sticky_scroll: true,
@@ -444,6 +447,8 @@ pub struct CodeEditor<'a> {
     hovered_code_lens: Option<usize>,
     /// Another document to open, for `EditorResponse::open_request`.
     open_request: Option<Location>,
+    /// The char under the pointer while Ctrl is held (its link is drawn active).
+    ctrl_hovered_char: Option<usize>,
     display_layout: Option<&'a DisplayLayout>,
     foreign: Option<Foreign<'a>>,
     glyph_margin: bool,
@@ -524,6 +529,7 @@ impl<'a> CodeEditor<'a> {
             code_lenses: &[],
             hovered_code_lens: None,
             open_request: None,
+            ctrl_hovered_char: None,
             display_layout: None,
             foreign: None,
             glyph_margin: false,
@@ -727,6 +733,11 @@ impl<'a> CodeEditor<'a> {
                 }
             })
         };
+        let is_ctrl_down = ui.input(|input| input.modifiers.command);
+        self.ctrl_hovered_char = hovered_char.filter(|_| is_ctrl_down);
+        if self.ctrl_hovered_char.and_then(|offset| self.link_at(offset)).is_some() {
+            ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+        }
         self.paint(ui, &metrics, response.has_focus(), id);
         if self.bracket_budget_lines == 0 {
             ui.ctx().request_repaint();
@@ -893,7 +904,13 @@ impl<'a> CodeEditor<'a> {
                 .collect(),
             _ => Vec::new(),
         };
-        hovered.into_iter().filter_map(|decoration| decoration.hover_message.clone()).collect()
+        let link_message = match (target, hovered_char) {
+            (MouseTarget::Text { .. }, Some(offset)) if self.link_at(offset).is_some() => {
+                Some("Follow link (Ctrl+click)".to_string())
+            }
+            _ => None,
+        };
+        hovered.into_iter().filter_map(|decoration| decoration.hover_message.clone()).chain(link_message).collect()
     }
 
     /// Moves the cursor to the next (or previous) squiggle, wrapping around (F8).

@@ -203,7 +203,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Formatting (document, range, on type, on paste) | `registerDocumentFormattingEditProvider`, `…Range…`, `…OnType…`, `formatOnType`, `formatOnPaste` | P2 | todo |
 | Inlay hints | `registerInlayHintsProvider`, `inlayHints.*` | P2 | done: `LanguageServices::inlay_hints` per block of visible lines, LSP `textDocument/inlayHint`; hints aren't clickable |
 | Inline completions (ghost text, AI) | `registerInlineCompletionsProvider`, `inlineSuggest.*` | P2 | done (`inline_completion`) |
-| Links (Ctrl+click URLs) | `registerLinkProvider`, `links`, `registerLinkOpener` | P1 | todo |
+| Links (Ctrl+click URLs) | `registerLinkProvider`, `links`, `registerLinkOpener` | P1 | done for URLs (`ViewConfig::links`, opened through egui's `open_url`); no link provider |
 | Color decorators and picker | `registerColorProvider`, `colorDecorators` | P3 | todo |
 | Document symbols, outline, Go to symbol (Ctrl+Shift+O) | `registerDocumentSymbolProvider`, quick access `@` | P2 | todo |
 | Selection ranges (smart select) | `registerSelectionRangeProvider` | P2 | partial (from the styler's syntax tree, not a service) |

@@ -49,6 +49,8 @@ impl CodeEditor<'_> {
         structure_decorations.extend(self.bracket_decorations());
         let first_visible_line = self.nearest_line(visible_rows.start);
         let last_visible_line = self.nearest_line(visible_rows.end.saturating_sub(1)).max(first_visible_line);
+        structure_decorations
+            .extend(self.link_decorations(first_visible_line..=last_visible_line, self.ctrl_hovered_char));
         let (indent_levels, active_guide) = if self.config.indent_guides {
             self.indent_guides(first_visible_line..last_visible_line + 1, primary_head.line)
         } else {

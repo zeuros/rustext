@@ -375,6 +375,44 @@ impl CodeEditor<'_> {
 
     /// Backgrounds on the other occurrences of the selected text, or of the word at the cursor,
     /// within the char offsets `visible_start..visible_end`.
+    /// The URL at `offset`, when links are on.
+    pub(super) fn link_at(&self, offset: usize) -> Option<String> {
+        if !self.config.links {
+            return None;
+        }
+        let text = self.state.text();
+        let position = text.position(offset);
+        let links = rustext_core::links::links_in_line(&text.line_content(position.line));
+        links
+            .into_iter()
+            .find(|link| (link.start_column..link.end_column).contains(&position.column))
+            .map(|link| link.url)
+    }
+
+    /// Underlines under the links of `lines`: subtle, in the link color under the pointer when
+    /// Ctrl is held (a click opens it then).
+    pub(super) fn link_decorations(
+        &self,
+        lines: std::ops::RangeInclusive<usize>,
+        ctrl_hovered: Option<usize>,
+    ) -> Vec<Decoration> {
+        if !self.config.links {
+            return Vec::new();
+        }
+        let text = self.state.text();
+        let mut decorations = Vec::new();
+        for line in lines.filter(|&line| line < text.line_count()) {
+            let line_start = text.line_start(line);
+            for link in rustext_core::links::links_in_line(&text.line_content(line)) {
+                let (start, end) = (line_start + link.start_column, line_start + link.end_column);
+                let is_active = ctrl_hovered.is_some_and(|offset| (start..end).contains(&offset));
+                let color = if is_active { self.theme.link } else { self.theme.line_number };
+                decorations.push(Decoration::new(start, end, DecorationKind::Underline(to_rgba(color))));
+            }
+        }
+        decorations
+    }
+
     pub(super) fn occurrence_decorations(&self, visible_start: usize, visible_end: usize) -> Vec<Decoration> {
         const MAX_HIGHLIGHTED: usize = 1_000;
         let text = self.state.text();

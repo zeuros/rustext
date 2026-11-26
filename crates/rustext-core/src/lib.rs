@@ -13,6 +13,7 @@ pub mod history;
 pub mod indentation;
 pub mod lexical;
 pub mod lines;
+pub mod links;
 pub mod motion;
 pub mod position;
 pub mod selection;

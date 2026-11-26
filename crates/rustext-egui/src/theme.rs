@@ -27,6 +27,8 @@ pub struct EditorTheme {
     pub occurrence_background: Color32,
     /// Behind the placeholders of the snippet being filled in.
     pub snippet_tab_stop_background: Color32,
+    /// Links (URLs) under the pointer with Ctrl held.
+    pub link: Color32,
     pub scrollbar_thumb: Color32,
     pub scrollbar_thumb_hovered: Color32,
     pub overview_ruler_border: Color32,
@@ -82,6 +84,7 @@ impl EditorTheme {
             current_find_match_background: hex_alpha(0x9e6a03, 0xd0),
             occurrence_background: hex_alpha(0x575757, 0xb8),
             snippet_tab_stop_background: hex_alpha(0x7c7c7c, 0x4d),
+            link: hex(0x4e94ce),
             scrollbar_thumb: hex_alpha(0x797979, 0x66),
             scrollbar_thumb_hovered: hex_alpha(0x646464, 0xb3),
             overview_ruler_border: hex_alpha(0x7f7f7f, 0x4d),
@@ -128,6 +131,7 @@ impl EditorTheme {
             current_find_match_background: hex_alpha(0xa8ac94, 0xff),
             occurrence_background: hex_alpha(0x575757, 0x40),
             snippet_tab_stop_background: hex_alpha(0x0a3264, 0x33),
+            link: hex(0x0000ff),
             scrollbar_thumb: hex_alpha(0x646464, 0x66),
             scrollbar_thumb_hovered: hex_alpha(0x646464, 0xb3),
             overview_ruler_border: hex_alpha(0x7f7f7f, 0x4d),

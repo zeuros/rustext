@@ -188,6 +188,10 @@ impl CodeEditor<'_> {
                 let (position, _) = self.position_at(ui, metrics, pos);
                 let offset = text.offset(position);
                 let is_definition_click = modifiers.command && !modifiers.shift && !modifiers.alt;
+                if let Some(url) = self.link_at(offset).filter(|_| is_definition_click) {
+                    ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                    return;
+                }
                 if is_definition_click && self.services.is_some() {
                     self.request_definition(position);
                 }
