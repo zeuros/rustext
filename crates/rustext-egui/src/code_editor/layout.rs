@@ -46,8 +46,6 @@ impl LineLayout {
 
 impl CodeEditor<'_> {
     pub(super) fn layout_line(&mut self, ui: &Ui, metrics: &Metrics, line: usize) -> LineLayout {
-        /// Lines of bracket depths computed at most per line laid out (keeps far jumps cheap).
-        const MAX_BRACKET_DEPTH_LINES: usize = 20_000;
         let text = self.state.text();
         let spans = self.styler.as_deref_mut().map(|styler| styler.style_line(text, line)).unwrap_or_default();
         let content = text.line_content(line);
@@ -55,7 +53,7 @@ impl CodeEditor<'_> {
         let brackets = &self.state.language.brackets;
         let colorizes = self.config.bracket_pair_colorization && !colors.is_empty();
         let depth = colorizes
-            .then(|| self.view.bracket_depths.depth_at(text, brackets, line, MAX_BRACKET_DEPTH_LINES))
+            .then(|| self.view.bracket_depths.depth_at(text, brackets, line, &mut self.bracket_budget_lines))
             .flatten();
         let bracket_colors: Vec<(usize, Color32)> = match depth {
             Some(depth) => rustext_core::structure::bracket_columns(&content, depth, brackets)

@@ -333,6 +333,9 @@ pub struct CodeEditor<'a> {
     /// What commands run outside the keyboard and pointer handlers did this frame (the find
     /// widget's replacements), to go through `after_outcome` like the others.
     tracked_outcome: Outcome,
+    /// Lines of bracket depths this frame may still compute (D19); when it runs out, the next
+    /// frame continues.
+    bracket_budget_lines: usize,
 }
 
 /// Sizes of one frame's layout.
@@ -371,6 +374,8 @@ impl Metrics {
 }
 
 impl<'a> CodeEditor<'a> {
+    const BRACKET_BUDGET_LINES_PER_FRAME: usize = 10_000;
+
     pub fn new(
         state: &'a mut EditorState,
         view: &'a mut EditorView,
@@ -392,6 +397,7 @@ impl<'a> CodeEditor<'a> {
             markers: false,
             id_salt: None,
             tracked_outcome: Outcome::default(),
+            bracket_budget_lines: Self::BRACKET_BUDGET_LINES_PER_FRAME,
         }
     }
 
@@ -507,6 +513,9 @@ impl<'a> CodeEditor<'a> {
             })
         };
         self.paint(ui, &metrics, response.has_focus());
+        if self.bracket_budget_lines == 0 {
+            ui.ctx().request_repaint();
+        }
         self.view.seen_text_revision = Some(self.state.text_revision());
         self.view.geometry = Some(EditorGeometry {
             text_rect: metrics.text_rect,
