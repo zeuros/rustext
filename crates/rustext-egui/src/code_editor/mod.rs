@@ -132,6 +132,8 @@ pub struct ViewConfig {
     pub minimap: bool,
     /// Shown while the text is empty ("Commit message").
     pub placeholder: Option<String>,
+    /// What screen readers call the editor (Monaco's `ariaLabel`).
+    pub aria_label: String,
 }
 
 impl Default for ViewConfig {
@@ -165,6 +167,7 @@ impl Default for ViewConfig {
             sticky_scroll_max_lines: 5,
             minimap: false,
             placeholder: None,
+            aria_label: "Editor".to_string(),
         }
     }
 }
@@ -406,6 +409,8 @@ pub struct CodeEditor<'a> {
     services: Option<&'a mut dyn rustext_core::services::LanguageServices>,
     /// What was typed this frame, for completion triggers.
     typed_this_frame: String,
+    /// Overrides `ViewConfig::aria_label` (each side of a diff has its own name).
+    aria_label: Option<String>,
 }
 
 const MINIMAP_WIDTH: f32 = 90.0;
@@ -476,6 +481,7 @@ impl<'a> CodeEditor<'a> {
             bracket_budget_lines: Self::BRACKET_BUDGET_LINES_PER_FRAME,
             services: None,
             typed_this_frame: String::new(),
+            aria_label: None,
         }
     }
 
@@ -516,6 +522,12 @@ impl<'a> CodeEditor<'a> {
     /// Reserves a column right of the line numbers for the rows' markers (`+`, `-`).
     pub fn markers(mut self, markers: bool) -> Self {
         self.markers = markers;
+        self
+    }
+
+    /// What screen readers call this editor (overrides `ViewConfig::aria_label`).
+    pub fn aria_label(mut self, aria_label: impl Into<String>) -> Self {
+        self.aria_label = Some(aria_label.into());
         self
     }
 
@@ -607,6 +619,16 @@ impl<'a> CodeEditor<'a> {
         if matches!(hovered, Some(MouseTarget::Collapsed { .. })) {
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
+        // Screen readers see a text input named after `aria_label`, valued with the cursor's line.
+        let cursor_line =
+            self.state.text().line_content(self.state.text().line_of_offset(self.state.selections().primary().head));
+        let is_editable = !self.state.config.read_only;
+        let aria_label = self.aria_label.clone().unwrap_or_else(|| self.config.aria_label.clone());
+        response.widget_info(|| {
+            let mut info = egui::WidgetInfo::text_edit(is_editable, "", &cursor_line, "");
+            info.label = Some(aria_label.clone());
+            info
+        });
         let hovered_char = pointer_pos
             .filter(|pos| metrics.text_rect.contains(*pos))
             .and_then(|pos| self.char_under(ui, &metrics, pos));

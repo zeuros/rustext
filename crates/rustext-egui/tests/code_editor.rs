@@ -596,3 +596,12 @@ fn find_over_a_multi_line_selection_searches_only_in_it() {
     harness.run();
     assert_eq!(content(&harness), "a y\nb y\nc x");
 }
+
+#[test]
+fn screen_readers_see_a_named_text_input_with_the_cursor_line() {
+    let mut harness = harness("first line\nsecond line");
+    click(&mut harness, 1, 3);
+
+    let node = harness.get_by_label("Editor");
+    assert_eq!(node.value().as_deref(), Some("second line"));
+}

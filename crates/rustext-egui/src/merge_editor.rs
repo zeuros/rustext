@@ -368,6 +368,7 @@ impl<'a> MergeEditor<'a> {
                 let mut editor =
                     CodeEditor::new(&mut document.ours, &mut document.ours_view, view_config, theme, keymap)
                         .id_salt("rustext-merge-ours")
+                        .aria_label("Ours")
                         .display_layout(&ours_layout)
                         .markers(true);
                 if let Some(styler) = ours_styler.take() {
@@ -381,6 +382,7 @@ impl<'a> MergeEditor<'a> {
                 let mut editor =
                     CodeEditor::new(&mut document.theirs, &mut document.theirs_view, view_config, theme, keymap)
                         .id_salt("rustext-merge-theirs")
+                        .aria_label("Theirs")
                         .display_layout(&theirs_layout)
                         .markers(true);
                 if let Some(styler) = theirs_styler.take() {
@@ -402,6 +404,7 @@ impl<'a> MergeEditor<'a> {
                 let mut editor =
                     CodeEditor::new(&mut document.result, &mut document.result_view, view_config, theme, keymap)
                         .id_salt("rustext-merge-result")
+                        .aria_label("Result")
                         .decorations(&decorations);
                 if let Some(styler) = result_styler.take() {
                     editor = editor.styler(styler);

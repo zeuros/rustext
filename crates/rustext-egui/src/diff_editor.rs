@@ -335,6 +335,7 @@ impl<'a> DiffEditor<'a> {
                     self.keymap,
                 )
                 .id_salt("rustext-diff-old")
+                .aria_label("Original")
                 .display_layout(&display.old_layout)
                 .decorations(&display.old_decorations)
                 .markers(true);
@@ -358,6 +359,7 @@ impl<'a> DiffEditor<'a> {
                     self.keymap,
                 )
                 .id_salt("rustext-diff-new")
+                .aria_label("Modified")
                 .display_layout(&display.new_layout)
                 .decorations(&display.new_decorations)
                 .markers(true);
@@ -410,6 +412,7 @@ impl<'a> DiffEditor<'a> {
                     self.keymap,
                 )
                 .id_salt("rustext-diff-new")
+                .aria_label("Modified")
                 .display_layout(&display.inline_layout)
                 .decorations(&display.new_decorations)
                 .foreign(foreign)
