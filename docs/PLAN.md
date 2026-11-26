@@ -70,21 +70,21 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [x] Indent / outdent, auto-indent on Enter (indent rules, brackets), Tab inserts indent unit
 - [x] Auto-closing pairs, overtype closing char, delete pair, surround selection
 - [x] Case transforms (upper, lower, title, snake, camel, kebab, pascal)
-- [ ] Find / replace: model search (case, whole word, regex, in selection), widget, replace all with groups, select all matches
-- [ ] Go to line
+- [x] Find / replace: model search (case, whole word, regex, in selection), widget, replace all with groups, select all matches
+- [x] Go to line
 
 ## M8. Decorations, folding, markers
 - [x] `DecorationSet` mapped through edits; typed styles (D11); whole-line, inline, gutter, overview ruler
 - [x] Hidden areas in a display map (buffer line ↔ display row)
-- [ ] Indentation folding, fold markers in the gutter, fold/unfold/all/level N, `…` placeholder
+- [x] Indentation folding, fold markers in the gutter, fold/unfold/all/level N, `…` placeholder
 - [ ] Markers (diagnostics) with squiggles, hover text, next/previous problem
 - [ ] Blame demo (shaded line groups, click on a line number)
 
 ## M9. Rendering extras
-- [ ] Whitespace rendering modes, control characters, visible `␍`
-- [ ] Rulers, indent guides with active guide
-- [ ] Matching bracket highlight, jump to bracket; bracket pair colorization
-- [ ] Selection and word occurrence highlights
+- [x] Whitespace rendering modes, control characters, visible `␍`
+- [x] Rulers, indent guides with active guide
+- [x] Matching bracket highlight, jump to bracket; bracket pair colorization — colorization not done
+- [x] Selection and word occurrence highlights
 - [ ] Word wrap (off, viewport, column, bounded) with wrapping indent, in the display map
 - [ ] View zones (blocks between lines) in the display map
 
@@ -110,4 +110,34 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 
 ## Where to resume
 
-(Updated at the end of each session: what was done last, what is half done, what's next.)
+Last updated: 2026-11-26, end of the first session.
+
+**State**: M0–M7 done; M8/M9 mostly done (see unticked boxes). 177 tests, `scripts/check.sh`
+green. Every milestone is a commit on `main` (`git log --oneline`).
+
+**Next, in order** (each a commit):
+1. M8 markers: a `Marker { range, severity, message }` list → squiggle decorations + overview
+   marks + a hover tooltip (egui `show_tooltip_at`) + F8 next problem. Hover needs
+   `MouseTarget::Text` → decoration under the pointer (`DecorationSet::in_range`).
+2. M8 blame demo in the playground: `DecorationKind::WholeLineBackground` per commit group,
+   `LineNumberColor`, and a click on `MouseTarget::LineNumber` (gitgud's blame view).
+3. M10 merge editor: `rustext-diff::merge` (diff3 of base/ours/theirs: hunks of both diffs
+   against base, overlapping = conflict), then a widget: two read-only editors above a result
+   editor, "accept ours / theirs / both" per conflict (gitgud's `merge-editor`).
+4. M9 bracket pair colorization (override bracket chars' colors in `line_layout_job` with a
+   depth computed per line, cached by text revision) and word wrap (a `DisplayLayout` with
+   several rows per line: needs `RowContent::Line` to carry a column range — design it in
+   DECISIONS first).
+5. M11 language services trait + completion widget; M12 minimap, sticky scroll.
+
+**Known gaps / debts**:
+- No horizontal scrollbar is drawn (Shift+wheel and cursor reveal scroll horizontally).
+- Tokenizer re-tokenizes from the edited line to the painted lines; Monaco stops when the
+  end state matches the cached one (worth it for huge files).
+- Folding is indentation-only; `foldingStrategy: 'auto'` needs language structure.
+- The split ratio of the diff editor is not draggable.
+- `CodeEditor` folding is off when the application passes its own `DisplayLayout` (diffs).
+- Find widget: find in selection (`FindState::scope`) has no toggle button yet.
+
+**How to verify visually**: `scripts/screenshot.sh <png> [--showcase | --find x | --page diff |
+--inline | --diff old new]`, then look at the PNG.
