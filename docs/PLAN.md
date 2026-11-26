@@ -60,7 +60,7 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 - [x] Inline view
 - [x] Hunk view (collapsed unchanged regions, click to expand)
 - [x] Line / inner change backgrounds from theme, +/- indicators, overview ruler of changes
-- [x] Resizable split, inline when narrow — inline below a width; the split ratio is a config value, not draggable yet
+- [x] Resizable split, inline when narrow — inline below a width; the separator drags
 - [x] Line selection on either side → `DiffResponse` with the selected lines (for staging)
 - [x] Context menu hooks (application-provided items) — each side's `EditorResponse.response` takes egui's `context_menu`
 
@@ -125,7 +125,6 @@ green. Every milestone is a commit on `main` (`git log --oneline`).
 - Tokenizer re-tokenizes from the edited line to the painted lines; Monaco stops when the
   end state matches the cached one (worth it for huge files).
 - Folding is indentation-only; `foldingStrategy: 'auto'` needs language structure.
-- The split ratio of the diff editor is not draggable.
 - `CodeEditor` folding is off when the application passes its own `DisplayLayout` (diffs).
 - Find widget: find in selection (`FindState::scope`) has no toggle button yet.
 

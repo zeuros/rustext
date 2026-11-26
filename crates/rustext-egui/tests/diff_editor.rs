@@ -168,3 +168,31 @@ fn programmatic_line_selection() {
 
     assert_eq!(harness.state().document.selected_lines().new_lines, [1, 2].into());
 }
+
+#[test]
+fn dragging_the_separator_resizes_the_sides() {
+    let mut harness = harness("a\n", "b\n", DiffViewConfig { inline_below_width: 0.0, ..DiffViewConfig::default() });
+    let middle = Pos2::new(500.0, 250.0);
+    let target = Pos2::new(300.0, 250.0);
+
+    harness.event(Event::PointerMoved(middle));
+    harness.event(Event::PointerButton {
+        pos: middle,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    harness.step();
+    harness.event(Event::PointerMoved(target));
+    harness.step();
+    harness.event(Event::PointerButton {
+        pos: target,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run();
+
+    let ratio = harness.state().document.dragged_split_ratio.expect("dragged");
+    assert!((ratio - 0.3).abs() < 0.02, "ratio {ratio}");
+}

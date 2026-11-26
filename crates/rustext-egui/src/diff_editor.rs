@@ -45,7 +45,8 @@ pub struct DiffViewConfig {
     pub old_editable: bool,
     /// Below this width, a side-by-side view shows inline instead.
     pub inline_below_width: f32,
-    /// Share of the width the old side takes in a side-by-side view.
+    /// Share of the width the old side takes in a side-by-side view, until the user drags the
+    /// separator (the dragged ratio is kept in the `DiffDocument`).
     pub split_ratio: f32,
 }
 
@@ -87,6 +88,8 @@ pub struct DiffDocument {
     /// Removed lines picked in an inline view (they are not text of the editor shown).
     selected_removed_lines: BTreeSet<usize>,
     last_clicked_removed_line: Option<usize>,
+    /// The split the user dragged to; the config's ratio until then.
+    pub dragged_split_ratio: Option<f32>,
 }
 
 impl DiffDocument {
@@ -105,6 +108,7 @@ impl DiffDocument {
             focused_side: DiffSide::New,
             selected_removed_lines: BTreeSet::new(),
             last_clicked_removed_line: None,
+            dragged_split_ratio: None,
         };
         document.refresh_diff(&DiffOptions::default());
         document
@@ -304,7 +308,16 @@ impl<'a> DiffEditor<'a> {
     }
 
     fn show_side_by_side(&mut self, ui: &mut Ui, rect: Rect) -> DiffResponse {
-        let split_x = rect.left() + rect.width() * self.config.split_ratio.clamp(0.1, 0.9);
+        let ratio = self.document.dragged_split_ratio.unwrap_or(self.config.split_ratio).clamp(0.1, 0.9);
+        let split_x = rect.left() + rect.width() * ratio;
+        let handle = Rect::from_center_size(pos2(split_x, rect.center().y), egui::vec2(6.0, rect.height()));
+        let handle_response = ui.interact(handle, ui.make_persistent_id("rustext-diff-split"), egui::Sense::drag());
+        if handle_response.hovered() || handle_response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+        }
+        if let Some(pointer) = handle_response.dragged().then(|| handle_response.interact_pointer_pos()).flatten() {
+            self.document.dragged_split_ratio = Some(((pointer.x - rect.left()) / rect.width()).clamp(0.1, 0.9));
+        }
         let old_rect = Rect::from_min_max(rect.left_top(), pos2(split_x - 1.0, rect.bottom()));
         let new_rect = Rect::from_min_max(pos2(split_x + 1.0, rect.top()), rect.right_bottom());
         let document = &mut *self.document;
