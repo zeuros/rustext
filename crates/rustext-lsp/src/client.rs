@@ -6,7 +6,9 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use rustext_core::services::{CompletionItem, CompletionKind, Diagnostic, LanguageServices, Reply, Severity};
+use rustext_core::services::{
+    CompletionItem, CompletionKind, Diagnostic, LanguageServices, Reply, Severity, SignatureHelp, TextEdit,
+};
 use rustext_core::{Position, Range, Text};
 use serde_json::{Value, json};
 
@@ -17,14 +19,18 @@ enum RequestKind {
     Completion,
     Hover,
     Definition,
+    Rename,
+    SignatureHelp,
 }
 
 /// What a request was about: answers for another key are not what the editor asks for now.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RequestKey {
     kind: RequestKind,
     text_revision: u64,
     position: Position,
+    /// The new name of a rename.
+    argument: String,
 }
 
 pub struct LspServices {
@@ -158,10 +164,15 @@ impl LspServices {
 
     /// The result of the request for `key`, sending it the first time.
     fn ask(&mut self, text: &Text, key: RequestKey, method: &str) -> Reply<Value> {
+        self.ask_with(text, key, method, json!({}))
+    }
+
+    /// `ask` with more request parameters (merged into the position parameters).
+    fn ask_with(&mut self, text: &Text, key: RequestKey, method: &str, extra_params: Value) -> Reply<Value> {
         self.sync(text, key.text_revision);
         self.receive();
-        if let Some(id) = self.request_ids.get(&key) {
-            return match self.results.remove(id) {
+        if let Some(&id) = self.request_ids.get(&key) {
+            return match self.results.remove(&id) {
                 Some(result) => {
                     self.request_ids.remove(&key);
                     Reply::Ready(result)
@@ -170,10 +181,13 @@ impl LspServices {
             };
         }
         let line = key.position.line;
-        let params = json!({
+        let mut params = json!({
             "textDocument": { "uri": self.document_uri },
             "position": { "line": line, "character": utf16_column(text, line, key.position.column) },
         });
+        if let (Some(params), Some(extra)) = (params.as_object_mut(), extra_params.as_object()) {
+            params.extend(extra.clone());
+        }
         if let Ok(id) = self.connection.request(method, params) {
             self.request_ids.insert(key, id);
         }
@@ -229,7 +243,7 @@ fn hover_text(contents: &Value) -> Option<String> {
 
 impl LanguageServices for LspServices {
     fn completions(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Vec<CompletionItem>> {
-        let key = RequestKey { kind: RequestKind::Completion, text_revision, position };
+        let key = RequestKey { kind: RequestKind::Completion, text_revision, position, argument: String::new() };
         match self.ask(text, key, "textDocument/completion") {
             Reply::Ready(result) => Reply::Ready(completion_items(&result)),
             Reply::Pending => Reply::Pending,
@@ -260,12 +274,76 @@ impl LanguageServices for LspServices {
         Some(diagnostics)
     }
 
+    fn rename(&mut self, text: &Text, text_revision: u64, position: Position, new_name: &str) -> Reply<Vec<TextEdit>> {
+        let key = RequestKey { kind: RequestKind::Rename, text_revision, position, argument: new_name.to_string() };
+        let result = match self.ask_with(text, key, "textDocument/rename", json!({ "newName": new_name })) {
+            Reply::Ready(result) => result,
+            Reply::Pending => return Reply::Pending,
+        };
+        let uri = self.document_uri.clone();
+        let edits_of_document = result["changes"][uri.as_str()].as_array().cloned().or_else(|| {
+            let changes = result["documentChanges"].as_array()?;
+            let change = changes.iter().find(|change| change["textDocument"]["uri"].as_str() == Some(uri.as_str()))?;
+            change["edits"].as_array().cloned()
+        });
+        let position_of = |value: &Value| -> Option<Position> {
+            let line = value["line"].as_u64()? as usize;
+            Some(Position::new(line, char_column(text, line, value["character"].as_u64()? as usize)))
+        };
+        let edits = edits_of_document
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|edit| {
+                let range = Range::new(position_of(&edit["range"]["start"])?, position_of(&edit["range"]["end"])?);
+                Some(TextEdit { range, new_text: edit["newText"].as_str()?.to_string() })
+            })
+            .collect();
+        Reply::Ready(edits)
+    }
+
+    fn signature_help(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Option<SignatureHelp>> {
+        let key = RequestKey { kind: RequestKind::SignatureHelp, text_revision, position, argument: String::new() };
+        let result = match self.ask(text, key, "textDocument/signatureHelp") {
+            Reply::Ready(result) => result,
+            Reply::Pending => return Reply::Pending,
+        };
+        let signature_index = result["activeSignature"].as_u64().unwrap_or(0) as usize;
+        let Some(signature) = result["signatures"].get(signature_index) else { return Reply::Ready(None) };
+        let label = signature["label"].as_str().unwrap_or_default().to_string();
+        let parameter_index =
+            signature["activeParameter"].as_u64().or(result["activeParameter"].as_u64()).unwrap_or(0) as usize;
+        let active_parameter =
+            signature["parameters"].get(parameter_index).and_then(|parameter| match &parameter["label"] {
+                Value::String(parameter_label) => {
+                    let byte = label.find(parameter_label.as_str())?;
+                    let start = label[..byte].chars().count();
+                    Some((start, start + parameter_label.chars().count()))
+                }
+                Value::Array(offsets) => {
+                    let utf16_to_chars = |units: u64| {
+                        let mut seen = 0;
+                        label
+                            .chars()
+                            .take_while(|character| {
+                                seen += character.len_utf16() as u64;
+                                seen <= units
+                            })
+                            .count()
+                    };
+                    Some((utf16_to_chars(offsets.first()?.as_u64()?), utf16_to_chars(offsets.get(1)?.as_u64()?)))
+                }
+                _ => None,
+            });
+        let documentation = hover_text(&signature["documentation"]);
+        Reply::Ready(Some(SignatureHelp { label, active_parameter, documentation }))
+    }
+
     fn completion_trigger_chars(&self) -> &[char] {
         &self.trigger_chars
     }
 
     fn hover(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Option<String>> {
-        let key = RequestKey { kind: RequestKind::Hover, text_revision, position };
+        let key = RequestKey { kind: RequestKind::Hover, text_revision, position, argument: String::new() };
         match self.ask(text, key, "textDocument/hover") {
             Reply::Ready(result) => {
                 Reply::Ready(hover_text(&result["contents"]).filter(|text| !text.trim().is_empty()))
@@ -275,7 +353,7 @@ impl LanguageServices for LspServices {
     }
 
     fn definition(&mut self, text: &Text, text_revision: u64, position: Position) -> Reply<Option<Position>> {
-        let key = RequestKey { kind: RequestKind::Definition, text_revision, position };
+        let key = RequestKey { kind: RequestKind::Definition, text_revision, position, argument: String::new() };
         let result = match self.ask(text, key, "textDocument/definition") {
             Reply::Ready(result) => result,
             Reply::Pending => return Reply::Pending,

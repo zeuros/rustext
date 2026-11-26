@@ -27,6 +27,45 @@ impl LanguageServices for TestServices {
         Reply::Ready(before.ends_with("zz").then(|| "_top".to_string()))
     }
 
+    fn rename(
+        &mut self,
+        text: &Text,
+        _revision: u64,
+        position: Position,
+        new_name: &str,
+    ) -> Reply<Vec<rustext_core::services::TextEdit>> {
+        use rustext_core::find::{SearchQuery, find_matches};
+        let line: Vec<char> = text.line_content(position.line).chars().collect();
+        let Some((start, end)) = WordCompletions::default().words.word_at(&line, position.column) else {
+            return Reply::Ready(Vec::new());
+        };
+        let word: String = line[start..end].iter().collect();
+        let query = SearchQuery { match_case: true, whole_word: true, ..SearchQuery::new(word) };
+        let edits = find_matches(text, &query, None, 100)
+            .unwrap()
+            .into_iter()
+            .map(|found| rustext_core::services::TextEdit {
+                range: rustext_core::Range::new(text.position(found.start), text.position(found.end)),
+                new_text: new_name.to_string(),
+            })
+            .collect();
+        Reply::Ready(edits)
+    }
+
+    fn signature_help(
+        &mut self,
+        text: &Text,
+        _revision: u64,
+        position: Position,
+    ) -> Reply<Option<rustext_core::services::SignatureHelp>> {
+        let before: String = text.line_content(position.line).chars().take(position.column).collect();
+        let Some(open) = before.rfind("helper(") else { return Reply::Ready(None) };
+        let commas = before[open..].matches(',').count();
+        let label = "helper(first: u8, second: u8)".to_string();
+        let active_parameter = [(7, 16), (18, 28)].get(commas).copied();
+        Reply::Ready(Some(rustext_core::services::SignatureHelp { label, active_parameter, documentation: None }))
+    }
+
     fn take_diagnostics(&mut self, _text: &Text) -> Option<Vec<rustext_core::services::Diagnostic>> {
         self.pending_diagnostics.take()
     }
@@ -277,4 +316,36 @@ fn ghost_text_is_accepted_with_tab_and_dismissed_with_escape() {
     harness.key_press(Key::Tab);
     harness.run();
     assert_eq!(content(&harness), "zz_top zz   \n");
+}
+
+#[test]
+fn f2_renames_every_occurrence_in_one_undo_step() {
+    let mut harness = harness("let count = 1;\ncount += count;\n");
+    let pos = harness.state().view.geometry().unwrap().cell_center(0, 5);
+    press(&mut harness, pos, Modifiers::NONE);
+
+    harness.key_press(Key::F2);
+    harness.run();
+    assert_eq!(harness.state().view.rename.new_name, "count");
+    harness.state_mut().view.rename.new_name = "total".into();
+    harness.key_press(Key::Enter);
+    harness.run();
+    harness.run();
+    assert_eq!(content(&harness), "let total = 1;\ntotal += total;\n");
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(content(&harness), "let count = 1;\ncount += count;\n");
+}
+
+#[test]
+fn signature_help_follows_the_active_parameter() {
+    let mut harness = harness("\n");
+    click_end(&mut harness, 0);
+
+    type_text(&mut harness, "helper(");
+    let shown = |harness: &Harness<'_, Fixture>| harness.state().view.signature.shown_label().map(str::to_string);
+    assert_eq!(shown(&harness).as_deref(), Some("helper(first: u8, second: u8)"));
+    type_text(&mut harness, "1, 2)");
+    assert_eq!(shown(&harness), None);
 }

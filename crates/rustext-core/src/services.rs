@@ -84,6 +84,41 @@ pub struct Diagnostic {
     pub message: String,
 }
 
+/// A text replacing a range of the document, from a service (rename, formatting).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextEdit {
+    pub range: Range,
+    pub new_text: String,
+}
+
+/// The signature of the call around the cursor, and which parameter it is in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignatureHelp {
+    /// `fn push(&mut self, value: T)`.
+    pub label: String,
+    /// Char columns in `label` of the parameter the cursor is in.
+    pub active_parameter: Option<(usize, usize)>,
+    pub documentation: Option<String>,
+}
+
+/// The edits of `edits` as one transaction (they must not overlap), the cursor after the
+/// first one.
+pub fn transaction_of_edits(text: &Text, edits: &[TextEdit]) -> Option<crate::edit::Transaction> {
+    use crate::change::{Bias, Change, ChangeSet};
+    let first = edits.first()?;
+    let changes = ChangeSet::new(edits.iter().map(|edit| {
+        let (start, end) = text.range_offsets(edit.range);
+        Change::new(start, end, edit.new_text.clone())
+    }));
+    let cursor = changes.map_offset(text.offset(first.range.start), Bias::Before) + first.new_text.chars().count();
+    Some(crate::edit::Transaction {
+        changes,
+        selections: crate::selection::Selections::cursor(cursor),
+        kind: crate::history::EditKind::Other,
+        auto_closed_offsets: Vec::new(),
+    })
+}
+
 /// What the editor asks about a text. `text_revision` identifies the text's version, so a
 /// service can drop answers computed for an older one.
 pub trait LanguageServices {
@@ -113,6 +148,27 @@ pub trait LanguageServices {
     /// `publishDiagnostics`), so the editor asks every frame.
     fn take_diagnostics(&mut self, _text: &Text) -> Option<Vec<Diagnostic>> {
         None
+    }
+
+    /// The edits renaming the symbol at `position` to `new_name` in this text (F2).
+    fn rename(
+        &mut self,
+        _text: &Text,
+        _text_revision: u64,
+        _position: Position,
+        _new_name: &str,
+    ) -> Reply<Vec<TextEdit>> {
+        Reply::Ready(Vec::new())
+    }
+
+    /// The signature of the call around `position` (shown after `(` and `,`).
+    fn signature_help(
+        &mut self,
+        _text: &Text,
+        _text_revision: u64,
+        _position: Position,
+    ) -> Reply<Option<SignatureHelp>> {
+        Reply::Ready(None)
     }
 
     /// Where the symbol at `position` is defined, in the same text (F12, Ctrl+click).
@@ -219,6 +275,20 @@ mod tests {
         assert!(fuzzy_score("xyz", "getLine").is_none());
         assert!(fuzzy_score("gl", "getLine") > fuzzy_score("gl", "angle"));
         assert!(fuzzy_score("len", "length") > fuzzy_score("len", "is_lenient"));
+    }
+
+    #[test]
+    fn edits_become_one_transaction() {
+        let text = Text::new("let a = a + 1;");
+        let edits = [
+            TextEdit { range: Range::new(Position::new(0, 4), Position::new(0, 5)), new_text: "total".into() },
+            TextEdit { range: Range::new(Position::new(0, 8), Position::new(0, 9)), new_text: "total".into() },
+        ];
+
+        let transaction = transaction_of_edits(&text, &edits).unwrap();
+
+        assert_eq!(transaction.changes.apply(&text).to_string(), "let total = total + 1;");
+        assert_eq!(transaction.selections.primary().head, 9);
     }
 
     #[test]

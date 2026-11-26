@@ -8,6 +8,7 @@
 //! The editor paints display rows (DECISIONS D17): one per line by default, or the rows of a
 //! `DisplayLayout` (padding, collapsed and foreign rows, for diffs and folding).
 
+mod assist;
 mod completion;
 mod find;
 mod input;
@@ -26,6 +27,7 @@ use rustext_core::{EditorState, Outcome, Position, Text};
 use crate::keymap::{Action, KeyChord, Keymap};
 use crate::theme::EditorTheme;
 
+pub use assist::{RenameState, SignatureState};
 pub use completion::CompletionState;
 pub use find::{FindState, GoToLineState, parse_line_and_column};
 pub use layout::{to_color, to_rgba};
@@ -223,6 +225,10 @@ pub struct EditorView {
     pub completion: CompletionState,
     /// The command palette (F1, Ctrl+Shift+P).
     pub palette: PaletteState,
+    /// The rename box (F2).
+    pub rename: RenameState,
+    /// The signature help tooltip.
+    pub signature: SignatureState,
     wraps: wrapping::WrapState,
     /// Lines pinned at the top by sticky scroll in the last frame.
     sticky_lines: Vec<usize>,
@@ -560,7 +566,8 @@ impl<'a> CodeEditor<'a> {
         let typed = std::mem::take(&mut self.typed_this_frame);
         self.refresh_completion(&typed);
         self.refresh_ghost_text(&typed);
-        if self.view.ghost_request.is_some() {
+        self.refresh_signature_help(&typed);
+        if self.view.ghost_request.is_some() || self.view.signature_is_waiting() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
         if self.view.completion.is_waiting() {
@@ -573,6 +580,10 @@ impl<'a> CodeEditor<'a> {
         }
         let mut completion_outcome = Outcome::default();
         self.show_completion(ui, &metrics, id, &mut completion_outcome);
+        if self.show_rename(ui, &metrics, id, &mut completion_outcome) {
+            response.request_focus();
+        }
+        self.show_signature_help(ui, &metrics, id);
         let (picked_action, palette_closed) = self.show_palette(ui, &metrics, id);
         if palette_closed {
             response.request_focus();

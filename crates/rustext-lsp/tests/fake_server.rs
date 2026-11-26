@@ -66,3 +66,18 @@ fn published_diagnostics_are_taken_once() {
     assert_eq!(diagnostics[0].severity, rustext_core::services::Severity::Warning);
     assert!(services.take_diagnostics(&text).is_none());
 }
+
+#[test]
+fn rename_and_signature_help() {
+    let mut services = start();
+    let text = Text::new("ab\nab c\n");
+
+    let edits = until_ready(|| services.rename(&text, 1, Position::new(0, 0), "xyz"));
+    assert_eq!(edits.len(), 2);
+    assert_eq!(edits[1].new_text, "xyz");
+    assert_eq!(edits[1].range.start, Position::new(1, 0));
+
+    let help = until_ready(|| services.signature_help(&text, 1, Position::new(1, 3))).expect("a signature");
+    assert_eq!(help.label, "fake(first: u8, second: u8)");
+    assert_eq!(help.active_parameter, Some((16, 26)));
+}

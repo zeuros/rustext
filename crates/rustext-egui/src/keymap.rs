@@ -45,6 +45,8 @@ pub enum Action {
     GoToDefinition,
     /// Lists every command to run one (F1, Ctrl+Shift+P).
     CommandPalette,
+    /// Renames the symbol at the cursor through the language services (F2).
+    Rename,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -235,6 +237,7 @@ impl Keymap {
             (chord(command, Key::Space), Action::TriggerSuggest),
             (chord(none, Key::F12), Action::GoToDefinition),
             (chord(none, Key::F1), Action::CommandPalette),
+            (chord(none, Key::F2), Action::Rename),
             (chord(command_shift, Key::P), Action::CommandPalette),
             (chord(shift, Key::F8), Action::PreviousProblem),
             (chord(shift, Key::F7), Action::PreviousChange),

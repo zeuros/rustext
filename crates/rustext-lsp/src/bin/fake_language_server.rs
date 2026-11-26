@@ -37,6 +37,17 @@ fn main() {
                 let uri = message["params"]["textDocument"]["uri"].clone();
                 json!({ "uri": uri, "range": { "start": { "line": 0, "character": 3 }, "end": { "line": 0, "character": 6 } } })
             }
+            "textDocument/rename" => {
+                let uri = message["params"]["textDocument"]["uri"].as_str().unwrap_or_default().to_string();
+                let new_name = message["params"]["newName"].clone();
+                let edit = |line: u64| json!({ "range": { "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 2 } }, "newText": new_name });
+                json!({ "changes": { uri: [edit(0), edit(1)] } })
+            }
+            "textDocument/signatureHelp" => json!({
+                "signatures": [{ "label": "fake(first: u8, second: u8)", "parameters": [{ "label": "first: u8" }, { "label": [16, 26] }] }],
+                "activeSignature": 0,
+                "activeParameter": 1,
+            }),
             "exit" => return,
             _ => Value::Null,
         };

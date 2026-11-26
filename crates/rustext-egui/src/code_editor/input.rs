@@ -355,6 +355,9 @@ impl CodeEditor<'_> {
         if modifiers.is_none() && (self.completion_key(key, outcome) || self.ghost_text_key(key, outcome)) {
             return;
         }
+        if key == Key::Escape && modifiers.is_none() && self.close_signature_help() {
+            return;
+        }
         let has_open_widget = self.view.find.is_open || self.view.go_to_line.is_open;
         if key == Key::Escape && modifiers.is_none() && has_open_widget {
             self.close_find();
@@ -407,6 +410,7 @@ impl CodeEditor<'_> {
             Action::ZoomReset => self.view.font_size_delta = 0.0,
             Action::TriggerSuggest => self.view.completion.request(),
             Action::CommandPalette => self.view.palette.open(),
+            Action::Rename => self.open_rename(),
             Action::GoToDefinition => {
                 let text = self.state.text().clone();
                 if let Some(definition) = self.definition_of(text.position(self.state.selections().primary().head)) {
