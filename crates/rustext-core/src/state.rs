@@ -520,7 +520,7 @@ impl EditorState {
         let ranges: Vec<Selection> =
             session.ranges_of(session.current).iter().map(|&(start, end)| Selection::new(start, end)).collect();
         let is_last = session.current + 1 == session.order.len();
-        let outcome = self.select(Selections::new(ranges, 0));
+        let outcome = self.select(Selections::new(ranges, 0).clamped(&self.text));
         if is_last {
             self.snippet_session = None;
         }
@@ -536,6 +536,8 @@ impl EditorState {
     }
 
     fn replay(&mut self, is_undo: bool) -> Outcome {
+        // Undo and redo leave snippet mode: the tab stops don't follow history.
+        self.snippet_session = None;
         let replay = if is_undo { self.history.undo() } else { self.history.redo() };
         let Some(replay) = replay else {
             return Outcome::default();

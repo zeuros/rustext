@@ -79,7 +79,7 @@ pub fn add_next_occurrence(text: &Text, config: &EditingConfig, selections: &Sel
     let needle = text.slice(primary.start(), primary.end());
     let content = text.to_string();
     let last_end = selections.iter().map(Selection::end).max().unwrap_or(0);
-    let occurrences = occurrence_offsets(&content, &needle);
+    let occurrences = selectable_occurrences(text, &content, &needle);
     let is_selected = |start: usize| selections.iter().any(|selection| selection.start() == start);
     let next = occurrences
         .iter()
@@ -106,13 +106,25 @@ pub fn select_all_occurrences(text: &Text, config: &EditingConfig, selections: &
     };
     let needle = text.slice(start, end);
     let needle_len = end - start;
-    let ranges: Vec<Selection> = occurrence_offsets(&text.to_string(), &needle)
+    let ranges: Vec<Selection> = selectable_occurrences(text, &text.to_string(), &needle)
         .into_iter()
         .take(config.multi_cursor_limit)
         .map(|occurrence_start| Selection::new(occurrence_start, occurrence_start + needle_len))
         .collect();
     let primary_index = ranges.iter().position(|selection| selection.start() == start).unwrap_or(0);
     if ranges.is_empty() { selections.clone() } else { Selections::new(ranges, primary_index) }
+}
+
+/// Offsets of the occurrences of `needle` that can be selected: neither end inside a `\r\n`
+/// (a `\n` needle also matches the second half of every CRLF).
+fn selectable_occurrences(text: &Text, content: &str, needle: &str) -> Vec<usize> {
+    let needle_len = needle.chars().count();
+    occurrence_offsets(content, needle)
+        .into_iter()
+        .filter(|&start| {
+            text.clamp_offset(start) == start && text.clamp_offset(start + needle_len) == start + needle_len
+        })
+        .collect()
 }
 
 /// Char offsets where `needle` occurs in `haystack`, without overlaps.
@@ -239,6 +251,18 @@ mod tests {
 
         assert_eq!(all.len(), 3);
         assert_eq!(all.primary(), Selection::new(4, 7));
+    }
+
+    #[test]
+    fn occurrences_never_start_inside_a_crlf() {
+        let text = Text::new("a\nb\r\nc\n");
+        let config = EditingConfig::default();
+        let newline = Selections::single(Selection::new(1, 2));
+
+        let all = select_all_occurrences(&text, &config, &newline);
+
+        let starts: Vec<usize> = all.iter().map(Selection::start).collect();
+        assert_eq!(starts, vec![1, 6]);
     }
 
     #[test]
