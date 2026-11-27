@@ -1,9 +1,8 @@
 //! The `CodeEditor` widget: paints an `EditorState` and turns input into commands.
 //!
 //! The application owns the `EditorState` (text, selections, history) and an `EditorView`
-//! (scroll, zoom, in-progress mouse drag…: Monaco's view state), and calls
-//! `CodeEditor::new(...).show(ui)` every frame. What happened comes back in the
-//! `EditorResponse` (DECISIONS D10).
+//! (scroll, zoom, mouse drag…: Monaco's view state), and calls `CodeEditor::new(...).show(ui)`
+//! every frame. What happened comes back in the `EditorResponse` (DECISIONS D10).
 //!
 //! The editor paints display rows (DECISIONS D17): one per line by default, or the rows of a
 //! `DisplayLayout` (padding, collapsed and foreign rows, for diffs and folding).
@@ -15,6 +14,7 @@ mod code_lens;
 mod completion;
 mod config;
 mod find;
+mod folding;
 mod hover;
 mod input;
 mod layout;
@@ -44,9 +44,9 @@ pub use config::{
     CurrentLineHighlight, CursorStyle, FoldingStrategy, LineNumbers, ViewConfig, WhitespaceRendering, WordWrap,
 };
 pub use find::{FindState, GoToLineState, parse_line_and_column};
+pub use folding::FoldState;
 pub use layout::{to_color, to_rgba};
 pub use palette::PaletteState;
-pub use structure::FoldState;
 
 /// How a mouse drag extends the selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

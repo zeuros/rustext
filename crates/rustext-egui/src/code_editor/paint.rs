@@ -5,8 +5,8 @@ use rustext_core::decoration::{Decoration, DecorationKind};
 use rustext_core::display::RowContent;
 use rustext_core::{Position, Selection, Selections, Text};
 
+use super::folding::folded_header_lines;
 use super::layout::{LineLayout, to_color};
-use super::structure::folded_header_lines;
 use super::{CodeEditor, CurrentLineHighlight, CursorStyle, Drag, LineNumbers, Metrics};
 use crate::theme::EditorTheme;
 

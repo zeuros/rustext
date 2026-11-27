@@ -483,6 +483,23 @@ no state) and its hover names them (`U+0430 'а' looks like ASCII 'a'`).
 - Strings and comments are checked like code, as Monaco does in an untrusted workspace.
 - `non_basic_ascii` (off) points out every other character; `allowed_characters` exempts some.
 
+## D33. Region markers fold in any language; a click on a folded line's `⋯` unfolds it
+
+`rustext_core::fold_markers` reads `#region` / `#endregion` comments (after `//`, `/*`,
+`<!--`, `--`, `;`, `%`, `'` or a bare `#`, the `#` optional: `// region: name` works too). One
+rule for every language instead of Monaco's per-language `folding.markers` regexes: the
+markers look the same everywhere, and a regex table per language is configuration nobody
+edits.
+
+- A marker region wins over the indentation or syntax range of the same header line, and the
+  end marker's line is hidden with the region (VS Code does so: the end marker says nothing
+  once folded). Nested regions match by depth; a start without an end folds nothing.
+- Fold all folds marker regions too (Monaco's `foldAllMarkerRegions` is the same as fold all
+  here: one command less).
+- A click on the `⋯` label after a folded line unfolds it; with
+  `ViewConfig::unfold_on_click_after_end_of_line` (off, as in Monaco) any click past the
+  folded line's end does.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

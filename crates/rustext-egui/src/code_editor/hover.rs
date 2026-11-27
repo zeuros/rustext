@@ -3,9 +3,26 @@
 
 use rustext_core::decoration::{Decoration, DecorationKind};
 
-use super::{CodeEditor, MouseTarget};
+use egui::{Pos2, Ui};
+
+use super::{CodeEditor, Metrics, MouseTarget};
 
 impl CodeEditor<'_> {
+    /// Char offset of the char under `pos` (not the nearest boundary), if `pos` is over text.
+    pub(super) fn char_under(&mut self, ui: &Ui, metrics: &Metrics, pos: Pos2) -> Option<usize> {
+        let row = self.row_at_y(metrics, pos.y);
+        let (line, start_column, end_column) = self.row_segment(row)?;
+        let layout = self.layout_segment(ui, metrics, line, start_column, end_column);
+        let x = pos.x - self.text_left(metrics);
+        let nearest_column = layout.column_at_x(x);
+        let column = if nearest_column > 0 && x < layout.x_of_column(nearest_column) {
+            nearest_column - 1
+        } else {
+            nearest_column
+        };
+        (column < self.state.text().line_len(line)).then(|| self.state.text().line_start(line) + column)
+    }
+
     /// Messages of the decorations under the pointer: on the text, or in the gutter for glyphs.
     pub(super) fn hover_messages(&self, target: MouseTarget, hovered_char: Option<usize>) -> Vec<String> {
         let text = self.state.text();

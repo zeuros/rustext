@@ -9,6 +9,7 @@ pub mod decoration;
 pub mod display;
 pub mod edit;
 pub mod find;
+pub mod fold_markers;
 pub mod history;
 pub mod indentation;
 pub mod lexical;

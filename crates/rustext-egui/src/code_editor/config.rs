@@ -83,6 +83,9 @@ pub struct ViewConfig {
     pub padding_top: f32,
     /// Lines longer than this many chars are cut, for speed (Monaco's `stopRenderingLineAfter`).
     pub max_rendered_line_chars: usize,
+    /// A click anywhere past a folded line's end unfolds it, not only on its `⋯` (Monaco's
+    /// `unfoldOnClickAfterEndOfLine`, off by default as there).
+    pub unfold_on_click_after_end_of_line: bool,
     /// Which invisible and ambiguous characters are boxed (Monaco's `unicodeHighlight`, D32).
     pub unicode_highlight: UnicodeHighlight,
     pub scrollbar_width: f32,
@@ -148,6 +151,7 @@ impl Default for ViewConfig {
             rulers: Vec::new(),
             padding_top: 4.0,
             max_rendered_line_chars: 10_000,
+            unfold_on_click_after_end_of_line: false,
             unicode_highlight: UnicodeHighlight::default(),
             scrollbar_width: 14.0,
             fast_scroll_sensitivity: 5.0,

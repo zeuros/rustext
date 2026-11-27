@@ -166,11 +166,11 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 |---|---|---|---|
 | Indentation-based folding | `foldingStrategy: 'indentation'` | P1 | done |
 | Language / provider folding | `registerFoldingRangeProvider`, `foldingStrategy: 'auto'` | P2 | done for tree-sitter languages (`FoldingStrategy::Auto`, D22); no provider API |
-| Marker regions (`#region` / `// region`) | language `folding.markers`, `foldAllMarkerRegions` | P2 | todo |
+| Marker regions (`#region` / `// region`) | language `folding.markers`, `foldAllMarkerRegions` | P2 | done (D33, any language) |
 | Fold / unfold / toggle, recursive, all, level N | `editor.fold`, `unfold`, `toggleFold`, `foldAll`, `unfoldAll`, `foldLevel1..7`, `foldRecursively` | P1 | done |
 | Fold controls in the gutter | `showFoldingControls` (`always`, `mouseover`, `never`) | P1 | done |
 | Folded region highlight, `…` after the line | `foldingHighlight` | P1 | done |
-| Unfold on click after end of line | `unfoldOnClickAfterEndOfLine` | P2 | todo |
+| Unfold on click after end of line | `unfoldOnClickAfterEndOfLine` | P2 | done (D33; a click on `⋯` always unfolds) |
 | Hidden areas (generic, used by diff hunk view) | `onDidChangeHiddenAreas`, `setHiddenAreas` | P0 | done |
 
 ## 8. Syntax and languages (`languages.*`)

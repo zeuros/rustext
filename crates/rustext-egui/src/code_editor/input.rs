@@ -24,21 +24,6 @@ impl CodeEditor<'_> {
         (Position::new(line, column), x > layout.width() || is_below_text)
     }
 
-    /// Char offset of the char under `pos` (not the nearest boundary), if `pos` is over text.
-    pub(super) fn char_under(&mut self, ui: &Ui, metrics: &Metrics, pos: Pos2) -> Option<usize> {
-        let row = self.row_at_y(metrics, pos.y);
-        let (line, start_column, end_column) = self.row_segment(row)?;
-        let layout = self.layout_segment(ui, metrics, line, start_column, end_column);
-        let x = pos.x - self.text_left(metrics);
-        let nearest_column = layout.column_at_x(x);
-        let column = if nearest_column > 0 && x < layout.x_of_column(nearest_column) {
-            nearest_column - 1
-        } else {
-            nearest_column
-        };
-        (column < self.state.text().line_len(line)).then(|| self.state.text().line_start(line) + column)
-    }
-
     pub(super) fn target_at(&mut self, ui: &Ui, metrics: &Metrics, pos: Pos2) -> MouseTarget {
         if pos.x >= metrics.scrollbar_rect.left() {
             return MouseTarget::Scrollbar;
@@ -190,6 +175,9 @@ impl CodeEditor<'_> {
             }
             MouseTarget::Text { .. } | MouseTarget::Empty { .. } => {
                 self.view.completion.close();
+                if let Some(line) = self.folded_line_clicked_past_its_end(ui, metrics, pos) {
+                    return self.toggle_fold(line);
+                }
                 let (position, _) = self.position_at(ui, metrics, pos);
                 let offset = text.offset(position);
                 let is_definition_click = modifiers.command && !modifiers.shift && !modifiers.alt;

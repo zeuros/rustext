@@ -347,6 +347,31 @@ fn fold_all_hides_blocks_and_the_cursor_steps_over_them() {
 }
 
 #[test]
+fn region_markers_fold_through_their_end_marker() {
+    let mut harness = harness("// #region a\nx\ny\n// #endregion\nz");
+    click(&mut harness, 0, 0);
+
+    chord(&mut harness, Key::Num0);
+    assert_eq!(harness.state().view.folds.folded_header_lines(), vec![0]);
+
+    click(&mut harness, 1, 0);
+    assert_eq!(head(&harness).line, 4);
+}
+
+#[test]
+fn clicking_the_label_after_a_folded_line_unfolds_it() {
+    let mut harness = harness("// #region a\nx\ny\n// #endregion\nz");
+    click(&mut harness, 0, 0);
+    chord(&mut harness, Key::Num0);
+    let geometry = geometry(&harness);
+    let label = geometry.cell_left(0, 12) + Vec2::new(geometry.char_width * 1.5, 0.0);
+
+    press_at(&mut harness, label, Modifiers::NONE);
+
+    assert_eq!(harness.state().view.folds.folded_header_count(), 0);
+}
+
+#[test]
 fn moving_the_cursor_into_a_fold_unfolds_it() {
     let mut harness = harness(FOLDABLE);
     click(&mut harness, 0, 0);
