@@ -500,7 +500,23 @@ edits.
   `ViewConfig::unfold_on_click_after_end_of_line` (off, as in Monaco) any click past the
   folded line's end does.
 
-## Inspiration (read their code, don't copy it)
+## D34. Linked editing: the edit runs with a mirrored cursor in the paired tag name
+
+With `EditingConfig::linked_editing` (off, as in Monaco), typing name chars or deleting a char
+in a tag name does the same in its pair: `EditorState::execute` adds a cursor at the same
+place in the other name, runs the ordinary multi-cursor edit, and keeps only the user's cursor
+in the transaction. The two names change in one undo step, and undo restores one cursor.
+
+- `rustext_core::linked_editing::tag_pair_names` reads the tags from the text: no language
+  service, so HTML, XML, JSX and Vue get it alike. Comments, `<script>` and `<style>` content
+  are skipped, void elements (`<br>`) and `<x/>` have no pair, quoted attribute values may
+  hold `>`. Pairs match by name and depth; a stray tag of another name doesn't break them.
+- An empty name (`<>` … `</>`) pairs too, so a name deleted to retype it stays linked.
+- Anything else (a space, `>`, a backspace at a name's start, several cursors) edits once:
+  the name ends there, as Monaco's word pattern ends its linked ranges.
+- No `LanguageServices` hook for LSP's `linkedEditingRange` yet: tags were the case to cover.
+
+
 
 | Project | Take |
 |---|---|

@@ -14,6 +14,7 @@ use crate::text::Text;
 
 mod command;
 mod cursor_history;
+mod linked_editing;
 
 pub use command::Command;
 
@@ -236,6 +237,12 @@ impl EditorState {
         if command.edits_text() && self.config.read_only {
             let clipboard = matches!(command, Command::Cut).then(|| edit::copied_content(&self.context())).flatten();
             return Outcome { rejected_read_only: true, clipboard, ..Outcome::default() };
+        }
+
+        if self.config.linked_editing
+            && let Some(outcome) = self.execute_linked(&command)
+        {
+            return outcome;
         }
 
         let context = self.context();

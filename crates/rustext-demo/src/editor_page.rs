@@ -118,6 +118,7 @@ impl EditorPage {
         let text = Text::new(content);
         let config = EditingConfig {
             indentation: Indentation::detect(&text, Indentation::default()),
+            linked_editing: true,
             ..EditingConfig::default()
         };
         let language = languages.detect(&file_name, &text.line_content(0));
@@ -358,6 +359,7 @@ impl EditorPage {
         ui.checkbox(&mut self.view_config.cursor_blinking, "Cursor blinking");
         ui.checkbox(&mut self.view_config.scroll_beyond_last_line, "Scroll beyond last line");
         ui.checkbox(&mut self.state.config.read_only, "Read-only");
+        ui.checkbox(&mut self.state.config.linked_editing, "Linked editing (tag pairs)");
         ui.add(egui::Slider::new(&mut self.view_config.font_size, 8.0..=32.0).text("Font size"));
         ui.add(egui::Slider::new(&mut self.state.config.indentation.tab_size, 1..=8).text("Tab size"));
         ui.checkbox(&mut self.state.config.indentation.insert_spaces, "Insert spaces");

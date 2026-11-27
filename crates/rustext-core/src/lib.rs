@@ -14,6 +14,7 @@ pub mod history;
 pub mod indentation;
 pub mod lexical;
 pub mod lines;
+pub mod linked_editing;
 pub mod links;
 pub mod motion;
 pub mod position;

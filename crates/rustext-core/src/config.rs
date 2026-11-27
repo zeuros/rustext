@@ -44,6 +44,8 @@ pub struct EditingConfig {
     pub auto_surround: bool,
     /// Enter keeps the indentation and indents after an opening bracket.
     pub auto_indent: bool,
+    /// Typing in a tag name renames its pair (`<div>` and `</div>`).
+    pub linked_editing: bool,
     pub multi_cursor_limit: usize,
 }
 
@@ -62,6 +64,7 @@ impl Default for EditingConfig {
             auto_closing_delete: true,
             auto_surround: true,
             auto_indent: true,
+            linked_editing: false,
             multi_cursor_limit: 10_000,
         }
     }

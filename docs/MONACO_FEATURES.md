@@ -93,7 +93,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | In-place replace (cycle true/false…) | `inPlaceReplace.up/down` | P3 | todo |
 | Read-only + message | `readOnly`, `readOnlyMessage`, `onDidAttemptReadOnlyEdit` | P0 | done |
 | IME composition | `onDidCompositionStart/End`, `inComposition` | P0 | done |
-| Linked editing (HTML tag pairs) | `linkedEditing`, `registerLinkedEditingRangeProvider` | P2 | todo |
+| Linked editing (HTML tag pairs) | `linkedEditing`, `registerLinkedEditingRangeProvider` | P2 | done (D34, tags read from the text) |
 | Snippets with tab stops | `snippetSuggestions`, `insertTextRules.InsertAsSnippet` | P2 | done |
 | Drag and drop text | `dragAndDrop`, `dropIntoEditor` | P3 | todo |
 
