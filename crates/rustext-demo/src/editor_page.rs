@@ -347,6 +347,8 @@ impl EditorPage {
         ui.checkbox(&mut self.view_config.match_brackets, "Match brackets");
         ui.checkbox(&mut self.view_config.bracket_pair_guides, "Bracket pair guides");
         ui.checkbox(&mut self.view_config.occurrences_highlight, "Highlight occurrences");
+        ui.checkbox(&mut self.view_config.format_on_type, "Format on type (--lsp)");
+        ui.checkbox(&mut self.view_config.format_on_paste, "Format on paste (--lsp)");
         ui.checkbox(&mut self.view_config.cursor_blinking, "Cursor blinking");
         ui.checkbox(&mut self.view_config.scroll_beyond_last_line, "Scroll beyond last line");
         ui.checkbox(&mut self.state.config.read_only, "Read-only");

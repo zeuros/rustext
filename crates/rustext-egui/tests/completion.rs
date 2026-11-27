@@ -192,6 +192,25 @@ impl LanguageServices for TestServices {
         Reply::Ready(vec![TextEdit { range: rustext_core::Range::new(start, start), new_text: header }])
     }
 
+    fn format_on_type_trigger_chars(&self) -> &[char] {
+        &[';', '\n']
+    }
+
+    /// Indents the cursor's line by four spaces.
+    fn format_on_type(
+        &mut self,
+        text: &Text,
+        _revision: u64,
+        position: Position,
+        _typed: char,
+        _indentation: rustext_core::indentation::Indentation,
+    ) -> Reply<Vec<TextEdit>> {
+        let content = text.line_content(position.line);
+        let indent_len = content.chars().take_while(|character| character.is_whitespace()).count();
+        let range = rustext_core::Range::new(Position::new(position.line, 0), Position::new(position.line, indent_len));
+        Reply::Ready(vec![TextEdit { range, new_text: "    ".into() }])
+    }
+
     /// `helper` is defined at 0:3; `imported` in another document.
     fn definition(&mut self, text: &Text, _revision: u64, position: Position) -> Reply<Option<Location>> {
         let line: Vec<char> = text.line_content(position.line).chars().collect();
@@ -659,6 +678,56 @@ fn ctrl_k_ctrl_f_formats_the_selected_lines() {
     harness.run();
 
     assert_eq!(harness.state().state.text().to_string(), "a\n// range\nb\n");
+}
+
+#[test]
+fn typing_a_trigger_char_formats_around_the_cursor_and_undoes_apart() {
+    let mut harness = harness("fn f() {\nx\n}");
+    harness.state_mut().config.format_on_type = true;
+    click_end(&mut harness, 1);
+
+    type_text(&mut harness, ";");
+
+    assert_eq!(content(&harness), "fn f() {\n    x;\n}");
+    assert_eq!(harness.state().state.selections().primary().head, "fn f() {\n    x;".chars().count());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(content(&harness), "fn f() {\nx;\n}");
+}
+
+#[test]
+fn enter_formats_the_new_line_on_type() {
+    // Without formatting, Enter after an unindented line opens an unindented line.
+    let mut harness = harness("x\ny");
+    harness.state_mut().config.format_on_type = true;
+    click_end(&mut harness, 0);
+
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    assert_eq!(content(&harness), "x\n    \ny");
+}
+
+#[test]
+fn formatting_on_type_is_off_by_default() {
+    let mut harness = harness("fn f() {\nx\n}");
+    click_end(&mut harness, 1);
+
+    type_text(&mut harness, ";");
+
+    assert_eq!(content(&harness), "fn f() {\nx;\n}");
+}
+
+#[test]
+fn pasted_text_is_formatted_when_format_on_paste_is_on() {
+    let mut harness = harness("a\nb\n");
+    harness.state_mut().config.format_on_paste = true;
+    click_end(&mut harness, 1);
+
+    harness.event(Event::Paste("\nc".into()));
+    harness.run();
+
+    assert_eq!(content(&harness), "a\n// range\nb\nc\n");
 }
 
 #[test]

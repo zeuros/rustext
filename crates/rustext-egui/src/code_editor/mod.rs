@@ -132,6 +132,11 @@ pub struct ViewConfig {
     pub folding_strategy: FoldingStrategy,
     pub indent_guides: bool,
     pub match_brackets: bool,
+    /// Formats the code around the cursor after a char the language services name is typed
+    /// (`}`, `;`, Enter; Monaco's `formatOnType`).
+    pub format_on_type: bool,
+    /// Formats pasted text (Monaco's `formatOnPaste`).
+    pub format_on_paste: bool,
     /// A lightbulb in the gutter where the cursor rests on code actions (Monaco's
     /// `lightbulb.enabled`); a click opens them.
     pub lightbulb: bool,
@@ -193,6 +198,8 @@ impl Default for ViewConfig {
             bracket_pair_guides: false,
             links: true,
             lightbulb: true,
+            format_on_type: false,
+            format_on_paste: false,
             word_wrap: WordWrap::default(),
             inlay_hints: true,
             sticky_scroll: true,
@@ -275,9 +282,8 @@ pub struct EditorView {
     lightbulb: code_actions::LightbulbState,
     /// A definition asked for (F12, Ctrl+click) and not answered yet: (text revision, position).
     definition_request: Option<(u64, Position)>,
-    /// Formatting asked for and not answered yet: the text revision, and the range for a
-    /// selection (Ctrl+K Ctrl+F), `None` for the document (Shift+Alt+F).
-    format_request: Option<(u64, Option<rustext_core::Range>)>,
+    /// Formatting asked for and not answered yet: the text revision, and what to format.
+    format_request: Option<(u64, assist::FormatScope)>,
     /// Smart select's history (Shift+Alt+Right / Left).
     pub smart_select: smart_select::SmartSelectState,
     pub(crate) wraps: wrapping::WrapState,
@@ -478,6 +484,8 @@ pub struct CodeEditor<'a> {
     services: Option<&'a mut dyn rustext_core::services::LanguageServices>,
     /// What was typed this frame, for completion triggers.
     typed_this_frame: String,
+    /// The last char typed this frame (`\n` for Enter), for formatting on type.
+    last_typed_char: Option<char>,
     /// Overrides `ViewConfig::aria_label` (each side of a diff has its own name).
     aria_label: Option<String>,
 }
@@ -555,6 +563,7 @@ impl<'a> CodeEditor<'a> {
             bracket_budget_lines: Self::BRACKET_BUDGET_LINES_PER_FRAME,
             services: None,
             typed_this_frame: String::new(),
+            last_typed_char: None,
             aria_label: None,
         }
     }
@@ -672,6 +681,7 @@ impl<'a> CodeEditor<'a> {
             .into_iter()
             .map(|(start, end)| Decoration::new(start, end, DecorationKind::Background(placeholder_background)))
             .collect();
+        self.request_format_on_type();
         let is_awaiting_services = self.refresh_inlay_hints(&metrics)
             | self.refresh_document_highlights()
             | self.refresh_references()

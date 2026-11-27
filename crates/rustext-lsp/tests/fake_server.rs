@@ -163,6 +163,18 @@ fn formatting_sends_the_indentation_and_reads_the_edits() {
 }
 
 #[test]
+fn formatting_on_type_sends_the_typed_char_and_its_position() {
+    let mut services = start();
+    let text = Text::new("fn f() {\n    a;\n}");
+    let indentation = rustext_core::indentation::Indentation::default();
+
+    let edits = until_ready(|| services.format_on_type(&text, 1, Position::new(1, 6), ';', indentation));
+
+    assert_eq!(services.format_on_type_trigger_chars(), &['}', ';', '\n']);
+    assert_eq!(edits[0].new_text, "// typed ; at 1:6\n");
+}
+
+#[test]
 fn code_actions_with_edits_come_preferred_first() {
     let mut services = start();
     let text = Text::new("ab\n");

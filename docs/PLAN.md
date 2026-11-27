@@ -114,19 +114,21 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 Last updated: 2026-11-26, after the language features round (D22–D26).
 
 **State**: M0–M10 done, M11 and M12 mostly done, M13 done (integration guide, performance).
-`scripts/check.sh` green; ~320 tests, including seeded random tests (`random_commands.rs`
+`scripts/check.sh` green; ~330 tests, including seeded random tests (`random_commands.rs`
 in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case counts or
 change their seeds locally to hunt for rarer bugs), and `crates/rustext-lsp/tests/
 rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP feature against a
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. Format on type (`onTypeFormatting`) and on paste.
-2. LSP code lenses turned into `CodeLens` values (`textDocument/codeLens`, resolved lazily).
-3. Language injections (JS in HTML, code blocks in Markdown): highlighting, and brackets
+1. LSP code lenses turned into `CodeLens` values (`textDocument/codeLens`, resolved lazily).
+2. Language injections (JS in HTML, code blocks in Markdown): highlighting, and brackets
    in HTML's scripts (HTML has no bracket tokens, so it keeps the lexer).
 
 **Done in the last sessions** (newest first):
+- Format on type (the server's trigger chars and Enter; rust-analyzer indents a `.` chain)
+  and format on paste, both off by default as in Monaco (`ViewConfig::format_on_type`,
+  `format_on_paste`; checkboxes in the demo).
 - Brackets from tree-sitter tokens where a grammar is bundled (D27): colors and matching
   understand raw strings, nested comments and heredocs.
 - Language services: a lightbulb where the cursor rests on code actions; code actions (Ctrl+.), format document (Shift+Alt+F) and selection (Ctrl+K Ctrl+F), Go to Symbol

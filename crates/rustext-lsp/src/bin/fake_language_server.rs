@@ -39,7 +39,7 @@ fn main() {
         let position = &message["params"]["position"];
         let result = match method {
             "initialize" => {
-                json!({ "capabilities": { "textDocumentSync": 2, "inlayHintProvider": true, "documentHighlightProvider": true, "completionProvider": { "triggerCharacters": ["."] }, "hoverProvider": true, "definitionProvider": true } })
+                json!({ "capabilities": { "textDocumentSync": 2, "inlayHintProvider": true, "documentHighlightProvider": true, "completionProvider": { "triggerCharacters": ["."] }, "hoverProvider": true, "definitionProvider": true, "documentOnTypeFormattingProvider": { "firstTriggerCharacter": "}", "moreTriggerCharacter": [";", "\n"] } } })
             }
             "fake/document" => json!(document.join("\n")),
             "textDocument/completion" => json!({ "isIncomplete": false, "items": [
@@ -84,6 +84,13 @@ fn main() {
             "textDocument/rangeFormatting" => {
                 let line = message["params"]["range"]["start"]["line"].as_u64().unwrap_or(0);
                 json!([{ "range": { "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 0 } }, "newText": "// range\n" }])
+            }
+            "textDocument/onTypeFormatting" => {
+                let params = &message["params"];
+                let typed = params["ch"].as_str().unwrap_or_default().escape_debug().to_string();
+                let position = &params["position"];
+                let label = format!("// typed {typed} at {}:{}\n", position["line"], position["character"]);
+                json!([{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": label }])
             }
             "textDocument/formatting" => {
                 let tab_size = message["params"]["options"]["tabSize"].as_u64().unwrap_or(0);

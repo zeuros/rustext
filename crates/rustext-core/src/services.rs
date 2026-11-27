@@ -351,6 +351,24 @@ pub trait LanguageServices {
         Reply::Ready(Vec::new())
     }
 
+    /// Chars that format the code around the cursor right after being typed (Monaco's
+    /// `formatOnType`; `\n` is Enter).
+    fn format_on_type_trigger_chars(&self) -> &[char] {
+        &[]
+    }
+
+    /// Edits formatting the code around `position`, right after `typed` was typed before it.
+    fn format_on_type(
+        &mut self,
+        _text: &Text,
+        _text_revision: u64,
+        _position: Position,
+        _typed: char,
+        _indentation: crate::indentation::Indentation,
+    ) -> Reply<Vec<TextEdit>> {
+        Reply::Ready(Vec::new())
+    }
+
     /// The definitions of the document (Go to Symbol), in text order. Without an answer, the
     /// styler's syntax tree gives them.
     fn document_symbols(&mut self, _text: &Text, _text_revision: u64) -> Reply<Vec<DocumentSymbol>> {

@@ -96,6 +96,18 @@ fn rust_analyzer_answers_parse() {
     let formatted = rustext_core::services::transaction_of_edits(&messy, &edits).unwrap().changes.apply(&messy);
     assert!(formatted.to_string().contains("fn length(point: &Point) -> i32 {\n    point.x\n}"), "{formatted}");
 
+    // rust-analyzer formats on `.` (indents a method call continuing the previous line).
+    assert!(services.format_on_type_trigger_chars().contains(&'.'), "{:?}", services.format_on_type_trigger_chars());
+    let chain = Text::new("fn main() {\n    let v = Vec::<u8>::new()\n.len();\n}\n");
+    let after_dot = Position::new(2, 1);
+    let edits = until_answered(
+        |attempt| services.format_on_type(&chain, 2_000 + attempt, after_dot, '.', indentation),
+        |edits| !edits.is_empty(),
+    );
+    let formatted = rustext_core::services::transaction_of_edits(&chain, &edits).unwrap().changes.apply(&chain);
+    eprintln!("rust-analyzer on type: {:?}", formatted.to_string());
+    assert!(formatted.line_content(2).starts_with("        ."), "{formatted}");
+
     let on_point = rustext_core::Range::new(Position::new(0, 8), Position::new(0, 8));
     let actions =
         until_answered(|attempt| services.code_actions(&text, attempt, on_point), |actions| !actions.is_empty());

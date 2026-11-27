@@ -3,7 +3,7 @@
 use egui::{Align2, Area, Frame, Id, Key, Order, RichText, Ui, pos2};
 use rustext_core::decoration::Decoration;
 use rustext_core::services::{Reply, SignatureHelp, transaction_keeping_selections, transaction_of_edits};
-use rustext_core::{ChangeSet, Command, Outcome};
+use rustext_core::{ChangeSet, Command, Outcome, Position, Range};
 
 use super::layout::to_rgba;
 use super::{CodeEditor, Metrics};
@@ -11,6 +11,17 @@ use super::{CodeEditor, Metrics};
 /// Inlay hints are asked for whole blocks of this many lines around the visible ones, so
 /// scrolling a little reuses the answer.
 const INLAY_HINT_BLOCK_LINES: usize = 100;
+
+/// What formatting is asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FormatScope {
+    /// The whole document (Shift+Alt+F).
+    Document,
+    /// The lines of a range: the selection (Ctrl+K Ctrl+F), pasted text.
+    Range(Range),
+    /// The code around `position`, right after `typed` was typed before it.
+    Typed { position: Position, typed: char },
+}
 
 /// The shown inlay hints (they follow edits until the new answer) and the lines asked for.
 #[derive(Clone, Debug, Default)]
@@ -103,17 +114,58 @@ impl CodeEditor<'_> {
         };
     }
 
+    /// Asks for formatting `scope` of the text as it is now.
+    pub(super) fn request_formatting(&mut self, scope: FormatScope) {
+        self.view.format_request = Some((self.state.text_revision(), scope));
+    }
+
+    /// The range from char offset `start` to `end`.
+    pub(super) fn range_of(&self, start: usize, end: usize) -> Range {
+        let text = self.state.text();
+        Range::new(text.position(start), text.position(end))
+    }
+
+    /// Formatting on type: after a trigger char the services name was typed this frame, with
+    /// one cursor, formats around it.
+    pub(super) fn request_format_on_type(&mut self) {
+        let Some(typed) = self.last_typed_char.take() else { return };
+        let is_trigger =
+            self.services.as_deref().is_some_and(|services| services.format_on_type_trigger_chars().contains(&typed));
+        let selections = self.state.selections();
+        if !self.config.format_on_type || !is_trigger || selections.len() > 1 || !selections.primary().is_empty() {
+            return;
+        }
+        let position = self.state.text().position(selections.primary().head);
+        self.request_formatting(FormatScope::Typed { position, typed });
+    }
+
+    /// Pastes, then formats the pasted text when `format_on_paste` is on (one cursor).
+    pub(super) fn paste(&mut self, outcome: &mut Outcome, pasted: String) {
+        let selections = self.state.selections();
+        let pasted_start = (selections.len() == 1).then(|| selections.primary().start());
+        let revision_before = self.state.text_revision();
+        self.execute(outcome, Command::Paste(pasted));
+        let has_pasted = self.state.text_revision() != revision_before;
+        if let Some(start) = pasted_start.filter(|_| self.config.format_on_paste && has_pasted) {
+            let end = self.state.selections().primary().head;
+            self.request_formatting(FormatScope::Range(self.range_of(start, end)));
+        }
+    }
+
     /// Applies the formatting edits once the services answer (one undo step, the cursors kept
     /// on their text); an edit meanwhile drops the request. Returns whether an answer is
     /// awaited.
     pub(super) fn refresh_formatting(&mut self) -> bool {
-        let Some((revision, range)) = self.view.format_request else { return false };
+        let Some((revision, scope)) = self.view.format_request else { return false };
         let text = self.state.text().clone();
         let indentation = self.state.config.indentation;
         let services = self.services.as_deref_mut().filter(|_| revision == self.state.text_revision());
-        let reply = services.map(|services| match range {
-            Some(range) => services.format_range(&text, revision, range, indentation),
-            None => services.format_document(&text, revision, indentation),
+        let reply = services.map(|services| match scope {
+            FormatScope::Document => services.format_document(&text, revision, indentation),
+            FormatScope::Range(range) => services.format_range(&text, revision, range, indentation),
+            FormatScope::Typed { position, typed } => {
+                services.format_on_type(&text, revision, position, typed, indentation)
+            }
         });
         if matches!(reply, Some(Reply::Pending)) {
             return true;

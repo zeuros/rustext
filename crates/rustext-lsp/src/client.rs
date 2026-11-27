@@ -47,6 +47,7 @@ pub struct LspServices {
     synced_revision: Option<u64>,
     document_version: i32,
     trigger_chars: Vec<char>,
+    format_on_type_trigger_chars: Vec<char>,
     /// The server takes incremental changes.
     syncs_incrementally: bool,
     gives_inlay_hints: bool,
@@ -229,6 +230,7 @@ fn client_capabilities() -> lsp::ClientCapabilities {
                 ..Default::default()
             }),
             definition: Some(Default::default()),
+            on_type_formatting: Some(Default::default()),
             publish_diagnostics: Some(Default::default()),
             ..Default::default()
         }),
@@ -284,6 +286,17 @@ impl LspServices {
             .and_then(|provider| provider.trigger_characters)
             .map(|triggers| triggers.iter().filter_map(|trigger| trigger.chars().next()).collect())
             .unwrap_or_default();
+        let format_on_type_trigger_chars = capabilities
+            .document_on_type_formatting_provider
+            .map(|provider| {
+                let more = provider.more_trigger_character.unwrap_or_default();
+                std::iter::once(provider.first_trigger_character)
+                    .chain(more)
+                    .filter_map(|trigger| trigger.chars().next())
+            })
+            .into_iter()
+            .flatten()
+            .collect();
         let syncs_incrementally = match capabilities.text_document_sync {
             Some(lsp::TextDocumentSyncCapability::Kind(kind)) => kind == lsp::TextDocumentSyncKind::INCREMENTAL,
             Some(lsp::TextDocumentSyncCapability::Options(options)) => {
@@ -299,6 +312,7 @@ impl LspServices {
             synced_revision: None,
             document_version: 0,
             trigger_chars,
+            format_on_type_trigger_chars,
             syncs_incrementally,
             gives_inlay_hints: is_announced(&capabilities.inlay_hint_provider),
             gives_document_highlights: is_announced(&capabilities.document_highlight_provider),
@@ -806,6 +820,28 @@ impl LanguageServices for LspServices {
         let key = RequestKey::new::<request::RangeFormatting>(text_revision, range.start)
             .with_argument(format!("{:?}", range.end));
         map_reply(self.ask::<request::RangeFormatting>(text, key, params), |edits| text_edits(text, edits))
+    }
+
+    fn format_on_type_trigger_chars(&self) -> &[char] {
+        &self.format_on_type_trigger_chars
+    }
+
+    fn format_on_type(
+        &mut self,
+        text: &Text,
+        text_revision: u64,
+        position: Position,
+        typed: char,
+        indentation: rustext_core::indentation::Indentation,
+    ) -> Reply<Vec<TextEdit>> {
+        let params = lsp::DocumentOnTypeFormattingParams {
+            text_document_position: self.text_document_position(text, position),
+            ch: typed.to_string(),
+            options: formatting_options(indentation),
+        };
+        let key =
+            RequestKey::new::<request::OnTypeFormatting>(text_revision, position).with_argument(typed.to_string());
+        map_reply(self.ask::<request::OnTypeFormatting>(text, key, params), |edits| text_edits(text, edits))
     }
 
     fn document_symbols(&mut self, text: &Text, text_revision: u64) -> Reply<Vec<DocumentSymbol>> {

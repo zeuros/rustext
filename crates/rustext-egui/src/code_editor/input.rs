@@ -6,6 +6,7 @@ use rustext_core::cursors::{VerticalDirection, word_range_at};
 use rustext_core::display::RowContent;
 use rustext_core::{Command, Motion, Outcome, Position, Selection, Selections};
 
+use super::assist::FormatScope;
 use super::{CodeEditor, Drag, DragUnit, Metrics, MouseTarget, whole_line};
 use crate::keymap::{Action, KeyResolution, Keymap};
 
@@ -83,7 +84,7 @@ impl CodeEditor<'_> {
         if is_past_line_end { MouseTarget::Empty { position } } else { MouseTarget::Text { position } }
     }
 
-    fn execute(&mut self, outcome: &mut Outcome, command: Command) {
+    pub(super) fn execute(&mut self, outcome: &mut Outcome, command: Command) {
         let result = self.state.execute(command);
         *outcome = std::mem::take(outcome).merged(result);
     }
@@ -325,6 +326,7 @@ impl CodeEditor<'_> {
                     let printable: String = typed.chars().filter(|character| !character.is_control()).collect();
                     if !printable.is_empty() && self.view.pending_chords.is_empty() {
                         self.typed_this_frame.push_str(&printable);
+                        self.last_typed_char = printable.chars().last();
                         self.execute(outcome, Command::Type(printable));
                     }
                 }
@@ -333,7 +335,7 @@ impl CodeEditor<'_> {
                 }
                 Event::Copy => self.copy(ui, outcome, Command::Copy),
                 Event::Cut => self.copy(ui, outcome, Command::Cut),
-                Event::Paste(pasted) => self.execute(outcome, Command::Paste(pasted)),
+                Event::Paste(pasted) => self.paste(outcome, pasted),
                 Event::Ime(ImeEvent::Preedit { text, .. }) => {
                     self.view.ime_preedit = (!text.is_empty()).then_some(text)
                 }
@@ -408,6 +410,10 @@ impl CodeEditor<'_> {
             return;
         }
         match action {
+            Action::Edit(Command::Newline) => {
+                self.last_typed_char = Some('\n');
+                self.execute(outcome, Command::Newline);
+            }
             Action::Edit(command) => self.execute(outcome, command),
             Action::MovePage { direction, extend } => {
                 let motion = match direction {
@@ -428,11 +434,10 @@ impl CodeEditor<'_> {
             Action::TriggerSuggest => self.view.completion.request(),
             Action::CommandPalette => self.view.palette.open(super::palette::PaletteMode::Commands),
             Action::GoToSymbol => self.view.palette.open(super::palette::PaletteMode::Symbols),
-            Action::FormatDocument => self.view.format_request = Some((self.state.text_revision(), None)),
+            Action::FormatDocument => self.request_formatting(FormatScope::Document),
             Action::FormatSelection => {
-                let (text, primary) = (self.state.text(), self.state.selections().primary());
-                let range = rustext_core::Range::new(text.position(primary.start()), text.position(primary.end()));
-                self.view.format_request = Some((self.state.text_revision(), Some(range)));
+                let primary = self.state.selections().primary();
+                self.request_formatting(FormatScope::Range(self.range_of(primary.start(), primary.end())));
             }
             Action::CodeActions => self.open_code_actions(),
             Action::Rename => self.open_rename(),
