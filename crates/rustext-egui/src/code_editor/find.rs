@@ -306,6 +306,12 @@ impl CodeEditor<'_> {
         wants_editor_focus
     }
 
+    #[expect(
+        clippy::cognitive_complexity,
+        clippy::excessive_nesting,
+        clippy::too_many_lines,
+        reason = "predates the complexity lints (D28)"
+    )]
     fn show_find_widget(&mut self, ui: &mut Ui, metrics: &Metrics, editor_id: Id) -> bool {
         enum Request {
             Next,

@@ -24,6 +24,7 @@ pub enum AutoClosing {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(clippy::struct_excessive_bools, reason = "predates the complexity lints (D28)")]
 pub struct EditingConfig {
     pub indentation: Indentation,
     pub words: WordDefinition,

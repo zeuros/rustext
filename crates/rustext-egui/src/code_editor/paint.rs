@@ -28,6 +28,7 @@ struct PaintedRow {
 }
 
 impl CodeEditor<'_> {
+    #[expect(clippy::cognitive_complexity, clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub(super) fn paint(&mut self, ui: &mut Ui, metrics: &Metrics, has_focus: bool, editor_id: egui::Id) {
         let painter = ui.painter_at(metrics.full_rect());
         let theme = self.theme.clone();
@@ -339,6 +340,7 @@ impl CodeEditor<'_> {
 
     /// Vertical lines at each indentation level of the line; the guide of the cursor's block
     /// (`active_guide`: level, first line, last line) in a brighter color.
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     fn paint_indent_guides(
         &self,
         painter: &Painter,
@@ -420,6 +422,7 @@ impl CodeEditor<'_> {
     }
 
     /// A small label after the line's text: `CR` for a `\r\n` line, `⋯` for a folded line.
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     fn paint_end_of_line_label(
         &self,
         painter: &Painter,
@@ -537,6 +540,7 @@ impl CodeEditor<'_> {
         }
     }
 
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     fn paint_cursor(
         &self,
         painter: &Painter,
@@ -598,6 +602,7 @@ impl CodeEditor<'_> {
         });
     }
 
+    #[expect(clippy::too_many_arguments, clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     fn paint_gutter(
         &self,
         painter: &Painter,
@@ -708,6 +713,7 @@ impl CodeEditor<'_> {
         }
     }
 
+    #[expect(clippy::excessive_nesting, clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     fn paint_scrollbar(&self, ui: &Ui, painter: &Painter, metrics: &Metrics, text: &Text, selections: &Selections) {
         let theme = self.theme;
         let track = metrics.scrollbar_rect;

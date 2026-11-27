@@ -134,6 +134,7 @@ impl Keymap {
     }
 
     /// VS Code's default keybindings (Linux / Windows flavour, Cmd on macOS).
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub fn vscode() -> Self {
         let none = Modifiers::NONE;
         let shift = Modifiers::SHIFT;

@@ -14,6 +14,7 @@ use crate::selection::{Selection, Selections};
 use crate::text::Text;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[expect(clippy::struct_excessive_bools, reason = "predates the complexity lints (D28)")]
 pub struct SearchQuery {
     pub pattern: String,
     pub is_regex: bool,

@@ -91,6 +91,7 @@ fn random_config(random: &mut Random) -> ViewConfig {
 }
 
 #[test]
+#[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
 fn random_input_never_panics_and_keeps_selections_valid() {
     let mut random = Random(0xfeed_face_dead_beef);
     for case in 0..60 {

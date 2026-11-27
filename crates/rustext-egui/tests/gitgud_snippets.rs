@@ -27,6 +27,7 @@ struct Gitgud {
 }
 
 #[test]
+#[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
 fn integration_guide_snippets_work() {
     let languages = LanguageRegistry::new();
     let language = languages.detect("src/main.rs", "");

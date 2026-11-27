@@ -110,6 +110,7 @@ pub fn apply_motion(
 }
 
 /// `apply_motion` for a view hiding some lines: vertical moves step over them.
+#[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
 pub fn apply_motion_over(
     text: &Text,
     config: &EditingConfig,
@@ -135,6 +136,7 @@ pub fn apply_motion_over(
     }
 }
 
+#[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
 fn horizontal_head(text: &Text, config: &EditingConfig, head: usize, motion: Motion) -> usize {
     let position = text.position(head);
     let line = text.line_content(position.line);
@@ -208,6 +210,7 @@ fn horizontal_head(text: &Text, config: &EditingConfig, head: usize, motion: Mot
 /// Moves the head `line_delta` lines, keeping the visual column the cursor had when the
 /// vertical moves started. Moving up from the first line goes to its start, down from the last
 /// line to its end.
+#[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
 fn vertical(
     text: &Text,
     config: &EditingConfig,

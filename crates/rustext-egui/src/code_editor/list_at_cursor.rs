@@ -124,6 +124,7 @@ pub(super) struct ListPlace<'a> {
 
 /// Draws a list: a dim title, then the rows (pieces of monospace text), the chosen one
 /// highlighted. Returns the index of a clicked row.
+#[expect(clippy::excessive_nesting, reason = "predates the complexity lints (D28)")]
 pub(super) fn show_list(
     ui: &Ui,
     place: ListPlace<'_>,

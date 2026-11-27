@@ -106,6 +106,7 @@ fn blame_commit_index(line: usize) -> usize {
 }
 
 impl EditorPage {
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     pub fn new(
         languages: &LanguageRegistry,
         theme_choice: &ThemeChoice,
@@ -289,6 +290,7 @@ impl EditorPage {
         decorations
     }
 
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     fn options_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Editor");
         ui.checkbox(&mut self.shows_diagnostics, "Diagnostics demo (F8)");

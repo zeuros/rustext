@@ -314,6 +314,7 @@ impl<'a> MergeEditor<'a> {
         self
     }
 
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub fn show(self, ui: &mut Ui) -> MergeResponse {
         let Self { document, view_config, theme, keymap, stylers, labels } = self;
         let [mut ours_styler, mut theirs_styler, mut result_styler] = match stylers {

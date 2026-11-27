@@ -40,6 +40,7 @@ impl RequestKey {
     }
 }
 
+#[expect(clippy::struct_excessive_bools, reason = "predates the complexity lints (D28)")]
 pub struct LspServices {
     connection: Connection,
     document_uri: Uri,
@@ -249,6 +250,7 @@ fn client_capabilities() -> lsp::ClientCapabilities {
 impl LspServices {
     /// Starts `program` as the language server of `file_path` (in language `language_id`),
     /// waiting up to `initialize_timeout` for it to initialize.
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub fn start(
         program: &str,
         arguments: &[&str],

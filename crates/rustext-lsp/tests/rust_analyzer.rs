@@ -42,6 +42,7 @@ fn until_answered<T>(mut ask: impl FnMut(u64) -> Reply<T>, is_complete: impl Fn(
 
 #[test]
 #[ignore = "needs rust-analyzer; slow"]
+#[expect(clippy::cognitive_complexity, clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
 fn rust_analyzer_answers_parse() {
     let main = project();
     let mut services =

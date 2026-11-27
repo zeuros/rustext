@@ -375,6 +375,7 @@ impl<'a> DiffEditor<'a> {
             });
     }
 
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     fn show_side_by_side(&mut self, ui: &mut Ui, rect: Rect) -> DiffResponse {
         let ratio = self.document.dragged_split_ratio.unwrap_or(self.config.split_ratio).clamp(0.1, 0.9);
         let split_x = rect.left() + rect.width() * ratio;

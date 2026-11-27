@@ -49,6 +49,7 @@ pub struct History {
 impl History {
     /// Records an edit. Typing after typing (and deleting after deleting) joins the last entry,
     /// unless an undo stop was pushed in between.
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     pub fn record(
         &mut self,
         original: &Text,

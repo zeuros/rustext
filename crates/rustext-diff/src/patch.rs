@@ -61,6 +61,7 @@ enum Mark {
 
 /// The patch for the selected lines, with zero context lines, or `None` when the selection
 /// holds no changed line.
+#[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
 pub fn build_patch(
     diff: &LineDiff,
     old: &Text,

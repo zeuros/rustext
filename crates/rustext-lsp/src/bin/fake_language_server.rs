@@ -8,6 +8,7 @@ use std::io::{BufReader, Write};
 use rustext_lsp::transport::{read_message, write_message};
 use serde_json::{Value, json};
 
+#[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
 fn main() {
     let mut reader = BufReader::new(std::io::stdin());
     // The document as the server knows it, to check what clients send.

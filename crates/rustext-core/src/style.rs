@@ -32,6 +32,7 @@ impl Rgba {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[expect(clippy::struct_excessive_bools, reason = "predates the complexity lints (D28)")]
 pub struct TextStyle {
     pub foreground: Option<Rgba>,
     pub background: Option<Rgba>,

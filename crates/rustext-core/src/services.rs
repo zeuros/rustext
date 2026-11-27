@@ -384,6 +384,7 @@ pub trait LanguageServices {
     }
 
     /// Edits formatting the code around `position`, right after `typed` was typed before it.
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     fn format_on_type(
         &mut self,
         _text: &Text,

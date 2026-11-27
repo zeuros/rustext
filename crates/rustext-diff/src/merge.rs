@@ -66,6 +66,7 @@ fn shifted(line: usize, delta: isize) -> usize {
 }
 
 /// The regions of a merge, covering the whole base in order.
+#[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
 pub fn merge_regions(input: &MergeInput) -> Vec<MergeRegion> {
     let options = DiffOptions { inner_changes: false, ..DiffOptions::default() };
     let ours_diff = diff_lines(&input.base, &input.ours, &options);

@@ -1,9 +1,9 @@
-584 crates/rustext-core/src/state.rs
-546 crates/rustext-core/src/structure.rs
-523 crates/rustext-egui/src/code_editor/find.rs
-542 crates/rustext-egui/src/code_editor/input.rs
-1236 crates/rustext-egui/src/code_editor/mod.rs
-795 crates/rustext-egui/src/code_editor/paint.rs
-557 crates/rustext-egui/src/diff_editor.rs
-1013 crates/rustext-lsp/src/client.rs
+585 crates/rustext-core/src/state.rs
+549 crates/rustext-core/src/structure.rs
+529 crates/rustext-egui/src/code_editor/find.rs
+546 crates/rustext-egui/src/code_editor/input.rs
+1238 crates/rustext-egui/src/code_editor/mod.rs
+801 crates/rustext-egui/src/code_editor/paint.rs
+558 crates/rustext-egui/src/diff_editor.rs
+1015 crates/rustext-lsp/src/client.rs
 767 crates/rustext-syntax/src/tree.rs

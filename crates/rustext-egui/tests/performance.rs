@@ -42,6 +42,7 @@ fn milliseconds_per_frame(
 
 #[test]
 #[ignore = "slow; run in release"]
+#[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
 fn large_file_frame_times() {
     let fixture = Fixture {
         state: EditorState::new(&large_source(100_000)),
@@ -143,6 +144,7 @@ struct HighlightedFixture {
 
 #[test]
 #[ignore = "slow; run in release"]
+#[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
 fn large_file_frame_times_highlighted() {
     let languages = rustext_syntax::LanguageRegistry::new();
     let highlighter = rustext_syntax::SyntaxHighlighter::new(

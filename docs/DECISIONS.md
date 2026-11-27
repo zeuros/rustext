@@ -401,6 +401,13 @@ diff, syntax) and uploads the mutants no test kills. Renovate opens grouped depe
 - Files over the limit are pinned in `scripts/file_size_baseline.txt` at their current size:
   they may shrink, never grow, and leave the list once they fit. Splitting one means running
   `scripts/file_size.sh --baseline`.
+- The complexity lints (`clippy.toml`: 60 lines, 5 arguments, nesting 5, complexity 15, 3
+  bools) are pinned the same way: each function or struct over them when they came carries
+  `#[expect(clippy::…, reason = "predates the complexity lints (D28)")]`. New code meets them;
+  an `expect` fails once its item is brought under the limit, and is then removed.
+- Sonar's Rust analysis mostly re-reads clippy's; its dashboards don't pay for a second
+  service. Randomized tests (`random_commands`, `random_diffs`, `random_events`) stay
+  hand-rolled and seeded; proptest would only add shrinking.
 - Sonar's Rust analysis mostly re-reads clippy's; its dashboards don't pay for a second
   service. Randomized tests (`random_commands`, `random_diffs`, `random_events`) stay
   hand-rolled and seeded; proptest would only add shrinking.

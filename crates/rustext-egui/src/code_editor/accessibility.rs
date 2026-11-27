@@ -19,6 +19,7 @@ pub(super) struct VisibleSegment {
 }
 
 impl CodeEditor<'_> {
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     pub(super) fn update_accesskit_text(
         &self,
         ui: &Ui,

@@ -152,6 +152,7 @@ impl CodeEditor<'_> {
             .map(|(index, ..)| index)
     }
 
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     pub(super) fn paint_code_lens_row(
         &self,
         painter: &Painter,

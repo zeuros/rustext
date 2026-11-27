@@ -98,6 +98,7 @@ impl CodeEditor<'_> {
     }
 
     /// Columns `start_column..end_column` of a line (clamped to the line).
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     pub(super) fn layout_segment(
         &mut self,
         ui: &Ui,
@@ -174,6 +175,7 @@ impl CodeEditor<'_> {
         Some(self.layout_content(ui, metrics, &content, &spans, &[], &[]))
     }
 
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     fn layout_content(
         &self,
         ui: &Ui,

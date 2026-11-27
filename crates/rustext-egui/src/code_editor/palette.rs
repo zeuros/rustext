@@ -169,6 +169,7 @@ impl CodeEditor<'_> {
 
     /// Draws the palette; returns the action picked, if any, and whether the editor gets the
     /// focus back.
+    #[expect(clippy::excessive_nesting, clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub(super) fn show_palette(
         &mut self,
         ui: &mut Ui,

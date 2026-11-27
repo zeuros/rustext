@@ -96,6 +96,7 @@ impl CodeEditor<'_> {
     }
 
     /// Opens, refreshes or closes the list after this frame's input. `typed` is what was typed.
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub(super) fn refresh_completion(&mut self, typed: &str) {
         if self.services.is_none() {
             return;
@@ -224,6 +225,7 @@ impl CodeEditor<'_> {
     }
 
     /// Paints the list under the primary cursor; a click on an item accepts it.
+    #[expect(clippy::excessive_nesting, clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub(super) fn show_completion(&mut self, ui: &mut Ui, metrics: &Metrics, editor_id: Id, outcome: &mut Outcome) {
         let Some(session) = self.view.completion.session.clone().filter(|session| !session.filtered.is_empty()) else {
             return;

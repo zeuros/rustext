@@ -119,6 +119,7 @@ fn collapsed_row(rows: &[DiffRow], segment_rows: std::ops::Range<usize>, is_old_
 
 /// Rows of the old and new editors of a side-by-side view, aligned row for row: a line that
 /// wraps into more rows than the line beside it gets padding beside its continuations.
+#[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
 pub fn side_by_side_layouts(
     diff: &LineDiff,
     old: &Text,

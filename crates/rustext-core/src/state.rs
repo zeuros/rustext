@@ -352,6 +352,7 @@ impl EditorState {
             .collect()
     }
 
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub fn execute(&mut self, command: Command) -> Outcome {
         match (&command, self.snippet_session.is_some()) {
             (Command::Tab, true) => return self.jump_to_tab_stop(true),

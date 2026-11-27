@@ -142,6 +142,7 @@ impl CodeEditor<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     fn press(
         &mut self,
         ui: &Ui,
@@ -231,6 +232,7 @@ impl CodeEditor<'_> {
         }
     }
 
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     fn drag_to(&mut self, ui: &Ui, metrics: &Metrics, pos: Pos2, outcome: &mut Outcome) {
         let Some(drag) = self.view.drag else { return };
         let text = self.state.text().clone();
@@ -358,6 +360,7 @@ impl CodeEditor<'_> {
         *outcome = std::mem::take(outcome).merged(result);
     }
 
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     fn key_pressed(
         &mut self,
         metrics: &Metrics,
@@ -393,6 +396,7 @@ impl CodeEditor<'_> {
         }
     }
 
+    #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub(super) fn run_action(
         &mut self,
         metrics: &Metrics,

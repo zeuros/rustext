@@ -64,6 +64,7 @@ impl eframe::App for Playground {
     }
 }
 
+#[expect(clippy::struct_excessive_bools, reason = "predates the complexity lints (D28)")]
 struct Arguments {
     file: Option<String>,
     diff_files: Option<(String, String)>,
@@ -136,6 +137,7 @@ fn read(path: &str) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|error| format!("Cannot read {path}: {error}"))
 }
 
+#[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
 fn main() -> eframe::Result {
     let arguments = parse_arguments();
     let (file_name, content) = match &arguments.file {

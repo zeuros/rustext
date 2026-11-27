@@ -31,6 +31,7 @@ pub struct DiffPage {
 }
 
 impl DiffPage {
+    #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     pub fn new(
         languages: &LanguageRegistry,
         theme_choice: &ThemeChoice,

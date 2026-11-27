@@ -105,6 +105,7 @@ pub enum CurrentLineHighlight {
 
 /// Display options of a code editor (DECISIONS D12).
 #[derive(Clone, Debug, PartialEq)]
+#[expect(clippy::struct_excessive_bools, reason = "predates the complexity lints (D28)")]
 pub struct ViewConfig {
     pub font_size: f32,
     /// Line height as a multiple of the font's row height.
@@ -641,6 +642,7 @@ impl<'a> CodeEditor<'a> {
         self
     }
 
+    #[expect(clippy::cognitive_complexity, clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
     pub fn show(mut self, ui: &mut Ui) -> EditorResponse {
         let rect = ui.available_rect_before_wrap();
         let response = match &self.id_salt {

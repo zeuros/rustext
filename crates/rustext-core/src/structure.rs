@@ -107,6 +107,7 @@ pub fn matching_bracket_pair(
     })
 }
 
+#[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
 fn find_closing(
     text: &Text,
     scanner: &mut BracketScanner,
@@ -140,6 +141,7 @@ fn find_closing(
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
 fn find_opening(
     text: &Text,
     scanner: &mut BracketScanner,
@@ -216,6 +218,7 @@ pub struct EnclosingBracketPair {
 /// Visits the code brackets before `(line, column)`, nearest first, starting with
 /// `line_brackets` (those of `line`), until `is_target` says yes; returns that bracket's
 /// offset. Bounded by `MAX_BRACKET_DISTANCE`.
+#[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
 fn find_bracket_before(
     text: &Text,
     scanner: &mut BracketScanner,
