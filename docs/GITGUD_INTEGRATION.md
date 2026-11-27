@@ -123,6 +123,16 @@ match response.clicked_code_lens.map(|index| lenses[index].label.as_str()) {
 }
 ```
 
+The language server's lenses ("3 implementations", "▶ Run") show after these. Those that
+list places open the references list themselves; the others come back as a command for gitgud
+to run or ignore:
+
+```rust
+if let Some(command) = response.service_command {
+    // command.name ("rust-analyzer.runSingle"), command.arguments (a JSON array)
+}
+```
+
 ## The merge editor
 
 gitgud: mismerge with `git show :1:/:2:/:3:` contents, "Save and mark resolved" (write the

@@ -132,6 +132,8 @@ pub struct ViewConfig {
     pub folding_strategy: FoldingStrategy,
     pub indent_guides: bool,
     pub match_brackets: bool,
+    /// Asks the language services for code lenses (Monaco's `codeLens`).
+    pub code_lens: bool,
     /// Formats the code around the cursor after a char the language services name is typed
     /// (`}`, `;`, Enter; Monaco's `formatOnType`).
     pub format_on_type: bool,
@@ -198,6 +200,7 @@ impl Default for ViewConfig {
             bracket_pair_guides: false,
             links: true,
             lightbulb: true,
+            code_lens: true,
             format_on_type: false,
             format_on_paste: false,
             word_wrap: WordWrap::default(),
@@ -280,6 +283,8 @@ pub struct EditorView {
     /// The code actions list (Ctrl+.).
     pub code_actions: code_actions::CodeActionsState,
     lightbulb: code_actions::LightbulbState,
+    /// The language services' code lenses.
+    pub service_code_lenses: code_lens::ServiceCodeLenses,
     /// A definition asked for (F12, Ctrl+click) and not answered yet: (text revision, position).
     definition_request: Option<(u64, Position)>,
     /// Formatting asked for and not answered yet: the text revision, and what to format.
@@ -380,7 +385,8 @@ pub enum MouseTarget {
     GlyphMargin {
         line: usize,
     },
-    /// A code lens: its index in the slice given to `CodeEditor::code_lenses`.
+    /// A code lens: its index in the slice given to `CodeEditor::code_lenses`, then in the
+    /// language services' lenses.
     CodeLens {
         index: usize,
     },
@@ -419,6 +425,9 @@ pub struct EditorResponse {
     pub unhandled_actions: Vec<Action>,
     /// The index (in the slice given to `code_lenses`) of the code lens clicked this frame.
     pub clicked_code_lens: Option<usize>,
+    /// A command of the language services the user asked for (a click on one of their code
+    /// lenses): the application runs it.
+    pub service_command: Option<rustext_core::services::ServiceCommand>,
     /// A definition or reference in another document the user went to: the application opens
     /// it (the editor shows one document).
     pub open_request: Option<Location>,
@@ -688,7 +697,8 @@ impl<'a> CodeEditor<'a> {
             | self.refresh_definition()
             | self.refresh_formatting()
             | self.refresh_code_actions()
-            | self.refresh_lightbulb(ui.input(|input| input.time));
+            | self.refresh_lightbulb(ui.input(|input| input.time))
+            | self.refresh_code_lenses(ui.input(|input| input.time));
         if is_awaiting_services {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
@@ -796,12 +806,24 @@ impl<'a> CodeEditor<'a> {
             padding_top: self.config.padding_top,
         });
 
-        let clicked_code_lens = match hovered {
-            Some(MouseTarget::CodeLens { index }) if response.clicked() => Some(index),
-            _ => None,
+        let (clicked_code_lens, service_command) = match hovered {
+            Some(MouseTarget::CodeLens { index }) if response.clicked() => {
+                ui.ctx().request_repaint();
+                self.click_code_lens(index)
+            }
+            _ => (None, None),
         };
         let open_request = self.open_request.take();
-        EditorResponse { response, outcome, pressed, hovered, unhandled_actions, clicked_code_lens, open_request }
+        EditorResponse {
+            response,
+            outcome,
+            pressed,
+            hovered,
+            unhandled_actions,
+            clicked_code_lens,
+            service_command,
+            open_request,
+        }
     }
 
     fn metrics(&self, ui: &Ui, rect: Rect) -> Metrics {

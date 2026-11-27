@@ -347,8 +347,16 @@ what it means (gitgud: stage a hunk, show a commit). No command ids, no resolve 
   passes (diffs) has no lens rows.
 - Lenses come every frame from the caller (like decorations); keeping them on the right line
   across edits is the caller's job (recompute, or map through `Outcome::applied_changes`).
-- Language servers' `codeLens` isn't requested yet: the application can turn its answers into
-  `CodeLens` values.
+- The language services' lenses (`LanguageServices::code_lenses`, LSP `codeLens` then
+  `codeLens/resolve` for each lens without a command) show after the application's, asked
+  once the text rested 0.3 s (not on every keystroke); until the next answer they follow
+  their line's text through edits. Their click is a `CodeLensAction`: `ShowLocations`
+  opens the references list ("3 implementations": a command whose third argument is a list
+  of locations, as VS Code's `editor.action.showReferences`), `Run(ServiceCommand)` is
+  handed to the application as `EditorResponse::service_command` (a name and JSON
+  arguments: it alone can run a test or a debugger). The LSP client announces the
+  client-side commands the editor runs itself (`rust-analyzer.showReferences`), as
+  rust-analyzer only sends the lenses whose command the client can run.
 
 ## D26. Other documents: the services name them, the application opens them
 

@@ -114,18 +114,20 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 Last updated: 2026-11-26, after the language features round (D22–D26).
 
 **State**: M0–M10 done, M11 and M12 mostly done, M13 done (integration guide, performance).
-`scripts/check.sh` green; ~330 tests, including seeded random tests (`random_commands.rs`
+`scripts/check.sh` green; ~335 tests, including seeded random tests (`random_commands.rs`
 in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case counts or
 change their seeds locally to hunt for rarer bugs), and `crates/rustext-lsp/tests/
 rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP feature against a
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. LSP code lenses turned into `CodeLens` values (`textDocument/codeLens`, resolved lazily).
-2. Language injections (JS in HTML, code blocks in Markdown): highlighting, and brackets
+1. Language injections (JS in HTML, code blocks in Markdown): highlighting, and brackets
    in HTML's scripts (HTML has no bracket tokens, so it keeps the lexer).
 
 **Done in the last sessions** (newest first):
+- The language services' code lenses (D25): LSP `codeLens` and `codeLens/resolve`, asked
+  once the text rests, following their lines through edits; "N implementations" lists its
+  places, other commands go to the application (`EditorResponse::service_command`).
 - Format on type (the server's trigger chars and Enter; rust-analyzer indents a `.` chain)
   and format on paste, both off by default as in Monaco (`ViewConfig::format_on_type`,
   `format_on_paste`; checkboxes in the demo).
@@ -153,7 +155,8 @@ real server. Every feature is a commit on `main`.
 - Find References and code actions aren't visible in the demo without `--lsp` (word
   completions answer none).
 - The references list shows `file:line` for other documents, not their line's text.
-- Code actions that are server commands (`workspace/executeCommand`) are left out.
+- Code actions that are server commands (`workspace/executeCommand`) are left out; they could
+  become `ServiceCommand`s like the code lenses'.
 - Tree-sitter highlight queries are the grammar crates' own (Helix's are richer, D22).
 - Screen readers get the visible lines only, not the lines scrolled out of view.
 - Another agent's worktrees live in `.claude/worktrees/` (ignored): don't commit them.

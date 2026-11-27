@@ -188,6 +188,9 @@ impl EditorPage {
             if let Some(lens) = response.clicked_code_lens.and_then(|index| code_lenses.get(index)) {
                 self.last_action = format!("code lens: {} (line {})", lens.label, lens.line + 1);
             }
+            if let Some(command) = &response.service_command {
+                self.last_action = format!("run {} {} ({})", command.name, command.arguments, command.title);
+            }
             if response.outcome.rejected_read_only {
                 self.last_action = "Cannot edit in read-only editor".into();
             }

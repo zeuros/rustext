@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use rustext_core::services::{LanguageServices, Reply};
+use rustext_core::services::{CodeLensAction, LanguageServices, Reply};
 use rustext_core::{Position, Text};
 use rustext_lsp::LspServices;
 
@@ -172,6 +172,22 @@ fn formatting_on_type_sends_the_typed_char_and_its_position() {
 
     assert_eq!(services.format_on_type_trigger_chars(), &['}', ';', '\n']);
     assert_eq!(edits[0].new_text, "// typed ; at 1:6\n");
+}
+
+#[test]
+fn code_lenses_are_resolved_and_locations_are_listed() {
+    let mut services = start();
+    let text = Text::new("ab\ncd\n");
+
+    let lenses = until_ready(|| services.code_lenses(&text, 1));
+
+    assert_eq!(lenses.len(), 2);
+    assert_eq!((lenses[0].line, lenses[0].label.as_str()), (0, "Run"));
+    let CodeLensAction::Run(command) = &lenses[0].action else { panic!("{:?}", lenses[0].action) };
+    assert_eq!((command.name.as_str(), command.arguments.as_str()), ("fake.run", r#"[{"test":"first"}]"#));
+    assert_eq!((lenses[1].line, lenses[1].label.as_str()), (1, "7 implementations"));
+    let CodeLensAction::ShowLocations(locations) = &lenses[1].action else { panic!("{:?}", lenses[1].action) };
+    assert_eq!(locations[0].document.as_deref(), Some("file:///elsewhere.rs"));
 }
 
 #[test]

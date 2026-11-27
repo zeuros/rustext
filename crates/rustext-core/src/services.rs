@@ -78,18 +78,44 @@ pub struct DocumentSymbol {
     pub container: Option<String>,
 }
 
-/// A clickable label shown above a line (Monaco's code lens): "3 references", "Run test", or
-/// the application's own ("Stage hunk", a blame summary).
+/// A clickable label shown above a line (Monaco's code lens): the language services' ("3
+/// implementations", "Run test") or the application's own ("Stage hunk", a blame summary).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CodeLens {
     pub line: usize,
     pub label: String,
+    pub action: CodeLensAction,
 }
 
 impl CodeLens {
+    /// An application's lens: a click on it is reported.
     pub fn new(line: usize, label: impl Into<String>) -> Self {
-        Self { line, label: label.into() }
+        Self { line, label: label.into(), action: CodeLensAction::Report }
     }
+}
+
+/// What a click on a code lens does.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CodeLensAction {
+    /// Reported to the application (`EditorResponse::clicked_code_lens`); a services' lens
+    /// with nothing to run does nothing.
+    Report,
+    /// Lists these places, as Find References does ("3 implementations").
+    ShowLocations(Vec<Location>),
+    /// A command of the language services for the application to run.
+    Run(ServiceCommand),
+}
+
+/// A command the language services offer and only the application can run (LSP's commands:
+/// `workspace/executeCommand`, or one the client implements such as rust-analyzer's
+/// `rust-analyzer.runSingle`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ServiceCommand {
+    /// What the services call it (`rust-analyzer.runSingle`).
+    pub name: String,
+    pub title: String,
+    /// Its arguments, as the services encode them (LSP: a JSON array).
+    pub arguments: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -366,6 +392,11 @@ pub trait LanguageServices {
         _typed: char,
         _indentation: crate::indentation::Indentation,
     ) -> Reply<Vec<TextEdit>> {
+        Reply::Ready(Vec::new())
+    }
+
+    /// The code lenses of the document, shown with the application's own.
+    fn code_lenses(&mut self, _text: &Text, _text_revision: u64) -> Reply<Vec<CodeLens>> {
         Reply::Ready(Vec::new())
     }
 

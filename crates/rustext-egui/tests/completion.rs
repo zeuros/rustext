@@ -4,7 +4,8 @@ use egui::{Event, Key, Modifiers, PointerButton, Pos2, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use rustext_core::services::{
-    CodeAction, CompletionItem, CompletionKind, LanguageServices, Location, Reply, TextEdit, WordCompletions,
+    CodeAction, CodeLens, CodeLensAction, CompletionItem, CompletionKind, LanguageServices, Location, Reply,
+    ServiceCommand, TextEdit, WordCompletions,
 };
 use rustext_core::{EditorState, Position, Text};
 use rustext_egui::{CodeEditor, EditorTheme, EditorView, Keymap, ViewConfig};
@@ -16,6 +17,9 @@ struct TestServices {
     pending_diagnostics: Option<Vec<rustext_core::services::Diagnostic>>,
     /// The line ranges inlay hints were asked for.
     inlay_hint_requests: Vec<std::ops::Range<usize>>,
+    /// The code lenses to answer, and how many times they were asked for.
+    code_lenses: Vec<CodeLens>,
+    code_lens_requests: usize,
 }
 
 impl LanguageServices for TestServices {
@@ -192,6 +196,11 @@ impl LanguageServices for TestServices {
         Reply::Ready(vec![TextEdit { range: rustext_core::Range::new(start, start), new_text: header }])
     }
 
+    fn code_lenses(&mut self, _text: &Text, _revision: u64) -> Reply<Vec<CodeLens>> {
+        self.code_lens_requests += 1;
+        Reply::Ready(self.code_lenses.clone())
+    }
+
     fn format_on_type_trigger_chars(&self) -> &[char] {
         &[';', '\n']
     }
@@ -233,6 +242,7 @@ fn elsewhere() -> Location {
 
 struct Fixture {
     open_requests: Vec<Location>,
+    service_commands: Vec<ServiceCommand>,
     state: EditorState,
     view: EditorView,
     config: ViewConfig,
@@ -244,6 +254,7 @@ struct Fixture {
 fn harness(content: &str) -> Harness<'static, Fixture> {
     let fixture = Fixture {
         open_requests: Vec::new(),
+        service_commands: Vec::new(),
         state: EditorState::new(content),
         view: EditorView::default(),
         config: ViewConfig { cursor_blinking: false, ..ViewConfig::default() },
@@ -253,6 +264,8 @@ fn harness(content: &str) -> Harness<'static, Fixture> {
             words: WordCompletions::default(),
             pending_diagnostics: None,
             inlay_hint_requests: Vec::new(),
+            code_lenses: Vec::new(),
+            code_lens_requests: 0,
         },
     };
     let mut harness = Harness::builder().with_size(Vec2::new(900.0, 500.0)).with_step_dt(1.0 / 60.0).build_ui_state(
@@ -267,6 +280,7 @@ fn harness(content: &str) -> Harness<'static, Fixture> {
             .services(&mut fixture.services)
             .show(ui);
             fixture.open_requests.extend(response.open_request);
+            fixture.service_commands.extend(response.service_command);
         },
         fixture,
     );
@@ -728,6 +742,73 @@ fn pasted_text_is_formatted_when_format_on_paste_is_on() {
     harness.run();
 
     assert_eq!(content(&harness), "a\n// range\nb\nc\n");
+}
+
+/// An editor on `a\nb\nc` whose services give two lenses: places to list above line 0, a
+/// command above line 1. Rows: lens 0, line 0, lens 1, line 1, line 2.
+fn harness_with_service_lenses() -> Harness<'static, Fixture> {
+    let mut harness = harness("a\nb\nc");
+    let line_1 = rustext_core::Range::new(Position::new(1, 0), Position::new(1, 1));
+    let run = ServiceCommand { name: "test.run".into(), title: "Run".into(), arguments: "[1]".into() };
+    harness.state_mut().services.code_lenses = vec![
+        CodeLens {
+            line: 0,
+            label: "1 implementation".into(),
+            action: CodeLensAction::ShowLocations(vec![Location::here(line_1)]),
+        },
+        CodeLens { line: 1, label: "Run".into(), action: CodeLensAction::Run(run) },
+    ];
+    // Asked at once the first time.
+    harness.state_mut().view.service_code_lenses = Default::default();
+    harness.run();
+    harness
+}
+
+#[test]
+fn a_service_lens_with_places_lists_them_and_enter_goes_there() {
+    let mut harness = harness_with_service_lenses();
+    assert_eq!(harness.state().view.service_code_lenses.lenses().len(), 2);
+
+    let lens = harness.state().view.geometry().unwrap().cell_center(0, 1);
+    press(&mut harness, lens, Modifiers::NONE);
+    assert!(harness.state().view.references.is_open());
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    assert_eq!(harness.state().state.text().position(harness.state().state.selections().primary().head).line, 1);
+}
+
+#[test]
+fn a_service_lens_with_a_command_hands_it_to_the_application() {
+    let mut harness = harness_with_service_lenses();
+
+    let lens = harness.state().view.geometry().unwrap().cell_center(2, 1);
+    press(&mut harness, lens, Modifiers::NONE);
+
+    let names: Vec<&str> = harness.state().service_commands.iter().map(|command| command.name.as_str()).collect();
+    assert_eq!(names, vec!["test.run"]);
+}
+
+#[test]
+fn service_lenses_follow_edits_and_are_asked_again_once_the_text_rests() {
+    let mut harness = harness_with_service_lenses();
+    let requests_before = harness.state().services.code_lens_requests;
+    let lens_lines = |harness: &Harness<'_, Fixture>| -> Vec<usize> {
+        harness.state().view.service_code_lenses.lenses().iter().map(|lens| lens.line).collect()
+    };
+    let line_start = harness.state().view.geometry().unwrap().cell_left(1, 0);
+    press(&mut harness, line_start, Modifiers::NONE);
+
+    harness.key_press(Key::Enter);
+    harness.step();
+    assert_eq!(lens_lines(&harness), vec![1, 2]);
+    assert_eq!(harness.state().services.code_lens_requests, requests_before);
+
+    for _ in 0..30 {
+        harness.step();
+    }
+    assert_eq!(lens_lines(&harness), vec![0, 1]);
+    assert_eq!(harness.state().services.code_lens_requests, requests_before + 1);
 }
 
 #[test]

@@ -108,6 +108,11 @@ fn rust_analyzer_answers_parse() {
     eprintln!("rust-analyzer on type: {:?}", formatted.to_string());
     assert!(formatted.line_content(2).starts_with("        ."), "{formatted}");
 
+    let lenses = until_answered(|attempt| services.code_lenses(&text, 3_000 + attempt), |lenses| !lenses.is_empty());
+    let point_lens = lenses.iter().find(|lens| lens.line == 0).expect("a lens above `struct Point`");
+    assert_eq!(point_lens.label, "0 implementations");
+    assert_eq!(point_lens.action, rustext_core::services::CodeLensAction::ShowLocations(Vec::new()));
+
     let on_point = rustext_core::Range::new(Position::new(0, 8), Position::new(0, 8));
     let actions =
         until_answered(|attempt| services.code_actions(&text, attempt, on_point), |actions| !actions.is_empty());

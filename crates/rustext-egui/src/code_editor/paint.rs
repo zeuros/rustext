@@ -142,7 +142,7 @@ impl CodeEditor<'_> {
                 (RowContent::Padding, _) => paint_padding(&text_painter, row_rect, theme.diff_padding_background),
                 (RowContent::CodeLens(line), _) => {
                     let hovered_lens = match self.hovered_code_lens {
-                        Some(index) if self.code_lenses.get(index).is_some_and(|lens| lens.line == line) => Some(index),
+                        Some(index) if self.code_lens(index).is_some_and(|lens| lens.line == line) => Some(index),
                         _ => None,
                     };
                     self.paint_code_lens_row(&text_painter, metrics, line, top, hovered_lens);

@@ -12,8 +12,8 @@ use lsp_types::notification::{self, Notification};
 use lsp_types::request::{self, Request};
 use lsp_types::{self as lsp, OneOf, Uri};
 use rustext_core::services::{
-    CodeAction, CompletionItem, CompletionKind, Diagnostic, DocumentSymbol, InlayHint, LanguageServices, Location,
-    Reply, Severity, SignatureHelp, SymbolKind, TextEdit,
+    CodeAction, CodeLens, CodeLensAction, CompletionItem, CompletionKind, Diagnostic, DocumentSymbol, InlayHint,
+    LanguageServices, Location, Reply, ServiceCommand, Severity, SignatureHelp, SymbolKind, TextEdit,
 };
 use rustext_core::{ChangeSet, Position, Range, Text};
 use serde_json::Value;
@@ -52,6 +52,10 @@ pub struct LspServices {
     syncs_incrementally: bool,
     gives_inlay_hints: bool,
     gives_document_highlights: bool,
+    gives_code_lenses: bool,
+    resolves_code_lenses: bool,
+    /// The server's code lenses of a text revision, resolved one by one.
+    code_lenses: Option<(u64, Vec<lsp::CodeLens>)>,
     request_ids: HashMap<RequestKey, u64>,
     results: HashMap<u64, Value>,
     /// The last `publishDiagnostics` for the document, not taken yet.
@@ -231,9 +235,13 @@ fn client_capabilities() -> lsp::ClientCapabilities {
             }),
             definition: Some(Default::default()),
             on_type_formatting: Some(Default::default()),
+            code_lens: Some(Default::default()),
             publish_diagnostics: Some(Default::default()),
             ..Default::default()
         }),
+        // The client-side commands the editor runs itself: rust-analyzer only gives the code
+        // lenses whose command the client announces ("3 implementations" lists places).
+        experimental: Some(serde_json::json!({ "commands": { "commands": ["rust-analyzer.showReferences"] } })),
         ..Default::default()
     }
 }
@@ -316,6 +324,12 @@ impl LspServices {
             syncs_incrementally,
             gives_inlay_hints: is_announced(&capabilities.inlay_hint_provider),
             gives_document_highlights: is_announced(&capabilities.document_highlight_provider),
+            gives_code_lenses: capabilities.code_lens_provider.is_some(),
+            resolves_code_lenses: capabilities
+                .code_lens_provider
+                .as_ref()
+                .is_some_and(|provider| provider.resolve_provider == Some(true)),
+            code_lenses: None,
             request_ids: HashMap::new(),
             results: HashMap::new(),
             published_diagnostics: None,
@@ -393,13 +407,18 @@ impl LspServices {
     where
         R::Result: Default,
     {
+        map_reply(self.ask_parsed::<R>(text, key, params), Option::unwrap_or_default)
+    }
+
+    /// `ask`, the result `None` when it doesn't parse.
+    fn ask_parsed<R: Request>(&mut self, text: &Text, key: RequestKey, params: R::Params) -> Reply<Option<R::Result>> {
         self.sync(text, key.text_revision);
         self.receive();
         if let Some(&id) = self.request_ids.get(&key) {
             return match self.results.remove(&id) {
                 Some(result) => {
                     self.request_ids.remove(&key);
-                    Reply::Ready(serde_json::from_value(result).unwrap_or_default())
+                    Reply::Ready(serde_json::from_value(result).ok())
                 }
                 None => Reply::Pending,
             };
@@ -412,6 +431,32 @@ impl LspServices {
         }
         Reply::Pending
     }
+}
+
+/// The command of a lens that has none to run.
+fn no_command() -> lsp::Command {
+    lsp::Command { title: String::new(), command: String::new(), arguments: None }
+}
+
+/// A resolved lens as the editor shows it; `None` without a title. A command whose third
+/// argument is a list of locations (`editor.action.showReferences`, rust-analyzer's
+/// `rust-analyzer.showReferences`) lists them; another is for the application to run.
+fn code_lens(converter: &mut LocationConverter, lens: lsp::CodeLens) -> Option<CodeLens> {
+    let command = lens.command.filter(|command| !command.title.is_empty())?;
+    let arguments = command.arguments.unwrap_or_default();
+    let locations = arguments.get(2).and_then(|value| serde_json::from_value::<Vec<lsp::Location>>(value.clone()).ok());
+    let action = match locations {
+        Some(locations) => CodeLensAction::ShowLocations(
+            locations.into_iter().map(|location| converter.location(location.uri, location.range)).collect(),
+        ),
+        None if command.command.is_empty() => CodeLensAction::Report,
+        None => CodeLensAction::Run(ServiceCommand {
+            name: command.command,
+            title: command.title.clone(),
+            arguments: Value::Array(arguments).to_string(),
+        }),
+    };
+    Some(CodeLens { line: lens.range.start.line as usize, label: command.title, action })
 }
 
 /// `reply`'s answer through `convert`.
@@ -820,6 +865,58 @@ impl LanguageServices for LspServices {
         let key = RequestKey::new::<request::RangeFormatting>(text_revision, range.start)
             .with_argument(format!("{:?}", range.end));
         map_reply(self.ask::<request::RangeFormatting>(text, key, params), |edits| text_edits(text, edits))
+    }
+
+    /// Asks for the lenses, then resolves those without a command; ready once all are.
+    fn code_lenses(&mut self, text: &Text, text_revision: u64) -> Reply<Vec<CodeLens>> {
+        if !self.gives_code_lenses {
+            return Reply::Ready(Vec::new());
+        }
+        if self.code_lenses.as_ref().is_none_or(|(revision, _)| *revision != text_revision) {
+            let params = lsp::CodeLensParams {
+                text_document: self.text_document(),
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            };
+            let key = RequestKey::new::<request::CodeLensRequest>(text_revision, Position::new(0, 0));
+            match self.ask::<request::CodeLensRequest>(text, key, params) {
+                Reply::Pending => return Reply::Pending,
+                Reply::Ready(lenses) => self.code_lenses = Some((text_revision, lenses.unwrap_or_default())),
+            }
+        }
+
+        let unresolved: Vec<(usize, lsp::CodeLens)> = match &self.code_lenses {
+            Some((_, lenses)) if self.resolves_code_lenses => lenses
+                .iter()
+                .enumerate()
+                .filter(|(_, lens)| lens.command.is_none())
+                .map(|(index, lens)| (index, lens.clone()))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let mut is_resolving = false;
+        for (index, lens) in unresolved {
+            let key = RequestKey::new::<request::CodeLensResolve>(text_revision, Position::new(0, 0))
+                .with_argument(index.to_string());
+            match self.ask_parsed::<request::CodeLensResolve>(text, key, lens) {
+                Reply::Pending => is_resolving = true,
+                Reply::Ready(resolved) => {
+                    if let Some((_, lenses)) = &mut self.code_lenses {
+                        // A lens resolved to no command keeps an empty one: it isn't asked again.
+                        let command = resolved.and_then(|resolved| resolved.command);
+                        lenses[index].command = Some(command.unwrap_or_else(no_command));
+                    }
+                }
+            }
+        }
+        if is_resolving {
+            return Reply::Pending;
+        }
+
+        let uri = self.document_uri.clone();
+        let mut converter = LocationConverter::new(text, &uri);
+        let lenses = self.code_lenses.as_ref().map(|(_, lenses)| lenses.clone()).unwrap_or_default();
+        Reply::Ready(lenses.into_iter().filter_map(|lens| code_lens(&mut converter, lens)).collect())
     }
 
     fn format_on_type_trigger_chars(&self) -> &[char] {

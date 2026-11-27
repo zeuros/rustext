@@ -512,8 +512,10 @@ impl CodeEditor<'_> {
             self.view.service_diagnostics =
                 self.view.service_diagnostics.iter().filter_map(|decoration| decoration.map(changes)).collect();
             self.view.inlay_hints.map(changes);
+            self.view.service_code_lenses.map(changes);
             self.map_find_scope(changes);
         }
+        self.view.service_code_lenses.place_on_lines(self.state.text());
         for edited in &outcome.edited_lines {
             self.view.folds.follow_edit(edited);
             self.view.wraps.follow_edit(edited, self.state.text());

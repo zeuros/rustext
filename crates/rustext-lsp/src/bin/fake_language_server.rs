@@ -39,7 +39,7 @@ fn main() {
         let position = &message["params"]["position"];
         let result = match method {
             "initialize" => {
-                json!({ "capabilities": { "textDocumentSync": 2, "inlayHintProvider": true, "documentHighlightProvider": true, "completionProvider": { "triggerCharacters": ["."] }, "hoverProvider": true, "definitionProvider": true, "documentOnTypeFormattingProvider": { "firstTriggerCharacter": "}", "moreTriggerCharacter": [";", "\n"] } } })
+                json!({ "capabilities": { "textDocumentSync": 2, "inlayHintProvider": true, "documentHighlightProvider": true, "completionProvider": { "triggerCharacters": ["."] }, "hoverProvider": true, "definitionProvider": true, "codeLensProvider": { "resolveProvider": true }, "documentOnTypeFormattingProvider": { "firstTriggerCharacter": "}", "moreTriggerCharacter": [";", "\n"] } } })
             }
             "fake/document" => json!(document.join("\n")),
             "textDocument/completion" => json!({ "isIncomplete": false, "items": [
@@ -91,6 +91,20 @@ fn main() {
                 let position = &params["position"];
                 let label = format!("// typed {typed} at {}:{}\n", position["line"], position["character"]);
                 json!([{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": label }])
+            }
+            "textDocument/codeLens" => {
+                let range = |line: u64| json!({ "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 2 } });
+                json!([
+                    { "range": range(0), "command": { "title": "Run", "command": "fake.run", "arguments": [{ "test": "first" }] } },
+                    { "range": range(1), "data": 7 },
+                ])
+            }
+            "codeLens/resolve" => {
+                let lens = &message["params"];
+                let uri = "file:///elsewhere.rs";
+                let location = json!({ "uri": uri, "range": { "start": { "line": 3, "character": 0 }, "end": { "line": 3, "character": 1 } } });
+                let arguments = json!([uri, lens["range"]["start"], [location]]);
+                json!({ "range": lens["range"], "command": { "title": format!("{} implementations", lens["data"]), "command": "fake.showReferences", "arguments": arguments } })
             }
             "textDocument/formatting" => {
                 let tab_size = message["params"]["options"]["tabSize"].as_u64().unwrap_or(0);
