@@ -5,6 +5,7 @@
 use rustext_core::decoration::{Decoration, DecorationKind};
 use rustext_core::display::{DisplayLayout, DisplayRow, RowContent};
 use rustext_core::services::CodeLens;
+use rustext_core::structure::FoldRange;
 use rustext_core::style::Rgba;
 use rustext_core::{Position, Text};
 
@@ -23,11 +24,14 @@ pub struct DiffColors {
 }
 
 /// How unchanged regions are shown: all of them, or collapsed except the ones the user opened
-/// (identified by the old line they start at, stable while the new side is edited).
+/// (identified by the old line they start at, stable while the new side is edited); and the
+/// blocks folded on each side (D31).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Collapsing {
     pub options: Option<CollapseOptions>,
     pub expanded_old_lines: Vec<usize>,
+    pub old_folds: Vec<FoldRange>,
+    pub new_folds: Vec<FoldRange>,
 }
 
 /// Where each side's lines wrap (`points[line]`: the start columns of its continuation rows,
@@ -69,6 +73,28 @@ struct DiffRow {
     old_line: Option<usize>,
     new_line: Option<usize>,
     kind: RowKind,
+}
+
+/// Which rows the folds hide: on the side of a fold, the rows after its header's up to the
+/// row of the first line after it; the rows between with no line of that side (the other
+/// side's changes) are hidden with them, so both sides stay aligned (D31).
+fn rows_hidden_by_folds(rows: &[DiffRow], folds_of_sides: [(&[FoldRange], bool); 2]) -> Vec<bool> {
+    let mut is_hidden = vec![false; rows.len()];
+    for (folds, is_old_side) in folds_of_sides {
+        let line_of = |row: &DiffRow| if is_old_side { row.old_line } else { row.new_line };
+        for fold in folds {
+            let Some(header_row) = rows.iter().position(|row| line_of(row) == Some(fold.header_line)) else {
+                continue;
+            };
+            let first_hidden_row = header_row + 1;
+            let end_row = rows[first_hidden_row..]
+                .iter()
+                .position(|row| line_of(row).is_some_and(|line| line > fold.last_hidden_line))
+                .map_or(rows.len(), |offset| first_hidden_row + offset);
+            is_hidden[first_hidden_row..end_row].fill(true);
+        }
+    }
+    is_hidden
 }
 
 /// The lines of one side that moved, and those starting a moved block (which get a code lens
@@ -183,12 +209,16 @@ pub fn side_by_side_layouts(
         .map(|row| DiffRow { old_line: row.old_line, new_line: row.new_line, kind: row.kind })
         .collect();
     let (old_moved, new_moved) = (MovedLines::of(diff, true), MovedLines::of(diff, false));
+    let is_folded = rows_hidden_by_folds(
+        &rows,
+        [(collapsing.old_folds.as_slice(), true), (collapsing.new_folds.as_slice(), false)],
+    );
     let mut old_rows = Vec::with_capacity(rows.len());
     let mut new_rows = Vec::with_capacity(rows.len());
     for segment in segments_of(&rows, collapsing) {
         match segment {
             Segment::Shown { start_row, end_row } => {
-                for row in &rows[start_row..end_row] {
+                for row in (start_row..end_row).filter(|&row| !is_folded[row]).map(|row| &rows[row]) {
                     let (old_lens, new_lens) = (old_moved.lens_row(row.old_line), new_moved.lens_row(row.new_line));
                     if old_lens.is_some() || new_lens.is_some() {
                         old_rows.push(old_lens.unwrap_or(DisplayRow::new(RowContent::Padding)));
@@ -234,11 +264,12 @@ pub fn inline_layout(
         .map(|row| DiffRow { old_line: row.old_line, new_line: row.new_line, kind: row.kind })
         .collect();
     let (old_moved, new_moved) = (MovedLines::of(diff, true), MovedLines::of(diff, false));
+    let is_folded = rows_hidden_by_folds(&rows, [(&[], true), (collapsing.new_folds.as_slice(), false)]);
     let mut display_rows = Vec::with_capacity(rows.len());
     for segment in segments_of(&rows, collapsing) {
         match segment {
             Segment::Shown { start_row, end_row } => {
-                for row in &rows[start_row..end_row] {
+                for row in (start_row..end_row).filter(|&row| !is_folded[row]).map(|row| &rows[row]) {
                     match (row.kind, row.old_line, row.new_line) {
                         (RowKind::Removed, Some(old_line), _) => {
                             display_rows.push(removed_foreign_row(old_line, &old_moved, colors));
@@ -367,6 +398,37 @@ mod tests {
 
     fn contents(layout: &DisplayLayout) -> Vec<RowContent> {
         layout.rows().iter().map(|row| row.content).collect()
+    }
+
+    #[test]
+    fn a_fold_on_the_new_side_hides_the_rows_beside_it_too() {
+        let old = Text::new("fn f() {\n    a;\n    b;\n}\nend\n");
+        let new = Text::new("fn f() {\n    a;\n    c;\n}\nend\n");
+        let diff = diff_lines(&old, &new, &DiffOptions::default());
+        let new_folds = vec![FoldRange { header_line: 0, last_hidden_line: 2 }];
+        let collapsing = Collapsing { new_folds, ..Collapsing::default() };
+
+        let (old_layout, new_layout) = side_by_side_layouts(&diff, &old, &new, &collapsing, &COLORS, &WrapPoints::NONE);
+
+        // The removed `b;` row sits between `a;` and `c;`: it goes with the fold.
+        let shown = |layout: &DisplayLayout| -> Vec<RowContent> { contents(layout)[..3].to_vec() };
+        assert_eq!(shown(&new_layout), vec![RowContent::Line(0), RowContent::Line(3), RowContent::Line(4)]);
+        assert_eq!(shown(&old_layout), vec![RowContent::Line(0), RowContent::Line(3), RowContent::Line(4)]);
+    }
+
+    #[test]
+    fn a_fold_on_the_old_side_hides_its_lines_inline_not() {
+        let old = Text::new("fn f() {\n    a;\n}\n");
+        let new = Text::new("fn f() {\n    a;\n}\nnew\n");
+        let diff = diff_lines(&old, &new, &DiffOptions::default());
+        let old_folds = vec![FoldRange { header_line: 0, last_hidden_line: 1 }];
+        let collapsing = Collapsing { old_folds, ..Collapsing::default() };
+
+        let (old_layout, _) = side_by_side_layouts(&diff, &old, &new, &collapsing, &COLORS, &WrapPoints::NONE);
+        let inline = inline_layout(&diff, &new, &collapsing, &COLORS, &[]);
+
+        assert_eq!(contents(&old_layout)[..2], [RowContent::Line(0), RowContent::Line(2)]);
+        assert_eq!(contents(&inline)[..2], [RowContent::Line(0), RowContent::Line(1)]);
     }
 
     /// `main` moved below `helper`: old lines 0..3 are new lines 5..8.
@@ -498,14 +560,14 @@ mod tests {
             &diff,
             &old,
             &new,
-            &Collapsing { options, expanded_old_lines: vec![] },
+            &Collapsing { options, ..Collapsing::default() },
             &COLORS,
             &WrapPoints::NONE,
         );
         assert_eq!(old_layout.rows()[0].content, RowContent::Collapsed { first_line: 0, last_line: 8 });
         assert_eq!(old_layout.row_count(), 1 + 3 + 1 + 1);
 
-        let expanded = Collapsing { options, expanded_old_lines: vec![0] };
+        let expanded = Collapsing { options, expanded_old_lines: vec![0], ..Collapsing::default() };
         let (old_layout, _) = side_by_side_layouts(&diff, &old, &new, &expanded, &COLORS, &WrapPoints::NONE);
         assert_eq!(old_layout.rows()[0].content, RowContent::Line(0));
     }

@@ -53,6 +53,15 @@ impl FoldState {
         self.blocks.len()
     }
 
+    /// The folded blocks as last computed, sorted by header line.
+    pub fn folded_ranges(&self) -> Vec<FoldRange> {
+        let range = |block: &FoldedBlock| FoldRange {
+            header_line: block.header_line,
+            last_hidden_line: block.last_hidden_line,
+        };
+        self.blocks.iter().map(range).collect()
+    }
+
     /// Header lines of the folded blocks, sorted.
     pub fn folded_header_lines(&self) -> Vec<usize> {
         self.blocks.iter().map(|block| block.header_line).collect()
@@ -105,6 +114,11 @@ impl FoldState {
         }
         self.blocks.dedup_by_key(|block| block.header_line);
     }
+}
+
+/// The lines folded ranges hide, for motions.
+fn hidden_lines_of(folded: &[FoldRange]) -> HiddenLines {
+    HiddenLines::new(folded.iter().map(|range| (range.first_hidden_line(), range.last_hidden_line)).collect())
 }
 
 /// The fold range `line` starts: from the styler's syntax tree when it has one and the
@@ -163,6 +177,18 @@ impl CodeEditor<'_> {
             }
         });
         ranges
+    }
+
+    /// The folded ranges once those hiding a cursor are unfolded.
+    fn folded_ranges_showing_cursors(&mut self, text: &Text) -> Vec<FoldRange> {
+        let cursor_lines: Vec<usize> =
+            self.state.selections().iter().map(|selection| text.line_of_offset(selection.head)).collect();
+        for range in self.folded_ranges() {
+            if cursor_lines.iter().any(|&line| range.hides(line)) {
+                self.unfold(range.header_line);
+            }
+        }
+        self.folded_ranges()
     }
 
     /// Whether `line` starts a fold range (a local check, fine for every visible line).
@@ -244,19 +270,19 @@ impl CodeEditor<'_> {
         self.view.wraps.ensure(&text, wrap_width_columns, self.state.config.indentation.tab_size);
         let code_lens_lines = self.code_lens_lines();
         let needs_layout = self.config.folding || self.view.wraps.is_wrapping() || !code_lens_lines.is_empty();
-        if self.display_layout.is_some() || !needs_layout {
+        if self.display_layout.is_some() {
+            // The layout's builder leaves the folded rows out; motions still skip their lines.
+            let folded = if self.folds() { self.folded_ranges_showing_cursors(&text) } else { Vec::new() };
+            self.view.folds.layout = None;
+            self.state.hidden_lines = hidden_lines_of(&folded);
+            return;
+        }
+        if !needs_layout {
             self.view.folds.layout = None;
             self.state.hidden_lines = HiddenLines::default();
             return;
         }
-        let cursor_lines: Vec<usize> =
-            self.state.selections().iter().map(|selection| text.line_of_offset(selection.head)).collect();
-        for range in self.folded_ranges() {
-            if cursor_lines.iter().any(|&line| range.hides(line)) {
-                self.unfold(range.header_line);
-            }
-        }
-        let folded = if self.config.folding { self.folded_ranges() } else { Vec::new() };
+        let folded = if self.config.folding { self.folded_ranges_showing_cursors(&text) } else { Vec::new() };
         let folds = &mut self.view.folds;
         if folded.is_empty() && !self.view.wraps.is_wrapping() && code_lens_lines.is_empty() {
             folds.layout = None;
@@ -270,8 +296,7 @@ impl CodeEditor<'_> {
         }
         let (folded, code_lens_lines) = (key.1.clone(), &key.3);
 
-        let hidden_lines =
-            HiddenLines::new(folded.iter().map(|range| (range.first_hidden_line(), range.last_hidden_line)).collect());
+        let hidden_lines = hidden_lines_of(&folded);
         let wraps = &self.view.wraps;
         let rows = hidden_lines
             .shown_lines(text.line_count())

@@ -261,3 +261,24 @@ fn clicking_a_moved_blocks_lens_goes_to_where_it_moved() {
     assert_eq!(document.focused_side(), DiffSide::New);
     assert_eq!(document.new.text().position(document.new.selections().primary().head).line, 5);
 }
+
+#[test]
+fn folding_a_block_of_the_new_side_hides_its_rows_on_both_sides() {
+    let config =
+        DiffViewConfig { mode: DiffViewMode::SideBySide, inline_below_width: 0.0, ..DiffViewConfig::default() };
+    let mut harness = harness("fn f() {\n    a;\n    b;\n}\nend\n", "fn f() {\n    a;\n    c;\n}\nend\n", config);
+    click_new_row(&mut harness, 0);
+
+    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::OpenBracket);
+    harness.run();
+
+    assert_eq!(harness.state().document.new_view.folds.folded_header_lines(), vec![0]);
+    // The removed `b;` beside the folded lines is hidden too: `}` is row 1 on both sides.
+    click_new_row(&mut harness, 1);
+    let new = &harness.state().document.new;
+    assert_eq!(new.text().position(new.selections().primary().head).line, 3);
+    let old_row_1 = harness.state().document.old_view.geometry().unwrap().cell_center(1, 0);
+    click(&mut harness, old_row_1);
+    let old = &harness.state().document.old;
+    assert_eq!(old.text().position(old.selections().primary().head).line, 3);
+}

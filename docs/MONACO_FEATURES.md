@@ -231,6 +231,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Inline (unified) view | `renderSideBySide: false` | P0 | done |
 | Auto inline when narrow | `useInlineViewWhenSpaceIsLimited`, `renderSideBySideInlineBreakpoint` | P1 | done |
 | Collapse unchanged regions, expand on click | `hideUnchangedRegions.{enabled, contextLineCount, minimumLineCount, revealLineCount}` | P0 | done |
+| Folding in both sides of a diff | each side's `folding` | P2 | done: rows of a fold hidden on both sides, aligned (D31) |
 | Ignore trim whitespace | `ignoreTrimWhitespace` | P0 | done |
 | +/- indicators, revert arrows in the gutter | `renderIndicators`, `renderMarginRevertIcon`, `renderGutterMenu` | P1 | done |
 | Overview ruler of changes | `renderOverviewRuler` | P0 | done |

@@ -121,15 +121,16 @@ rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP featu
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit; chosen by the user, others left out on purpose):
-1. Folding in diffs (off today when the application passes its own `DisplayLayout`).
-2. Unicode highlighting: invisible and ambiguous characters boxed.
-3. Cursor undo / redo (Ctrl+U) and transpose letters.
-4. Insert final newline.
-5. `#region` folding markers, and unfold on a click after a folded line's end.
-6. Linked editing (HTML tag pairs renamed together).
-7. Minimap marks (search matches, diagnostics).
+1. Unicode highlighting: invisible and ambiguous characters boxed.
+2. Cursor undo / redo (Ctrl+U) and transpose letters.
+3. Insert final newline.
+4. `#region` folding markers, and unfold on a click after a folded line's end.
+5. Linked editing (HTML tag pairs renamed together).
+6. Minimap marks (search matches, diagnostics).
 
 **Done in the last sessions** (newest first):
+- Folding in diffs (D31): the diff's editors fold, and the layouts hide the folded rows on
+  both sides.
 - Moved code in diffs (D30): `DiffOptions::detect_moves`, moved blocks tinted with a
   "Moved to/from line N" lens that jumps to the other end ("Show moved code" in the demo).
 - Embedded languages (D29): HTML's scripts and styles are parsed as JavaScript and CSS over
@@ -157,7 +158,7 @@ real server. Every feature is a commit on `main`.
   Up/Down by visual row when wrapping; snippets; ghost text; random tests.
 
 **Known gaps / debts**:
-- Folding is off when the application passes its own `DisplayLayout` (diffs).
+- An application passing its own `DisplayLayout` (other than the diff editor) gets no folding.
 - Text from egui's TextEdit (find input) can't use rustext's keymap (Ctrl+D etc. there are
   egui's).
 - The bracket lexer (D21), still used without a bundled grammar, doesn't know

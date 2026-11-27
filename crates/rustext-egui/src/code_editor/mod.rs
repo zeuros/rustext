@@ -13,6 +13,7 @@ mod assist;
 mod code_actions;
 mod code_lens;
 mod completion;
+mod config;
 mod find;
 mod input;
 mod layout;
@@ -36,184 +37,13 @@ use crate::theme::EditorTheme;
 
 pub use assist::{RenameState, SignatureState};
 pub use completion::CompletionState;
+pub use config::{
+    CurrentLineHighlight, CursorStyle, FoldingStrategy, LineNumbers, ViewConfig, WhitespaceRendering, WordWrap,
+};
 pub use find::{FindState, GoToLineState, parse_line_and_column};
 pub use layout::{to_color, to_rgba};
 pub use palette::PaletteState;
 pub use structure::FoldState;
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum LineNumbers {
-    #[default]
-    On,
-    Off,
-    /// Distance to the cursor's line, the cursor's line showing its own number.
-    Relative,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum CursorStyle {
-    #[default]
-    Line,
-    Block,
-    Underline,
-}
-
-/// What folds (Monaco's `foldingStrategy`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum FoldingStrategy {
-    /// The syntax tree's blocks when the styler parses the text (D22), else indentation.
-    #[default]
-    Auto,
-    Indentation,
-}
-
-/// When lines wrap (Monaco's `wordWrap`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum WordWrap {
-    #[default]
-    Off,
-    /// At the editor's width.
-    Viewport,
-    /// At this many columns.
-    Column(usize),
-    /// At the smaller of the editor's width and this many columns.
-    Bounded(usize),
-}
-
-/// Which whitespace chars get a visible mark (`·` for a space, `→` for a tab).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum WhitespaceRendering {
-    None,
-    /// Inside selections only.
-    #[default]
-    Selection,
-    /// At the end of lines only.
-    Trailing,
-    /// All but single spaces between words.
-    Boundary,
-    All,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum CurrentLineHighlight {
-    None,
-    Gutter,
-    Line,
-    #[default]
-    All,
-}
-
-/// Display options of a code editor (DECISIONS D12).
-#[derive(Clone, Debug, PartialEq)]
-#[expect(clippy::struct_excessive_bools, reason = "predates the complexity lints (D28)")]
-pub struct ViewConfig {
-    pub font_size: f32,
-    /// Line height as a multiple of the font's row height.
-    pub line_height_factor: f32,
-    pub line_numbers: LineNumbers,
-    pub current_line_highlight: CurrentLineHighlight,
-    pub cursor_style: CursorStyle,
-    pub cursor_blinking: bool,
-    /// Lets the last line scroll up to the top of the viewport.
-    pub scroll_beyond_last_line: bool,
-    /// Lines kept visible above and below the cursor when revealing it.
-    pub cursor_surrounding_lines: usize,
-    pub rulers: Vec<usize>,
-    pub padding_top: f32,
-    /// Lines longer than this many chars are cut, for speed (Monaco's `stopRenderingLineAfter`).
-    pub max_rendered_line_chars: usize,
-    pub scrollbar_width: f32,
-    /// Alt + wheel scrolls this many times faster.
-    pub fast_scroll_sensitivity: f32,
-    pub mouse_wheel_zoom: bool,
-    /// Draws the cursor positions and marks on the vertical scrollbar.
-    pub overview_ruler: bool,
-    /// Folding, with fold markers in the gutter.
-    pub folding: bool,
-    pub folding_strategy: FoldingStrategy,
-    pub indent_guides: bool,
-    pub match_brackets: bool,
-    /// Asks the language services for code lenses (Monaco's `codeLens`).
-    pub code_lens: bool,
-    /// Formats the code around the cursor after a char the language services name is typed
-    /// (`}`, `;`, Enter; Monaco's `formatOnType`).
-    pub format_on_type: bool,
-    /// Formats pasted text (Monaco's `formatOnPaste`).
-    pub format_on_paste: bool,
-    /// A lightbulb in the gutter where the cursor rests on code actions (Monaco's
-    /// `lightbulb.enabled`); a click opens them.
-    pub lightbulb: bool,
-    /// Underlines URLs; Ctrl+click opens them (Monaco's `links`).
-    pub links: bool,
-    /// Highlights the other occurrences of the word at the cursor.
-    pub occurrences_highlight: bool,
-    /// Highlights the other occurrences of the selected text.
-    pub selection_highlight: bool,
-    pub render_whitespace: WhitespaceRendering,
-    /// Marks the `\r` of lines ending with `\r\n` (gitgud's visible CRLF).
-    pub show_carriage_returns: bool,
-    /// Colors brackets by nesting depth.
-    pub bracket_pair_colorization: bool,
-    /// A line in the bracket's color along the multi-line bracket pair holding the cursor
-    /// (Monaco's `guides.bracketPairs: 'active'`).
-    pub bracket_pair_guides: bool,
-    pub word_wrap: WordWrap,
-    /// Pins the headers of the blocks enclosing the top line (Monaco's `stickyScroll`).
-    /// Ask the language services for inlay hints (parameter names, inferred types).
-    pub inlay_hints: bool,
-    pub sticky_scroll: bool,
-    pub sticky_scroll_max_lines: usize,
-    /// A zoomed-out map of the text right of it (Monaco's `minimap`).
-    pub minimap: bool,
-    /// Shown while the text is empty ("Commit message").
-    pub placeholder: Option<String>,
-    /// What screen readers call the editor (Monaco's `ariaLabel`).
-    pub aria_label: String,
-}
-
-impl Default for ViewConfig {
-    fn default() -> Self {
-        Self {
-            font_size: 14.0,
-            line_height_factor: 1.35,
-            line_numbers: LineNumbers::default(),
-            current_line_highlight: CurrentLineHighlight::default(),
-            cursor_style: CursorStyle::default(),
-            cursor_blinking: true,
-            scroll_beyond_last_line: true,
-            cursor_surrounding_lines: 2,
-            rulers: Vec::new(),
-            padding_top: 4.0,
-            max_rendered_line_chars: 10_000,
-            scrollbar_width: 14.0,
-            fast_scroll_sensitivity: 5.0,
-            mouse_wheel_zoom: true,
-            overview_ruler: true,
-            folding: true,
-            folding_strategy: FoldingStrategy::Auto,
-            indent_guides: true,
-            match_brackets: true,
-            occurrences_highlight: true,
-            selection_highlight: true,
-            render_whitespace: WhitespaceRendering::default(),
-            show_carriage_returns: false,
-            bracket_pair_colorization: true,
-            bracket_pair_guides: false,
-            links: true,
-            lightbulb: true,
-            code_lens: true,
-            format_on_type: false,
-            format_on_paste: false,
-            word_wrap: WordWrap::default(),
-            inlay_hints: true,
-            sticky_scroll: true,
-            sticky_scroll_max_lines: 5,
-            minimap: false,
-            placeholder: None,
-            aria_label: "Editor".to_string(),
-        }
-    }
-}
 
 /// How a mouse drag extends the selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -461,6 +291,14 @@ pub struct Foreign<'a> {
     pub decorations: &'a [Decoration],
 }
 
+/// What an editor given its rows still does: its builder (the diff editor) reads the wrap
+/// points and the folded ranges and lays the rows out with them.
+#[derive(Clone, Copy, Debug, Default)]
+struct UnderGivenLayout {
+    wraps: bool,
+    folds: bool,
+}
+
 /// The widget. Borrowed state, built every frame.
 pub struct CodeEditor<'a> {
     state: &'a mut EditorState,
@@ -478,9 +316,7 @@ pub struct CodeEditor<'a> {
     /// The char under the pointer while Ctrl is held (its link is drawn active).
     ctrl_hovered_char: Option<usize>,
     display_layout: Option<&'a DisplayLayout>,
-    /// Wraps lines even with a given layout: its builder (the diff editor) reads the wrap
-    /// points and lays the rows out with them.
-    wraps_under_given_layout: bool,
+    under_given_layout: UnderGivenLayout,
     foreign: Option<Foreign<'a>>,
     glyph_margin: bool,
     markers: bool,
@@ -564,7 +400,7 @@ impl<'a> CodeEditor<'a> {
             open_request: None,
             ctrl_hovered_char: None,
             display_layout: None,
-            wraps_under_given_layout: false,
+            under_given_layout: UnderGivenLayout::default(),
             foreign: None,
             glyph_margin: false,
             markers: false,
@@ -602,8 +438,19 @@ impl<'a> CodeEditor<'a> {
 
     /// Keeps wrapping lines (as `ViewConfig::word_wrap` says) under a given layout.
     pub(crate) fn wrap_under_given_layout(mut self) -> Self {
-        self.wraps_under_given_layout = true;
+        self.under_given_layout.wraps = true;
         self
+    }
+
+    /// Keeps folding (gutter markers, fold actions) under a given layout.
+    pub(crate) fn fold_under_given_layout(mut self) -> Self {
+        self.under_given_layout.folds = true;
+        self
+    }
+
+    /// Whether this editor folds: by its config, and under a given layout only when asked.
+    fn folds(&self) -> bool {
+        self.config.folding && (self.display_layout.is_none() || self.under_given_layout.folds)
     }
 
     /// Paints these rows instead of one row per line.
@@ -842,8 +689,7 @@ impl<'a> CodeEditor<'a> {
         };
         let glyph_margin_width = if self.glyph_margin { row_height } else { 0.0 };
         let marker_width = if self.markers { char_width * 2.0 } else { 0.0 };
-        let fold_marker_width =
-            if self.config.folding && self.display_layout.is_none() { char_width * 1.8 } else { 0.0 };
+        let fold_marker_width = if self.folds() { char_width * 1.8 } else { 0.0 };
         let gutter_width = glyph_margin_width + line_numbers_width + marker_width + fold_marker_width + char_width;
         let scrollbar_rect =
             Rect::from_min_max(pos2(rect.right() - self.config.scrollbar_width, rect.top()), rect.right_bottom());
@@ -1094,7 +940,7 @@ impl<'a> CodeEditor<'a> {
 
     /// The width rows wrap at, in columns (0: no wrapping).
     fn wrap_width_columns(&self, metrics: &Metrics) -> usize {
-        if self.display_layout.is_some() && !self.wraps_under_given_layout {
+        if self.display_layout.is_some() && !self.under_given_layout.wraps {
             return 0;
         }
         let viewport_columns =

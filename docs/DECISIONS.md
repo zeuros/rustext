@@ -449,6 +449,21 @@ line diff looks for blocks removed in one hunk and added in another: `LineDiff::
   removed lines are foreign rows there), and its lens is a label.
 - Moves inside a moved block (changed lines within it) are not diffed again, unlike Monaco.
 
+## D31. Folding in diffs: the editors keep the folds, the layout leaves their rows out
+
+A diff's editors are given their rows (D17), so they can't hide folded lines themselves. They
+fold anyway (`CodeEditor::fold_under_given_layout`): fold markers in the gutter, the fold
+actions, the folded blocks in their `EditorView`, the hidden lines for motions. The diff
+editor reads both views' folded ranges into `Collapsing` (`old_folds`, `new_folds`), and the
+layouts leave out the rows after a fold's header up to the row of the first line after it.
+
+- The rows between with no line of the folded side (the other side's removed or added lines)
+  go with them, so both sides stay aligned: folding a function on the new side hides the old
+  side's lines beside it too.
+- Inline, only the new side's folds apply (the old lines are foreign rows).
+- A fold changes the layout's key: the rows are laid out again on the next frame, as after a
+  wrap.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |
