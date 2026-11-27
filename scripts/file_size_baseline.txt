@@ -6,4 +6,3 @@
 801 crates/rustext-egui/src/code_editor/paint.rs
 558 crates/rustext-egui/src/diff_editor.rs
 1015 crates/rustext-lsp/src/client.rs
-767 crates/rustext-syntax/src/tree.rs

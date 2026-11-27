@@ -385,7 +385,9 @@ colors, matching and the bracket pair guide are unchanged and need no tree of th
   knows nothing of a bracket just typed. Meanwhile the lexer answers, and
   `BracketLineStarts` remembers the first line it scanned so; once the tree is parsed, the
   states after that line are computed again from it.
-- A grammar without bracket tokens (HTML) keeps the lexer. Matching still counts brackets
+- A grammar without bracket tokens (HTML) has its `text` nodes queried instead: brackets of
+  prose pair, those of attribute values don't; its scripts' come from their own tree (D29).
+  Matching still counts brackets
   rather than following tree nodes, as Monaco does: it stays the same for both sources and
   works in broken code.
 - Cost: steady typing is unchanged; the bracket states of a whole 100k-line file (after
@@ -408,9 +410,26 @@ diff, syntax) and uploads the mutants no test kills. Renovate opens grouped depe
 - Sonar's Rust analysis mostly re-reads clippy's; its dashboards don't pay for a second
   service. Randomized tests (`random_commands`, `random_diffs`, `random_events`) stay
   hand-rolled and seeded; proptest would only add shrinking.
-- Sonar's Rust analysis mostly re-reads clippy's; its dashboards don't pay for a second
-  service. Randomized tests (`random_commands`, `random_diffs`, `random_events`) stay
-  hand-rolled and seeded; proptest would only add shrinking.
+
+## D29. Embedded languages are layers parsed over the host's parts
+
+A tree-sitter grammar may come with an injection query (HTML's: `<script>` is JavaScript,
+`<style>` CSS). The background parser parses the text, runs that query on the tree, then
+parses each embedded language over the captured parts only (`Parser::set_included_ranges`),
+all the parts of one language in one tree, as Helix's combined injections: the scripts of a
+page share their names, and one tree per language reuses its previous tree incrementally.
+
+- `TreeHighlighter` holds layers: the text's own (first) and one per embedded language with a
+  bundled grammar (`registry.grammar`); edits are applied to every tree.
+- What is read from a tree is cut to the byte ranges it was parsed over
+  (`Tree::included_ranges`), so a node of a combined tree spanning two scripts never colors
+  the markup between them. Of two captures, an embedded language wins over the host.
+- Brackets, symbols (Go to Symbol finds a script's functions), folds and smart select read
+  every layer: smart select takes the smallest node of any layer, folds the one reaching
+  furthest.
+- One level only: an embedded language's own injections (JS regexes, JSDoc) are not followed.
+- Markdown, Vue and Svelte stay with their TextMate grammars, which embed fenced code and
+  scripts already (D13).
 
 ## Inspiration (read their code, don't copy it)
 

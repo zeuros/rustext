@@ -183,6 +183,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Custom tokenizer | `setTokensProvider` (`IState`, line-by-line) | P2 | todo |
 | Semantic tokens | `registerDocumentSemanticTokensProvider` | P3 | todo |
 | Standalone colorize (to HTML) | `colorize`, `colorizeElement`, `colorizeModelLine`, `tokenize` | P2 | todo |
+| Embedded languages (script in HTML, fenced code in Markdown) | Monarch `nextEmbedded` | P1 | done: tree-sitter layers for HTML's scripts and styles (D29); TextMate embeds for Markdown, Vue, Svelte |
 | Inspect tokens (debug) | `editor.action.inspectTokens` | P2 | todo |
 
 ## 9. Language services (providers)

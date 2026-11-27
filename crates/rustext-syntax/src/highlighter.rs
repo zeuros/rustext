@@ -26,7 +26,7 @@ pub struct SyntaxHighlighter {
 
 fn engine(registry: &LanguageRegistry, language: &Language, theme: &SyntaxTheme) -> Engine {
     match registry.grammar(&language.name) {
-        Some(grammar) => Engine::Tree(Box::new(TreeHighlighter::new(grammar, theme))),
+        Some(grammar) => Engine::Tree(Box::new(TreeHighlighter::new(grammar, theme, registry))),
         None => Engine::TextMate(Box::new(TextMateHighlighter::new(registry, language.clone(), theme.clone()))),
     }
 }

@@ -121,18 +121,19 @@ rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP featu
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit; chosen by the user, others left out on purpose):
-1. Language injections (JS/CSS in HTML, code blocks in Markdown, Vue/Svelte): highlighting,
-   and brackets in HTML's scripts (HTML has no bracket tokens, so it keeps the lexer).
-2. Moved code detection in diffs (Monaco's `experimental.showMoves`).
-3. Folding in diffs (off today when the application passes its own `DisplayLayout`).
-4. Unicode highlighting: invisible and ambiguous characters boxed.
-5. Cursor undo / redo (Ctrl+U) and transpose letters.
-6. Insert final newline.
-7. `#region` folding markers, and unfold on a click after a folded line's end.
-8. Linked editing (HTML tag pairs renamed together).
-9. Minimap marks (search matches, diagnostics).
+1. Moved code detection in diffs (Monaco's `experimental.showMoves`).
+2. Folding in diffs (off today when the application passes its own `DisplayLayout`).
+3. Unicode highlighting: invisible and ambiguous characters boxed.
+4. Cursor undo / redo (Ctrl+U) and transpose letters.
+5. Insert final newline.
+6. `#region` folding markers, and unfold on a click after a folded line's end.
+7. Linked editing (HTML tag pairs renamed together).
+8. Minimap marks (search matches, diagnostics).
 
 **Done in the last sessions** (newest first):
+- Embedded languages (D29): HTML's scripts and styles are parsed as JavaScript and CSS over
+  their parts, for colors, brackets, symbols, folds and smart select; HTML's prose brackets
+  come from its tree too. The existing complexity-lint violations are pinned (D28).
 - The language services' code lenses (D25): LSP `codeLens` and `codeLens/resolve`, asked
   once the text rests, following their lines through edits; "N implementations" lists its
   places, other commands go to the application (`EditorResponse::service_command`).
@@ -158,7 +159,7 @@ real server. Every feature is a commit on `main`.
 - Folding is off when the application passes its own `DisplayLayout` (diffs).
 - Text from egui's TextEdit (find input) can't use rustext's keymap (Ctrl+D etc. there are
   egui's).
-- The bracket lexer (D21), still used without a bundled grammar (and for HTML), doesn't know
+- The bracket lexer (D21), still used without a bundled grammar, doesn't know
   raw strings, nested comments or heredocs.
 - Find References and code actions aren't visible in the demo without `--lsp` (word
   completions answer none).
