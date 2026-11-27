@@ -694,3 +694,22 @@ fn screen_readers_read_the_visible_lines_and_the_selection() {
     let selection = editor.data().text_selection().copied();
     assert_eq!(selection.map(|selection| selection.focus.character_index), Some(3));
 }
+
+#[test]
+fn the_minimap_marks_diagnostics() {
+    let mut harness = harness("fn main() {\n    broken();\n}\n");
+    let theme = EditorTheme::dark();
+    harness.state_mut().config.minimap = true;
+    harness.state_mut().config.overview_ruler = false;
+    harness.state_mut().decorations =
+        vec![rustext_egui::code_editor::diagnostic(16, 22, rustext_egui::code_editor::Severity::Error, "no", &theme)];
+    harness.run();
+    let text_right = geometry(&harness).text_rect.right();
+
+    let has_minimap_mark = harness.output().shapes.iter().any(|clipped| match &clipped.shape {
+        egui::Shape::Rect(rect) => rect.fill == theme.error && rect.rect.left() > text_right,
+        _ => false,
+    });
+
+    assert!(has_minimap_mark);
+}

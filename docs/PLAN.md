@@ -111,19 +111,21 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 
 ## Where to resume
 
-Last updated: 2026-11-26, after the language features round (D22–D26).
+Last updated: 2026-11-27, after the second round chosen by the user (D29–D35).
 
 **State**: M0–M10 done, M11 and M12 mostly done, M13 done (integration guide, performance).
-`scripts/check.sh` green; ~335 tests, including seeded random tests (`random_commands.rs`
+`scripts/check.sh` green; ~400 tests, including seeded random tests (`random_commands.rs`
 in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case counts or
 change their seeds locally to hunt for rarer bugs), and `crates/rustext-lsp/tests/
 rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP feature against a
 real server. Every feature is a commit on `main`.
 
-**Next, in order** (each a commit; chosen by the user, others left out on purpose):
-1. Minimap marks (search matches, diagnostics).
+**Next**: the list the user chose is done. Left out on purpose so far: see
+`MONACO_FEATURES.md` rows still `todo`; ask the user before picking new ones.
 
 **Done in the last sessions** (newest first):
+- Minimap marks (D35): find matches, selections and `Decoration::minimap` (diagnostics) colored
+  behind the minimap's text; the minimap moved to `code_editor/minimap.rs`.
 - Linked editing (`EditingConfig::linked_editing`, D34): typing in a tag name renames its pair,
   by running the edit with a mirrored cursor; tags read from the text.
 - `#region` folding markers in any language (`rustext_core::fold_markers`, D33), the end

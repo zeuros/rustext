@@ -19,6 +19,7 @@ mod hover;
 mod input;
 mod layout;
 mod list_at_cursor;
+mod minimap;
 mod navigation;
 mod paint;
 mod palette;
@@ -284,7 +285,10 @@ pub fn diagnostic(
         Severity::Info => theme.info,
         Severity::Hint => theme.hint,
     });
-    Decoration::new(start, end, DecorationKind::Squiggle(color)).with_overview_ruler(color).with_hover_message(message)
+    Decoration::new(start, end, DecorationKind::Squiggle(color))
+        .with_overview_ruler(color)
+        .with_minimap(color)
+        .with_hover_message(message)
 }
 
 /// Lines of another text shown in this editor's foreign rows.
@@ -340,8 +344,6 @@ pub struct CodeEditor<'a> {
 }
 
 const MINIMAP_WIDTH: f32 = 90.0;
-/// Height of a row in the minimap, in points.
-const MINIMAP_ROW_HEIGHT: f32 = 2.0;
 
 /// Sizes of one frame's layout.
 #[derive(Clone, Copy, Debug)]
@@ -892,22 +894,6 @@ impl<'a> CodeEditor<'a> {
             .take_while(|&(slot, line)| self.row_of_line(line) < first_row + slot + 1)
             .map(|(_, line)| line)
             .collect()
-    }
-
-    /// The first row the minimap shows: it scrolls proportionally when the text is taller.
-    fn minimap_first_row(&self, metrics: &Metrics) -> usize {
-        let minimap_rows = (metrics.minimap_rect.height() / MINIMAP_ROW_HEIGHT) as usize;
-        let hidden_rows = self.row_count().saturating_sub(minimap_rows);
-        let fraction =
-            if self.max_scroll_y(metrics) > 0.0 { self.view.scroll_offset.y / self.max_scroll_y(metrics) } else { 0.0 };
-        (fraction * hidden_rows as f32).round() as usize
-    }
-
-    /// Scrolls so the row under `y` in the minimap is in the middle of the viewport.
-    fn scroll_to_minimap_y(&mut self, metrics: &Metrics, y: f32) {
-        let row =
-            self.minimap_first_row(metrics) as f32 + ((y - metrics.minimap_rect.top()) / MINIMAP_ROW_HEIGHT).max(0.0);
-        self.view.scroll_offset.y = row * metrics.row_height - metrics.text_rect.height() / 2.0;
     }
 
     /// The width rows wrap at, in columns (0: no wrapping).

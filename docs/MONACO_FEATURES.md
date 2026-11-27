@@ -136,7 +136,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Glyph margin icons | `glyphMargin`, `glyphMarginClassName`, `GlyphMarginLane`, `addGlyphMarginWidget` | P1 | done |
 | Line decorations (left of the text, e.g. git gutter bars) | `linesDecorationsClassName`, `lineDecorationsWidth` | P1 | done (`DecorationKind::GutterBar`) |
 | Overview ruler marks | `overviewRuler: {color, position}` | P0 | done |
-| Minimap marks | `minimap: {color, position}` | P2 | todo |
+| Minimap marks | `minimap: {color, position}` | P2 | done (D35: find matches, selections, `Decoration::minimap`, diagnostics) |
 | Injected text (before / after content) | `before`, `after` (`InjectedTextOptions`) | P2 | done |
 | Decoration hover message | `hoverMessage`, `glyphMarginHoverMessage` | P2 | done |
 | Stickiness when editing at the edges | `TrackedRangeStickiness` | P0 | done |

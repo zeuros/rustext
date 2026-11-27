@@ -516,7 +516,19 @@ in the transaction. The two names change in one undo step, and undo restores one
   the name ends there, as Monaco's word pattern ends its linked ranges.
 - No `LanguageServices` hook for LSP's `linkedEditingRange` yet: tags were the case to cover.
 
+## D35. Minimap marks: find matches, selections and decorations with a minimap color
 
+The minimap colors spans behind its text: find matches, non-empty selections, and decorations
+with `Decoration::minimap` set (`with_minimap(color)`; `code_editor::diagnostic` sets it in its
+severity's color, as Monaco's markers do).
+
+- One color per decoration, painted inline over the range's columns (at least one column, so
+  a one-char diagnostic shows). Monaco's `position: Gutter` (a bar left of the minimap) is
+  left out: diff rows already show their color across the row.
+- Only the marks on the minimap's shown lines are painted, so a thousand matches cost nothing
+  off screen.
+
+## Inspiration (read their code, don't copy it)
 
 | Project | Take |
 |---|---|

@@ -45,6 +45,8 @@ pub struct Decoration {
     pub kind: DecorationKind,
     /// A mark on the scrollbar at the range's first line.
     pub overview_ruler: Option<Rgba>,
+    /// A mark behind the range in the minimap.
+    pub minimap: Option<Rgba>,
     pub hover_message: Option<String>,
     pub stickiness: Stickiness,
 }
@@ -56,6 +58,7 @@ impl Decoration {
             end: start.max(end),
             kind,
             overview_ruler: None,
+            minimap: None,
             hover_message: None,
             stickiness: Stickiness::default(),
         }
@@ -73,6 +76,10 @@ impl Decoration {
 
     pub fn with_overview_ruler(self, color: Rgba) -> Self {
         Self { overview_ruler: Some(color), ..self }
+    }
+
+    pub fn with_minimap(self, color: Rgba) -> Self {
+        Self { minimap: Some(color), ..self }
     }
 
     pub fn with_hover_message(self, message: impl Into<String>) -> Self {
