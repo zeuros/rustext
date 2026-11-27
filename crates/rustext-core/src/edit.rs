@@ -229,6 +229,25 @@ pub fn delete_forward(context: &EditContext, unit: DeleteUnit) -> Option<Transac
     })
 }
 
+/// Swaps the chars around each cursor and moves past them: `t|eh` → `et|h`, and at a line end
+/// the two before it, `teh|` → `the|`. Selections and cursors at a line start are left alone
+/// (VS Code's `transposeLetters`).
+pub fn transpose_letters(context: &EditContext) -> Option<Transaction> {
+    let text = context.text;
+    replace_each(context, EditKind::Other, |selection| {
+        if !selection.is_empty() {
+            return None;
+        }
+        let position = text.position(selection.head);
+        let chars: Vec<char> = text.line_content(position.line).chars().collect();
+        let end_column = if position.column == chars.len() { position.column } else { position.column + 1 };
+        let begin_column = end_column.checked_sub(2)?;
+        let line_start = text.line_start(position.line);
+        let swapped: String = [chars[begin_column + 1], chars[begin_column]].iter().collect();
+        Some(Replacement::new(line_start + begin_column, line_start + end_column, swapped))
+    })
+}
+
 /// When the cursor is right after an auto-closed opening char, with its closing char right
 /// after the cursor: the offset after that closing char.
 fn auto_closed_pair_end(context: &EditContext, head: usize) -> Option<usize> {
@@ -457,4 +476,32 @@ pub fn paste(context: &EditContext, content: &ClipboardContent) -> Option<Transa
         }
         Some(Replacement::new(selection.start(), selection.end(), content.text.clone()))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::selection::Selections;
+    use crate::state::{Command, EditorState};
+
+    fn transposed(content: &str, cursor: usize) -> (String, usize) {
+        let mut state = EditorState::new(content);
+        state.execute(Command::SetSelections(Selections::cursor(cursor)));
+        state.execute(Command::TransposeLetters);
+        (state.text().to_string(), state.selections().primary().head)
+    }
+
+    #[test]
+    fn transposing_swaps_the_chars_around_the_cursor_and_moves_past_them() {
+        assert_eq!(transposed("teh", 1), ("eth".to_string(), 2));
+    }
+
+    #[test]
+    fn transposing_at_a_line_end_swaps_the_two_chars_before() {
+        assert_eq!(transposed("teh\nx", 3), ("the\nx".to_string(), 3));
+    }
+
+    #[test]
+    fn transposing_at_a_line_start_does_nothing() {
+        assert_eq!(transposed("ab\ncd", 3), ("ab\ncd".to_string(), 3));
+    }
 }

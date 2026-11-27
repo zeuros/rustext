@@ -439,6 +439,18 @@ fn hovering_a_diagnostic_shows_its_message() {
 }
 
 #[test]
+fn ctrl_u_goes_back_to_where_the_cursor_was() {
+    let mut harness = harness("abc def");
+    click(&mut harness, 0, 1);
+    click(&mut harness, 0, 5);
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::U);
+    harness.run();
+
+    assert_eq!(head(&harness), Position::new(0, 1));
+}
+
+#[test]
 fn hovering_a_lookalike_letter_says_what_it_looks_like() {
     let mut harness = harness("let p\u{0430}ypal = 1;");
     let pos = geometry(&harness).cell_center(0, 5);

@@ -4,151 +4,18 @@
 use crate::change::ChangeSet;
 use crate::comment::{toggle_block_comment, toggle_line_comment};
 use crate::config::{EditingConfig, LanguageConfiguration};
-use crate::cursors::{self, VerticalDirection};
-use crate::edit::{self, ClipboardContent, DeleteUnit, EditContext, Transaction};
+use crate::cursors;
+use crate::edit::{self, ClipboardContent, EditContext, Transaction};
 use crate::history::History;
-use crate::lines::{self, CaseTransform, LinesRewrite};
-use crate::motion::{HiddenLines, Motion, apply_motion_over};
-use crate::position::Position;
+use crate::lines;
+use crate::motion::{HiddenLines, apply_motion_over};
 use crate::selection::{Selection, Selections};
 use crate::text::Text;
 
-/// Everything the editor can do to its state. Commands that need the viewport (page moves)
-/// carry what they need.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Command {
-    Move {
-        motion: Motion,
-        extend: bool,
-    },
-    SetSelections(Selections),
-    SelectAll,
-    /// Ctrl+L.
-    ExpandToLines,
-    /// Escape.
-    CollapseSelections,
-    AddCursor(VerticalDirection),
-    /// Ctrl+D.
-    AddNextOccurrence,
-    /// Ctrl+Shift+L.
-    SelectAllOccurrences,
-    /// Shift+Alt+I.
-    CursorsAtLineEnds,
-    /// Shift+Alt+drag.
-    ColumnSelect {
-        anchor: Position,
-        head_line: usize,
-        head_visual_column: usize,
-    },
+mod command;
+mod cursor_history;
 
-    Type(String),
-    Newline,
-    Tab,
-    Indent,
-    Outdent,
-    DeleteBackward(DeleteUnit),
-    DeleteForward(DeleteUnit),
-    Cut,
-    Copy,
-    Paste(String),
-    Undo,
-    Redo,
-
-    MoveLines(VerticalDirection),
-    CopyLines(VerticalDirection),
-    DeleteLines,
-    DuplicateSelection,
-    JoinLines,
-    RewriteLines(LinesRewrite),
-    TrimTrailingWhitespace,
-    InsertLine(VerticalDirection),
-    TransformCase(CaseTransform),
-    ToggleLineComment,
-    ToggleBlockComment,
-    /// Applies a transaction computed outside (find / replace, formatting, an application edit).
-    Apply(Transaction),
-    /// Inserts a snippet (`${1:name}`…) in place of the primary selection and the
-    /// `replaced_before_cursor` chars before it (a completion's prefix), then selects its first
-    /// tab stop; Tab and Shift+Tab go through the others.
-    InsertSnippet {
-        snippet: String,
-        replaced_before_cursor: usize,
-    },
-}
-
-impl Command {
-    /// Whether the command changes the text (rejected when read-only).
-    pub fn edits_text(&self) -> bool {
-        !matches!(
-            self,
-            Command::Move { .. }
-                | Command::SetSelections(_)
-                | Command::SelectAll
-                | Command::ExpandToLines
-                | Command::CollapseSelections
-                | Command::AddCursor(_)
-                | Command::AddNextOccurrence
-                | Command::SelectAllOccurrences
-                | Command::CursorsAtLineEnds
-                | Command::ColumnSelect { .. }
-                | Command::Copy
-        )
-    }
-
-    /// A stable name for keymaps in settings files and the command palette.
-    pub fn name(&self) -> &'static str {
-        match self {
-            Command::Move { .. } => "cursor.move",
-            Command::SetSelections(_) => "cursor.setSelections",
-            Command::SelectAll => "selection.selectAll",
-            Command::ExpandToLines => "selection.expandToLines",
-            Command::CollapseSelections => "selection.collapse",
-            Command::AddCursor(VerticalDirection::Up) => "cursor.addAbove",
-            Command::AddCursor(VerticalDirection::Down) => "cursor.addBelow",
-            Command::AddNextOccurrence => "selection.addNextOccurrence",
-            Command::SelectAllOccurrences => "selection.selectAllOccurrences",
-            Command::CursorsAtLineEnds => "cursor.atLineEnds",
-            Command::ColumnSelect { .. } => "selection.column",
-            Command::Type(_) => "edit.type",
-            Command::Newline => "edit.newline",
-            Command::Tab => "edit.tab",
-            Command::Indent => "edit.indent",
-            Command::Outdent => "edit.outdent",
-            Command::DeleteBackward(_) => "edit.deleteBackward",
-            Command::DeleteForward(_) => "edit.deleteForward",
-            Command::Cut => "clipboard.cut",
-            Command::Copy => "clipboard.copy",
-            Command::Paste(_) => "clipboard.paste",
-            Command::Undo => "history.undo",
-            Command::Redo => "history.redo",
-            Command::MoveLines(VerticalDirection::Up) => "lines.moveUp",
-            Command::MoveLines(VerticalDirection::Down) => "lines.moveDown",
-            Command::CopyLines(VerticalDirection::Up) => "lines.copyUp",
-            Command::CopyLines(VerticalDirection::Down) => "lines.copyDown",
-            Command::DeleteLines => "lines.delete",
-            Command::DuplicateSelection => "selection.duplicate",
-            Command::JoinLines => "lines.join",
-            Command::RewriteLines(LinesRewrite::SortAscending) => "lines.sortAscending",
-            Command::RewriteLines(LinesRewrite::SortDescending) => "lines.sortDescending",
-            Command::RewriteLines(LinesRewrite::Reverse) => "lines.reverse",
-            Command::RewriteLines(LinesRewrite::RemoveDuplicates) => "lines.removeDuplicates",
-            Command::TrimTrailingWhitespace => "lines.trimTrailingWhitespace",
-            Command::InsertLine(VerticalDirection::Up) => "lines.insertAbove",
-            Command::InsertLine(VerticalDirection::Down) => "lines.insertBelow",
-            Command::TransformCase(CaseTransform::Upper) => "case.upper",
-            Command::TransformCase(CaseTransform::Lower) => "case.lower",
-            Command::TransformCase(CaseTransform::Title) => "case.title",
-            Command::TransformCase(CaseTransform::Snake) => "case.snake",
-            Command::TransformCase(CaseTransform::Camel) => "case.camel",
-            Command::TransformCase(CaseTransform::Pascal) => "case.pascal",
-            Command::TransformCase(CaseTransform::Kebab) => "case.kebab",
-            Command::ToggleLineComment => "comment.line",
-            Command::ToggleBlockComment => "comment.block",
-            Command::Apply(_) => "edit.apply",
-            Command::InsertSnippet { .. } => "edit.insertSnippet",
-        }
-    }
-}
+pub use command::Command;
 
 /// The lines one change set touched: `first_line..=old_last_line` of the text before it
 /// became `first_line..=new_last_line`. Lines after shift by `new_last_line - old_last_line`.
@@ -237,6 +104,7 @@ pub struct EditorState {
     /// Lines the view hides (folds): vertical moves step over them.
     pub hidden_lines: HiddenLines,
     snippet_session: Option<SnippetSession>,
+    cursor_history: cursor_history::CursorHistory,
 }
 
 /// The tab stops of an inserted snippet, in char offsets that follow edits.
@@ -282,6 +150,7 @@ impl EditorState {
             text_revision: 0,
             hidden_lines: HiddenLines::default(),
             snippet_session: None,
+            cursor_history: cursor_history::CursorHistory::default(),
         }
     }
 
@@ -316,6 +185,7 @@ impl EditorState {
         self.text = text;
         self.selections = Selections::default();
         self.history = History::default();
+        self.cursor_history.clear();
         self.auto_closed_offsets.clear();
         self.text_revision += 1;
     }
@@ -401,6 +271,8 @@ impl EditorState {
             }
             Command::Undo => return self.replay(true),
             Command::Redo => return self.replay(false),
+            Command::CursorUndo => return self.restore_selections(true),
+            Command::CursorRedo => return self.restore_selections(false),
 
             Command::Type(typed) => edit::type_text(&context, &typed),
             Command::Newline => edit::insert_newline(&context),
@@ -432,6 +304,7 @@ impl EditorState {
             Command::TransformCase(transform) => lines::transform_case(&context, transform),
             Command::ToggleLineComment => toggle_line_comment(&context),
             Command::ToggleBlockComment => toggle_block_comment(&context),
+            Command::TransposeLetters => edit::transpose_letters(&context),
             Command::Apply(transaction) => Some(transaction),
             Command::InsertSnippet { .. } => None,
         };
@@ -477,6 +350,7 @@ impl EditorState {
         let edited_lines = EditedLines::of(&transaction.changes, &self.text, &new_text).into_iter().collect();
         let text_before = self.text.clone();
         self.text_revision += 1;
+        self.cursor_history.clear();
         self.text = new_text;
         self.selections = selections_after;
         self.auto_closed_offsets = auto_closed_offsets;
@@ -490,7 +364,17 @@ impl EditorState {
         }
     }
 
+    /// Selects, recording the selections before for cursor undo.
     fn select(&mut self, selections: Selections) -> Outcome {
+        let before = self.selections.clone();
+        let outcome = self.select_unrecorded(selections);
+        if outcome.selections_changed {
+            self.cursor_history.record(before);
+        }
+        outcome
+    }
+
+    fn select_unrecorded(&mut self, selections: Selections) -> Outcome {
         if selections == self.selections {
             return Outcome::default();
         }
@@ -563,6 +447,7 @@ impl EditorState {
             texts_before.push(std::mem::replace(&mut self.text, new_text));
         }
         self.text_revision += 1;
+        self.cursor_history.clear();
         self.selections = replay.selections.clamped(&self.text);
         self.auto_closed_offsets.clear();
         Outcome {
@@ -587,6 +472,10 @@ impl EditorState {
 mod tests {
     use super::*;
     use crate::config::LanguageConfiguration;
+    use crate::cursors::VerticalDirection;
+    use crate::edit::DeleteUnit;
+    use crate::motion::Motion;
+    use crate::position::Position;
     use crate::selection::Selection;
 
     fn editor(content: &str, cursor: usize) -> EditorState {

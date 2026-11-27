@@ -1,4 +1,3 @@
-585 crates/rustext-core/src/state.rs
 549 crates/rustext-core/src/structure.rs
 529 crates/rustext-egui/src/code_editor/find.rs
 546 crates/rustext-egui/src/code_editor/input.rs

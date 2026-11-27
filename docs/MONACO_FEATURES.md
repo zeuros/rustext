@@ -62,7 +62,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Word motions | `cursorWordLeft/Right`, `cursorWordStart*/End*`, `cursorWordPart*` (camelCase parts) | P1 | done |
 | Smart Home (first non-whitespace, then column 1) | `cursorHome` | P1 | done |
 | Sticky column on vertical moves | implicit | P0 | done |
-| Cursor undo | `cursorUndo` / `cursorRedo` (Ctrl+U) | P2 | todo |
+| Cursor undo | `cursorUndo` / `cursorRedo` (Ctrl+U) | P2 | done: Ctrl+U / Ctrl+Shift+U, 50 states, an edit forgets them |
 | Selection anchor | `setSelectionAnchor`, `selectFromAnchorToCursor` | P3 | todo |
 | Smart select expand / shrink | `editor.action.smartSelect.expand/shrink` (Shift+Alt+→/←) | P2 | done (tree-sitter nodes; word, line, all without a grammar) |
 | Cursor style, blinking, width, smooth caret | `cursorStyle`, `cursorBlinking`, `cursorWidth`, `cursorSmoothCaretAnimation` | P1 | done |
@@ -84,7 +84,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Duplicate selection | `duplicateSelection` | P1 | done |
 | Join lines | `joinLines` | P1 | done |
 | Sort lines, reverse, remove duplicates | `sortLinesAscending/Descending`, `reverseLines`, `removeDuplicateLines` | P1 | done |
-| Transpose letters | `transposeLetters` | P2 | todo |
+| Transpose letters | `transposeLetters` | P2 | done: Ctrl+K Ctrl+T (no default binding on Linux in VS Code) |
 | Case transforms | `transformToUppercase/Lowercase/Titlecase/Snakecase/Camelcase/Kebabcase/Pascalcase` | P1 | done |
 | Trim trailing whitespace | `editor.action.trimTrailingWhitespace` | P1 | done |
 | Insert final newline | contrib `insertFinalNewLine` | P2 | todo |

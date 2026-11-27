@@ -217,6 +217,8 @@ impl Keymap {
             (chord(command, Key::Z), Command::Undo),
             (chord(command_shift, Key::Z), Command::Redo),
             (chord(command, Key::Y), Command::Redo),
+            (chord(command, Key::U), Command::CursorUndo),
+            (chord(command_shift, Key::U), Command::CursorRedo),
         ];
         for (key_chord, command) in commands {
             keymap = keymap.bind(&[key_chord], edit(command));
@@ -225,6 +227,7 @@ impl Keymap {
         let command_k = chord(command, Key::K);
         let sequences = [
             (Key::X, edit(Command::TrimTrailingWhitespace)),
+            (Key::T, edit(Command::TransposeLetters)),
             (Key::U, edit(Command::TransformCase(CaseTransform::Upper))),
             (Key::L, edit(Command::TransformCase(CaseTransform::Lower))),
             (Key::Num0, Action::FoldAll),
