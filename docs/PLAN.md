@@ -120,9 +120,17 @@ change their seeds locally to hunt for rarer bugs), and `crates/rustext-lsp/test
 rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP feature against a
 real server. Every feature is a commit on `main`.
 
-**Next, in order** (each a commit):
-1. Language injections (JS in HTML, code blocks in Markdown): highlighting, and brackets
-   in HTML's scripts (HTML has no bracket tokens, so it keeps the lexer).
+**Next, in order** (each a commit; chosen by the user, others left out on purpose):
+1. Language injections (JS/CSS in HTML, code blocks in Markdown, Vue/Svelte): highlighting,
+   and brackets in HTML's scripts (HTML has no bracket tokens, so it keeps the lexer).
+2. Moved code detection in diffs (Monaco's `experimental.showMoves`).
+3. Folding in diffs (off today when the application passes its own `DisplayLayout`).
+4. Unicode highlighting: invisible and ambiguous characters boxed.
+5. Cursor undo / redo (Ctrl+U) and transpose letters.
+6. Insert final newline.
+7. `#region` folding markers, and unfold on a click after a folded line's end.
+8. Linked editing (HTML tag pairs renamed together).
+9. Minimap marks (search matches, diagnostics).
 
 **Done in the last sessions** (newest first):
 - The language services' code lenses (D25): LSP `codeLens` and `codeLens/resolve`, asked
