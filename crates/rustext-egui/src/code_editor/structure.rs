@@ -10,8 +10,8 @@ use rustext_core::find::{self, SearchQuery};
 use rustext_core::indentation::Indentation;
 use rustext_core::motion::HiddenLines;
 use rustext_core::structure::{
-    EnclosingBracketPair, FoldRange, active_indent_guide, enclosing_bracket_pair, fold_range_at, indent_level,
-    indentation_fold_ranges, matching_bracket_pair,
+    BracketScanner, EnclosingBracketPair, FoldRange, active_indent_guide, enclosing_bracket_pair, fold_range_at,
+    indent_level, indentation_fold_ranges, matching_bracket_pair,
 };
 use rustext_core::style::LineStyler;
 use rustext_core::{Selections, Text};
@@ -315,10 +315,10 @@ impl CodeEditor<'_> {
         {
             return pair;
         }
-        let language = &self.state.language;
+        let mut scanner = BracketScanner::new(&self.state.language, self.styler.as_deref_mut());
         let line_starts = &mut self.view.bracket_line_starts;
         let pair =
-            enclosing_bracket_pair(self.state.text(), head, language, line_starts, &mut self.bracket_budget_lines);
+            enclosing_bracket_pair(self.state.text(), head, &mut scanner, line_starts, &mut self.bracket_budget_lines);
         if pair.is_some() || self.bracket_budget_lines > 0 {
             self.view.active_bracket_pair = Some((key, pair));
         }
@@ -359,7 +359,7 @@ impl CodeEditor<'_> {
         let pair = matching_bracket_pair(
             self.state.text(),
             head,
-            &self.state.language,
+            &mut BracketScanner::new(&self.state.language, self.styler.as_deref_mut()),
             &mut self.view.bracket_line_starts,
             &mut self.bracket_budget_lines,
         );

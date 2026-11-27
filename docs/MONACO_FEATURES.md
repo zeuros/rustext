@@ -108,9 +108,9 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Control characters | `renderControlCharacters` (and visible CR, the gitgud hack done right) | P0 | done |
 | Rulers | `rulers` (columns, colors) | P1 | done |
 | Indent guides, active guide | `guides.indentation`, `guides.highlightActiveIndentation` | P1 | done |
-| Bracket pair colorization | `bracketPairColorization.enabled`, `independentColorPoolPerBracketType` | P1 | done (skips strings and comments, D21) |
+| Bracket pair colorization | `bracketPairColorization.enabled`, `independentColorPoolPerBracketType` | P1 | done (skips strings and comments: syntax tree tokens where a grammar is bundled, D27, else a lexer, D21) |
 | Bracket pair guides | `guides.bracketPairs`, `bracketPairsHorizontal` | P2 | partial (`'active'`: the pair holding the cursor, vertical only; `ViewConfig::bracket_pair_guides`) |
-| Matching bracket highlight, jump | `matchBrackets`, `editor.action.jumpToBracket` (Ctrl+Shift+\), `selectToBracket` | P1 | done (skips strings and comments, D21) |
+| Matching bracket highlight, jump | `matchBrackets`, `editor.action.jumpToBracket` (Ctrl+Shift+\), `selectToBracket` | P1 | done (skips strings and comments: syntax tree tokens, D27, else a lexer, D21) |
 | Selection occurrences highlight | `selectionHighlight` | P1 | done |
 | Word occurrences highlight | `occurrencesHighlight` (`singleFile`, `multiFile`), `wordHighlight.next/prev` | P1 | done |
 | Word wrap | `wordWrap` (`off`, `on`, `wordWrapColumn`, `bounded`), `wrappingIndent`, `wordWrapBreakBeforeCharacters` | P1 | done |

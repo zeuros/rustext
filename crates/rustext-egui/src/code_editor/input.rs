@@ -455,7 +455,7 @@ impl CodeEditor<'_> {
                 let pair = rustext_core::structure::matching_bracket_pair(
                     self.state.text(),
                     head,
-                    &self.state.language,
+                    &mut rustext_core::structure::BracketScanner::new(&self.state.language, self.styler.as_deref_mut()),
                     &mut self.view.bracket_line_starts,
                     &mut unlimited,
                 );

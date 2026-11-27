@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use egui::text::{ByteIndex, CCursor, LayoutJob, LayoutSection, TextFormat, TextWrapping};
 use egui::{Color32, FontId, Galley, Stroke, Ui, vec2};
+use rustext_core::structure::BracketScanner;
 use rustext_core::style::{Rgba, StyledSpan, TextStyle};
 
 use super::{CodeEditor, Metrics};
@@ -109,13 +110,13 @@ impl CodeEditor<'_> {
         let spans = self.styler.as_deref_mut().map(|styler| styler.style_line(text, line)).unwrap_or_default();
         let content = text.line_content(line);
         let colors = &self.theme.bracket_pair_colors;
-        let language = &self.state.language;
         let colorizes = self.config.bracket_pair_colorization && !colors.is_empty();
+        let mut scanner = BracketScanner::new(&self.state.language, self.styler.as_deref_mut());
         let line_start = colorizes
-            .then(|| self.view.bracket_line_starts.state_at(text, language, line, &mut self.bracket_budget_lines))
+            .then(|| self.view.bracket_line_starts.state_at(text, &mut scanner, line, &mut self.bracket_budget_lines))
             .flatten();
         let bracket_colors: Vec<(usize, Color32)> = match line_start {
-            Some(line_start) => rustext_core::structure::bracket_columns(&content, line_start, language)
+            Some(line_start) => rustext_core::structure::bracket_columns(text, line, line_start, &mut scanner)
                 .into_iter()
                 .map(|(column, depth)| (column, colors[depth % colors.len()]))
                 .collect(),

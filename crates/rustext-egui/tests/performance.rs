@@ -206,6 +206,8 @@ fn large_file_frame_times_highlighted() {
         });
     });
     println!("highlighted: ctrl+end frame: {to_end:.2} ms");
+    let idle_at_end = milliseconds_per_frame_highlighted(&mut harness, 30, |_| {});
+    println!("highlighted: frames after ctrl+end (bracket states of the lines above catching up): {idle_at_end:.2} ms");
     let typing_at_end = milliseconds_per_frame_highlighted(&mut harness, 30, |harness| {
         harness.event(Event::Text("y".into()));
     });

@@ -1,13 +1,83 @@
-//! Structure read from the text alone: matching brackets, indentation guides, indentation
-//! folding ranges. Language-aware versions (tree-sitter) can replace them later (D13).
+//! Structure read from the text: matching brackets, indentation guides, indentation folding
+//! ranges. Brackets come from the styler's syntax tree when it parses the text (D27), else from
+//! a lexer reading the language configuration (D21).
 
 use crate::config::LanguageConfiguration;
 use crate::indentation::Indentation;
-use crate::lexical::{LexicalContext, LineScan, scan_line, scan_line_chars};
+use crate::lexical::{LexicalContext, LineScan, scan_line_chars};
+use crate::style::LineStyler;
 use crate::text::Text;
 
 /// Brackets further apart than this many chars are not matched (keeps the search bounded).
 const MAX_BRACKET_DISTANCE: usize = 200_000;
+
+/// The code brackets of a line as a styler's syntax tree tells them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SyntaxBrackets {
+    /// The styler doesn't parse the text: the lexer tells them (D21).
+    NoParser,
+    /// The tree doesn't match the text yet: the lexer tells them meanwhile.
+    Parsing,
+    /// The columns of the line's bracket tokens, in order (brackets in strings and comments
+    /// are not tokens).
+    Columns(Vec<usize>),
+}
+
+/// Where the code brackets of a line come from: the syntax tree of the styler when it has one
+/// matching the text, else the lexer.
+pub struct BracketScanner<'a> {
+    language: &'a LanguageConfiguration,
+    styler: Option<&'a mut dyn LineStyler>,
+}
+
+impl<'a> BracketScanner<'a> {
+    pub fn new<'styler: 'a>(
+        language: &'a LanguageConfiguration,
+        styler: Option<&'a mut (dyn LineStyler + 'styler)>,
+    ) -> Self {
+        Self { language, styler: styler.map(|styler| styler as &mut dyn LineStyler) }
+    }
+
+    /// Brackets from the lexer alone.
+    pub fn lexer(language: &'a LanguageConfiguration) -> Self {
+        Self { language, styler: None }
+    }
+
+    pub fn language(&self) -> &LanguageConfiguration {
+        self.language
+    }
+
+    /// The code brackets of `line`, starting in `context` (which only the lexer reads).
+    pub fn scan(&mut self, text: &Text, line: usize, context: LexicalContext) -> LineScan {
+        self.scan_telling_if_provisional(text, line, context).0
+    }
+
+    /// `scan`, and whether the lexer answered for a tree still being parsed.
+    fn scan_telling_if_provisional(&mut self, text: &Text, line: usize, context: LexicalContext) -> (LineScan, bool) {
+        let syntax_brackets =
+            self.styler.as_deref_mut().map_or(SyntaxBrackets::NoParser, |styler| styler.code_brackets(text, line));
+        let columns = match syntax_brackets {
+            SyntaxBrackets::Columns(columns) => columns,
+            other => {
+                let scan = scan_line_chars(line_chars(text, line), context, self.language);
+                return (scan, other == SyntaxBrackets::Parsing);
+            }
+        };
+        let line_start = text.line_start(line);
+        let brackets = columns
+            .into_iter()
+            .filter_map(|column| Some((column, text.char_at(line_start + column)?)))
+            .filter(|&(_, character)| self.language.is_bracket(character))
+            .collect();
+        (LineScan { brackets, context_at_end: LexicalContext::Code }, false)
+    }
+
+    /// Whether the tree answers for `line` again after the lexer answered while it was parsed.
+    fn is_parsed(&mut self, text: &Text, line: usize) -> bool {
+        let styler = self.styler.as_deref_mut();
+        styler.is_none_or(|styler| styler.code_brackets(text, line) != SyntaxBrackets::Parsing)
+    }
+}
 
 /// The code bracket touching `offset` (right after it, else right before it) and its match, as
 /// two char offsets in text order. Brackets in strings and comments neither match nor count.
@@ -15,7 +85,7 @@ const MAX_BRACKET_DISTANCE: usize = 200_000;
 pub fn matching_bracket_pair(
     text: &Text,
     offset: usize,
-    language: &LanguageConfiguration,
+    scanner: &mut BracketScanner,
     line_starts: &mut BracketLineStarts,
     budget_lines: &mut usize,
 ) -> Option<(usize, usize)> {
@@ -23,15 +93,15 @@ pub fn matching_bracket_pair(
     candidates.into_iter().flatten().find_map(|position| {
         let line = text.line_of_offset(position);
         let column = position - text.line_start(line);
-        let start = line_starts.state_at(text, language, line, budget_lines)?;
-        let scan = scan_line_chars(line_chars(text, line), start.context, language);
+        let start = line_starts.state_at(text, scanner, line, budget_lines)?;
+        let scan = scanner.scan(text, line, start.context);
         let &(_, character) = scan.brackets.iter().find(|(bracket_column, _)| *bracket_column == column)?;
         let &(open, close) =
-            language.brackets.iter().find(|(open, close)| *open == character || *close == character)?;
+            scanner.language.brackets.iter().find(|(open, close)| *open == character || *close == character)?;
         let matched = if character == open {
-            find_closing(text, language, line, column, scan, (open, close))
+            find_closing(text, scanner, line, column, scan, (open, close))
         } else {
-            find_opening(text, language, line_starts, line, column, scan.brackets, (open, close))
+            find_opening(text, scanner, line_starts, line, column, scan.brackets, (open, close))
         }?;
         Some((position.min(matched), position.max(matched)))
     })
@@ -39,7 +109,7 @@ pub fn matching_bracket_pair(
 
 fn find_closing(
     text: &Text,
-    language: &LanguageConfiguration,
+    scanner: &mut BracketScanner,
     open_line: usize,
     open_column: usize,
     open_line_scan: LineScan,
@@ -66,13 +136,13 @@ fn find_closing(
             return None;
         }
         line += 1;
-        scan = scan_line_chars(line_chars(text, line), scan.context_at_end, language);
+        scan = scanner.scan(text, line, scan.context_at_end);
     }
 }
 
 fn find_opening(
     text: &Text,
-    language: &LanguageConfiguration,
+    scanner: &mut BracketScanner,
     line_starts: &mut BracketLineStarts,
     close_line: usize,
     close_column: usize,
@@ -91,7 +161,7 @@ fn find_opening(
         }
         false
     };
-    find_bracket_before(text, language, line_starts, (close_line, close_column), close_line_brackets, is_the_opening)
+    find_bracket_before(text, scanner, line_starts, (close_line, close_column), close_line_brackets, is_the_opening)
 }
 
 /// The code bracket of the innermost pair holding `offset` (after its opening bracket, not
@@ -100,15 +170,16 @@ fn find_opening(
 pub fn enclosing_bracket_pair(
     text: &Text,
     offset: usize,
-    language: &LanguageConfiguration,
+    scanner: &mut BracketScanner,
     line_starts: &mut BracketLineStarts,
     budget_lines: &mut usize,
 ) -> Option<EnclosingBracketPair> {
     let line = text.line_of_offset(offset);
     let column = offset - text.line_start(line);
-    let start = line_starts.state_at(text, language, line, budget_lines)?;
-    let brackets = scan_line_chars(line_chars(text, line), start.context, language).brackets;
+    let start = line_starts.state_at(text, scanner, line, budget_lines)?;
+    let brackets = scanner.scan(text, line, start.context).brackets;
     let mut unmatched_closers: Vec<char> = Vec::new();
+    let language = scanner.language;
     let is_unclosed_opening = |character: char| {
         if language.is_closing_bracket(character) {
             unmatched_closers.push(character);
@@ -116,21 +187,20 @@ pub fn enclosing_bracket_pair(
         }
         unmatched_closers.pop().is_none()
     };
-    let open = find_bracket_before(text, language, line_starts, (line, column), brackets, is_unclosed_opening)?;
+    let open = find_bracket_before(text, scanner, line_starts, (line, column), brackets, is_unclosed_opening)?;
 
     let open_line = text.line_of_offset(open);
     let open_column = open - text.line_start(open_line);
     // The scan went through the opening bracket's line: its state is known, no budget needed.
     let mut unlimited = usize::MAX;
-    let open_start = line_starts.state_at(text, language, open_line, &mut unlimited)?;
+    let open_start = line_starts.state_at(text, scanner, open_line, &mut unlimited)?;
     let open_char = text.char_at(open)?;
     let pair = *language.brackets.iter().find(|(opening, _)| *opening == open_char)?;
-    let open_line_content: String = line_chars(text, open_line).collect();
-    let depth = bracket_columns(&open_line_content, open_start, language)
+    let depth = bracket_columns(text, open_line, open_start, scanner)
         .into_iter()
         .find_map(|(column, depth)| (column == open_column).then_some(depth))?;
-    let open_scan = scan_line_chars(open_line_content.chars(), open_start.context, language);
-    let close = find_closing(text, language, open_line, open_column, open_scan, pair)?;
+    let open_scan = scanner.scan(text, open_line, open_start.context);
+    let close = find_closing(text, scanner, open_line, open_column, open_scan, pair)?;
     Some(EnclosingBracketPair { open, close, depth })
 }
 
@@ -148,7 +218,7 @@ pub struct EnclosingBracketPair {
 /// offset. Bounded by `MAX_BRACKET_DISTANCE`.
 fn find_bracket_before(
     text: &Text,
-    language: &LanguageConfiguration,
+    scanner: &mut BracketScanner,
     line_starts: &mut BracketLineStarts,
     (start_line, start_column): (usize, usize),
     line_brackets: Vec<(usize, char)>,
@@ -171,8 +241,8 @@ fn find_bracket_before(
         line -= 1;
         // Lines before one whose state is known are known too: no budget needed.
         let mut unlimited = usize::MAX;
-        let start = line_starts.state_at(text, language, line, &mut unlimited)?;
-        brackets = scan_line_chars(line_chars(text, line), start.context, language).brackets;
+        let start = line_starts.state_at(text, scanner, line, &mut unlimited)?;
+        brackets = scanner.scan(text, line, start.context).brackets;
     }
 }
 
@@ -195,12 +265,18 @@ pub struct BracketLineStart {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BracketLineStarts {
     states: Vec<BracketLineStart>,
+    /// The first line the lexer scanned while the syntax tree was being parsed: the states
+    /// after it are computed again from the tree once it is parsed.
+    first_provisional_line: Option<usize>,
 }
 
 impl BracketLineStarts {
     /// The text changed from `first_changed_line` on.
     pub fn invalidate_from(&mut self, first_changed_line: usize) {
         self.states.truncate(first_changed_line + 1);
+        if self.first_provisional_line.is_some_and(|line| line >= first_changed_line) {
+            self.first_provisional_line = None;
+        }
     }
 
     /// The state at the start of `line`, computing at most `budget_lines` more lines (the
@@ -208,10 +284,15 @@ impl BracketLineStarts {
     pub fn state_at(
         &mut self,
         text: &Text,
-        language: &LanguageConfiguration,
+        scanner: &mut BracketScanner,
         line: usize,
         budget_lines: &mut usize,
     ) -> Option<BracketLineStart> {
+        if let Some(provisional_line) = self.first_provisional_line
+            && scanner.is_parsed(text, provisional_line)
+        {
+            self.invalidate_from(provisional_line);
+        }
         if self.states.is_empty() {
             self.states.push(BracketLineStart::default());
         }
@@ -220,36 +301,41 @@ impl BracketLineStarts {
             if *budget_lines == 0 {
                 return None;
             }
-            self.extend_one(text, language);
+            self.extend_one(text, scanner);
             *budget_lines -= 1;
         }
         Some(self.states[target])
     }
 
-    fn extend_one(&mut self, text: &Text, language: &LanguageConfiguration) {
+    fn extend_one(&mut self, text: &Text, scanner: &mut BracketScanner) {
         let line = self.states.len() - 1;
         let start = self.states[line];
-        let scan = scan_line_chars(line_chars(text, line), start.context, language);
+        let (scan, is_provisional) = scanner.scan_telling_if_provisional(text, line, start.context);
+        if is_provisional {
+            self.first_provisional_line.get_or_insert(line);
+        }
         let depth = scan.brackets.iter().fold(start.depth, |depth, &(_, character)| {
-            if language.is_closing_bracket(character) { depth.saturating_sub(1) } else { depth + 1 }
+            if scanner.language.is_closing_bracket(character) { depth.saturating_sub(1) } else { depth + 1 }
         });
         self.states.push(BracketLineStart { depth, context: scan.context_at_end });
     }
 }
 
-/// Columns of the code brackets of `line_content` with their nesting depth (the depth inside
-/// an opening bracket's pair, which its closing bracket shares).
+/// Columns of the code brackets of `line` with their nesting depth (the depth inside an
+/// opening bracket's pair, which its closing bracket shares), from its `start` state.
 pub fn bracket_columns(
-    line_content: &str,
+    text: &Text,
+    line: usize,
     start: BracketLineStart,
-    language: &LanguageConfiguration,
+    scanner: &mut BracketScanner,
 ) -> Vec<(usize, usize)> {
     let mut depth = start.depth;
-    scan_line(line_content, start.context, language)
+    scanner
+        .scan(text, line, start.context)
         .brackets
         .into_iter()
         .map(|(column, character)| {
-            if language.is_closing_bracket(character) {
+            if scanner.language.is_closing_bracket(character) {
                 depth = depth.saturating_sub(1);
                 (column, depth)
             } else {
@@ -464,10 +550,11 @@ mod tests {
 
     fn pair(text: &str, offset: usize) -> Option<(usize, usize)> {
         let text = Text::new(text);
+        let language = LanguageConfiguration::c_like();
         matching_bracket_pair(
             &text,
             offset,
-            &LanguageConfiguration::c_like(),
+            &mut BracketScanner::lexer(&language),
             &mut BracketLineStarts::default(),
             &mut 100,
         )
@@ -477,7 +564,8 @@ mod tests {
     fn enclosing(text: &str, offset: usize) -> Option<(usize, usize, usize)> {
         let text = Text::new(text);
         let language = LanguageConfiguration::c_like();
-        enclosing_bracket_pair(&text, offset, &language, &mut BracketLineStarts::default(), &mut 100)
+        let mut scanner = BracketScanner::lexer(&language);
+        enclosing_bracket_pair(&text, offset, &mut scanner, &mut BracketLineStarts::default(), &mut 100)
             .map(|pair| (pair.open, pair.close, pair.depth))
     }
 
@@ -498,7 +586,8 @@ mod tests {
     }
 
     fn depth(starts: &mut BracketLineStarts, text: &Text, line: usize, budget: &mut usize) -> Option<usize> {
-        starts.state_at(text, &LanguageConfiguration::c_like(), line, budget).map(|start| start.depth)
+        let language = LanguageConfiguration::c_like();
+        starts.state_at(text, &mut BracketScanner::lexer(&language), line, budget).map(|start| start.depth)
     }
 
     fn at_depth(depth: usize) -> BracketLineStart {
@@ -530,9 +619,10 @@ mod tests {
         let mut starts = BracketLineStarts::default();
 
         assert_eq!(depth(&mut starts, &text, 1, &mut 100), Some(2));
-        assert_eq!(bracket_columns("  [b]", at_depth(2), &language), vec![(2, 2), (4, 2)]);
+        let mut scanner = BracketScanner::lexer(&language);
+        assert_eq!(bracket_columns(&text, 1, at_depth(2), &mut scanner), vec![(2, 2), (4, 2)]);
         assert_eq!(depth(&mut starts, &text, 2, &mut 100), Some(2));
-        assert_eq!(bracket_columns("})", at_depth(2), &language), vec![(0, 1), (1, 0)]);
+        assert_eq!(bracket_columns(&text, 2, at_depth(2), &mut scanner), vec![(0, 1), (1, 0)]);
     }
 
     #[test]
@@ -556,6 +646,56 @@ mod tests {
         starts.invalidate_from(5);
         let edited = Text::new(&")\n".repeat(50));
         assert_eq!(depth(&mut starts, &edited, 7, &mut 100), Some(3));
+    }
+
+    /// A styler whose tree puts the brackets of each line at fixed columns, or is parsing.
+    struct FakeTree {
+        columns_of_line: Vec<Vec<usize>>,
+        is_parsing: bool,
+    }
+
+    impl LineStyler for FakeTree {
+        fn style_line(&mut self, _text: &Text, _line: usize) -> Vec<crate::style::StyledSpan> {
+            Vec::new()
+        }
+
+        fn invalidate_from(&mut self, _first_changed_line: usize) {}
+
+        fn code_brackets(&mut self, _text: &Text, line: usize) -> SyntaxBrackets {
+            if self.is_parsing {
+                return SyntaxBrackets::Parsing;
+            }
+            SyntaxBrackets::Columns(self.columns_of_line[line].clone())
+        }
+    }
+
+    #[test]
+    fn the_syntax_tree_tells_which_brackets_are_code() {
+        // As in `r"(" (x)`, where the lexer can't tell the raw string's bracket.
+        let text = Text::new("a(b(c)");
+        let language = LanguageConfiguration::c_like();
+        let mut tree = FakeTree { columns_of_line: vec![vec![3, 5]], is_parsing: false };
+        let mut scanner = BracketScanner::new(&language, Some(&mut tree));
+        let mut pair_at =
+            |offset| matching_bracket_pair(&text, offset, &mut scanner, &mut BracketLineStarts::default(), &mut 100);
+
+        assert_eq!(pair_at(1), None);
+        assert_eq!(pair_at(3), Some((3, 5)));
+    }
+
+    #[test]
+    fn states_lexed_while_parsing_are_computed_again_from_the_tree() {
+        let text = Text::new("(\n(\n(");
+        let language = LanguageConfiguration::c_like();
+        let mut tree = FakeTree { columns_of_line: vec![vec![], vec![0], vec![0]], is_parsing: true };
+        let mut starts = BracketLineStarts::default();
+
+        let lexed = starts.state_at(&text, &mut BracketScanner::new(&language, Some(&mut tree)), 2, &mut 100);
+        tree.is_parsing = false;
+        let parsed = starts.state_at(&text, &mut BracketScanner::new(&language, Some(&mut tree)), 2, &mut 100);
+
+        assert_eq!(lexed.map(|start| start.depth), Some(2));
+        assert_eq!(parsed.map(|start| start.depth), Some(1));
     }
 
     #[test]

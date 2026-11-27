@@ -114,19 +114,21 @@ A milestone is done when: its boxes are ticked, `cargo test --workspace` and
 Last updated: 2026-11-26, after the language features round (D22–D26).
 
 **State**: M0–M10 done, M11 and M12 mostly done, M13 done (integration guide, performance).
-`scripts/check.sh` green; ~315 tests, including seeded random tests (`random_commands.rs`
+`scripts/check.sh` green; ~320 tests, including seeded random tests (`random_commands.rs`
 in core, `random_diffs.rs` in diff, `random_events.rs` in egui: raise their case counts or
 change their seeds locally to hunt for rarer bugs), and `crates/rustext-lsp/tests/
 rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP feature against a
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. Tree-sitter for bracket matching and colorization where a grammar is bundled, replacing
-   the lexer (D21) there; language injections (JS in HTML, code blocks in Markdown).
-2. Format on type (`onTypeFormatting`) and on paste.
-3. LSP code lenses turned into `CodeLens` values (`textDocument/codeLens`, resolved lazily).
+1. Format on type (`onTypeFormatting`) and on paste.
+2. LSP code lenses turned into `CodeLens` values (`textDocument/codeLens`, resolved lazily).
+3. Language injections (JS in HTML, code blocks in Markdown): highlighting, and brackets
+   in HTML's scripts (HTML has no bracket tokens, so it keeps the lexer).
 
 **Done in the last sessions** (newest first):
+- Brackets from tree-sitter tokens where a grammar is bundled (D27): colors and matching
+  understand raw strings, nested comments and heredocs.
 - Language services: a lightbulb where the cursor rests on code actions; code actions (Ctrl+.), format document (Shift+Alt+F) and selection (Ctrl+K Ctrl+F), Go to Symbol
   (Ctrl+Shift+O, from LSP or tree-sitter tags), definitions and references in other
   documents (`EditorResponse::open_request`, D26), F12 answered on a later frame.
@@ -144,7 +146,8 @@ real server. Every feature is a commit on `main`.
 - Folding is off when the application passes its own `DisplayLayout` (diffs).
 - Text from egui's TextEdit (find input) can't use rustext's keymap (Ctrl+D etc. there are
   egui's).
-- The bracket lexer (D21) doesn't know raw strings, nested comments or heredocs.
+- The bracket lexer (D21), still used without a bundled grammar (and for HTML), doesn't know
+  raw strings, nested comments or heredocs.
 - Find References and code actions aren't visible in the demo without `--lsp` (word
   completions answer none).
 - The references list shows `file:line` for other documents, not their line's text.

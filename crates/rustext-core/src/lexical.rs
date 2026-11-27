@@ -38,9 +38,6 @@ pub fn scan_line_chars(
         !marker.is_empty()
             && marker_chars.by_ref().enumerate().all(|(index, character)| chars.get(column + index) == Some(&character))
     };
-    let is_bracket =
-        |character: char| language.brackets.iter().any(|&(open, close)| open == character || close == character);
-
     let mut brackets = Vec::new();
     let mut context = context;
     let mut column = 0;
@@ -80,7 +77,7 @@ pub fn scan_line_chars(
                 } else if language.char_quote == Some(character) {
                     column += char_literal_len(&chars[column..], character).unwrap_or(1);
                     continue;
-                } else if is_bracket(character) {
+                } else if language.is_bracket(character) {
                     brackets.push((column, character));
                 }
             }

@@ -265,8 +265,8 @@ string) from one line to the next.
 - `BracketLineStarts` caches the depth and context at each line start, follows edits like
   the highlighter (D19) and is shared by colorization and matching, so matching backwards
   reads the states of earlier lines instead of guessing.
-- Accepted: raw strings (`r#"..."#`), nested comments and heredocs are not understood; a
-  language-aware parser (tree-sitter, D13) can replace the lexer later.
+- Accepted: raw strings (`r#"..."#`), nested comments and heredocs are not understood.
+  Where a tree-sitter grammar is bundled, its tokens replace the lexer (D27).
 
 ## D22. Tree-sitter where a grammar is bundled, TextMate grammars elsewhere
 
@@ -361,6 +361,27 @@ client: its file URI). The editor shows one document, so going to another one en
   answer to convert its UTF-16 columns, and keeps the server's columns when it can't.
 - F12 and Ctrl+click are requests answered on a later frame, like Find References: a real
   server rarely answers in the frame that asked. An edit before the answer drops it.
+
+## D27. Brackets from the syntax tree's tokens, the lexer meanwhile
+
+Where the styler parses the text (D22), a bracket is code when it is part of a bracket token
+of the tree: `LineStyler::code_brackets` answers the columns of a line's bracket tokens, and
+`BracketScanner` turns them into the same `LineScan` the lexer (D21) gives, so depths,
+colors, matching and the bracket pair guide are unchanged and need no tree of their own.
+
+- Bracket tokens are found once per grammar: its anonymous node kinds of at most three
+  punctuation chars holding a bracket (`(`, `${`, `$((`, `[[`), queried in aligned blocks of
+  256 lines cached until the tree changes. Brackets inside strings, raw strings, nested
+  comments, heredocs and markup text belong to other tokens and are not captured.
+- Only a tree matching the text answers (`SyntaxBrackets::Parsing` otherwise): an edited tree
+  knows nothing of a bracket just typed. Meanwhile the lexer answers, and
+  `BracketLineStarts` remembers the first line it scanned so; once the tree is parsed, the
+  states after that line are computed again from it.
+- A grammar without bracket tokens (HTML) keeps the lexer. Matching still counts brackets
+  rather than following tree nodes, as Monaco does: it stays the same for both sources and
+  works in broken code.
+- Cost: steady typing is unchanged; the bracket states of a whole 100k-line file (after
+  Ctrl+End) take ~25 ms frames for ten frames instead of ~16 ms.
 
 ## Inspiration (read their code, don't copy it)
 

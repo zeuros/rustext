@@ -2,7 +2,7 @@
 //! (DECISIONS D22), TextMate grammars for every other one (D13), behind one type.
 
 use rustext_core::services::DocumentSymbol;
-use rustext_core::structure::FoldRange;
+use rustext_core::structure::{FoldRange, SyntaxBrackets};
 use rustext_core::style::{LineStyler, StyledSpan};
 use rustext_core::{ChangeSet, EditedLines, Text};
 
@@ -103,6 +103,10 @@ impl LineStyler for SyntaxHighlighter {
 
     fn syntax_fold_range(&mut self, text: &Text, line: usize) -> Option<FoldRange> {
         self.styler().syntax_fold_range(text, line)
+    }
+
+    fn code_brackets(&mut self, text: &Text, line: usize) -> SyntaxBrackets {
+        self.styler().code_brackets(text, line)
     }
 
     fn is_catching_up(&self) -> bool {

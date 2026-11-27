@@ -4,13 +4,13 @@
 //! `function.method`) are mapped to TextMate scopes, so every theme keeps working.
 
 use std::cmp::Reverse;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
 use rustext_core::services::{DocumentSymbol, SymbolKind};
-use rustext_core::structure::FoldRange;
+use rustext_core::structure::{FoldRange, SyntaxBrackets};
 use rustext_core::style::{LineStyler, StyledSpan, TextStyle};
 use rustext_core::{Change, ChangeSet, EditedLines, Range, Text};
 use syntect::highlighting::Highlighter;
@@ -21,11 +21,13 @@ use tree_sitter_language::LanguageFn;
 use crate::textmate::text_style;
 use crate::theme::SyntaxTheme;
 
-/// A compiled grammar: the language, its highlight query and its tags query.
+/// A compiled grammar: the language, its highlight query, its tags query and a query of its
+/// bracket tokens.
 pub struct Grammar {
     language: tree_sitter::Language,
     highlights: Query,
     tags: Option<Query>,
+    brackets: Option<Query>,
 }
 
 impl std::fmt::Debug for Grammar {
@@ -126,8 +128,71 @@ impl Grammar {
         let language = tree_sitter::Language::new(language_fn);
         let highlights = Query::new(&language, &queries.join("\n")).map_err(|error| error.to_string())?;
         let tags = tags.map(|tags| Query::new(&language, tags)).transpose().map_err(|error| error.to_string())?;
-        Ok(Some(Grammar { language, highlights, tags }))
+        let brackets = bracket_query(&language);
+        Ok(Some(Grammar { language, highlights, tags, brackets }))
     }
+}
+
+/// The chars that are brackets in some language; the language configuration picks its own.
+const BRACKET_CHARS: &str = "()[]{}";
+
+/// A query capturing the bracket tokens of `language`: its anonymous node kinds of at most
+/// three punctuation chars holding a bracket (`(`, `${`, `$((`, `[[`). Brackets in strings and
+/// comments are inside other tokens, so they are not captured. `None` when it has none.
+fn bracket_query(language: &tree_sitter::Language) -> Option<Query> {
+    let is_bracket_token = |kind: &str| {
+        kind.len() <= 3
+            && kind.chars().all(|character| character.is_ascii_punctuation() && !"\"\\".contains(character))
+            && kind.chars().any(|character| BRACKET_CHARS.contains(character))
+    };
+    let kinds: BTreeSet<&str> = (0..language.node_kind_count() as u16)
+        .filter(|&id| !language.node_kind_is_named(id) && language.node_kind_is_visible(id))
+        .filter_map(|id| language.node_kind_for_id(id))
+        .filter(|kind| is_bracket_token(kind))
+        .collect();
+    if kinds.is_empty() {
+        return None;
+    }
+    let alternatives: Vec<String> = kinds.iter().map(|kind| format!("\"{kind}\"")).collect();
+    Query::new(language, &format!("[{}] @bracket", alternatives.join(" "))).ok()
+}
+
+/// The columns of the bracket chars of the tokens `query` captures on each of `lines`.
+fn bracket_columns_of_lines(
+    query: &Query,
+    cursor: &mut QueryCursor,
+    tree: &Tree,
+    text: &Text,
+    lines: std::ops::Range<usize>,
+) -> Vec<Vec<usize>> {
+    let last_line = lines.end - 1;
+    let block_end = text.line_start_byte(last_line) + text.line_content(last_line).len();
+    cursor.set_byte_range(text.line_start_byte(lines.start)..block_end);
+    let mut columns_of_lines = vec![Vec::new(); lines.len()];
+    let mut matches = cursor.matches(query, tree.root_node(), RopeText(text));
+    while let Some(found) = matches.next() {
+        for capture in found.captures() {
+            let token = capture.node;
+            let line = token.start_position().row;
+            // An alias may name a token after other text: its kind must be its text.
+            if token.is_missing() || !lines.contains(&line) || token.byte_range().len() != token.kind().len() {
+                continue;
+            }
+            let first_column = text.char_of_byte(token.start_byte()) - text.line_start(line);
+            let bracket_columns = token
+                .kind()
+                .chars()
+                .enumerate()
+                .filter(|(_, character)| BRACKET_CHARS.contains(*character))
+                .map(|(index, _)| first_column + index);
+            columns_of_lines[line - lines.start].extend(bracket_columns);
+        }
+    }
+    for columns in &mut columns_of_lines {
+        columns.sort_unstable();
+        columns.dedup();
+    }
+    columns_of_lines
 }
 
 /// TextMate scopes for tree-sitter capture names; a capture uses its longest listed prefix
@@ -357,6 +422,8 @@ pub struct TreeHighlighter {
     edits_while_parsing: Vec<InputEdit>,
     /// Spans of lines highlighted from an up-to-date tree.
     line_spans: HashMap<usize, Vec<StyledSpan>>,
+    /// Columns of the bracket tokens of lines, from the up-to-date tree.
+    line_brackets: HashMap<usize, Vec<usize>>,
     query_cursor: QueryCursor,
     /// How long a frame waits for a parse it starts: small files are highlighted in the frame
     /// that changed them, large ones a frame or more later (D19).
@@ -378,6 +445,7 @@ impl TreeHighlighter {
             edits_while_parsing: Vec::new(),
             last_parse_duration: Duration::ZERO,
             line_spans: HashMap::new(),
+            line_brackets: HashMap::new(),
             query_cursor: QueryCursor::new(),
             parse_wait: Duration::from_millis(3),
             max_line_chars: 20_000,
@@ -416,7 +484,13 @@ impl TreeHighlighter {
             tree.edit(&edit);
         }
         self.tree = Some(tree);
+        self.forget_lines();
+    }
+
+    /// Drops what was read from the tree: it changed.
+    fn forget_lines(&mut self) {
         self.line_spans.clear();
+        self.line_brackets.clear();
     }
 
     /// Waits until the tree matches `text` (tests, and actions that need the exact tree).
@@ -437,13 +511,17 @@ impl TreeHighlighter {
         self.is_tree_stale = true;
         self.generation += 1;
         self.edits_while_parsing.clear();
-        self.line_spans.clear();
+        self.forget_lines();
     }
 }
 
 /// Lines highlighted by one query: the visible lines take a few queries, not one each (a
 /// query seeking far into a large file is the costly part).
 const HIGHLIGHT_BLOCK_LINES: usize = 32;
+
+/// Lines whose brackets one query reads: bracket states are computed line after line, and
+/// matching scans far past the visible lines.
+const BRACKET_BLOCK_LINES: usize = 256;
 
 /// A line being highlighted: where it is, and the captures crossing it as
 /// `(node length, pattern index, start column, end column, style)`.
@@ -558,7 +636,7 @@ impl LineStyler for TreeHighlighter {
     /// Edits the tree, last change first so each one's offsets are still those of the text
     /// it applies to; the next call parses again from it.
     fn text_edited(&mut self, text_before: &Text, changes: &ChangeSet, _edited: &EditedLines) {
-        self.line_spans.clear();
+        self.forget_lines();
         self.is_tree_stale = true;
         let is_parsing_this_text = self.parsing == Some(self.generation);
         for change in changes.changes().iter().rev() {
@@ -591,6 +669,27 @@ impl LineStyler for TreeHighlighter {
 
     fn is_catching_up(&self) -> bool {
         !self.is_parsed()
+    }
+
+    /// From the parsed tree only: an edited tree knows nothing of the brackets just typed.
+    fn code_brackets(&mut self, text: &Text, line: usize) -> SyntaxBrackets {
+        if self.grammar.brackets.is_none() || line >= text.line_count() {
+            return SyntaxBrackets::NoParser;
+        }
+        self.poll_parser(text, self.parse_wait);
+        let (Some(query), Some(tree)) = (&self.grammar.brackets, &self.tree) else { return SyntaxBrackets::Parsing };
+        if !self.is_parsed() {
+            return SyntaxBrackets::Parsing;
+        }
+        if let Some(columns) = self.line_brackets.get(&line) {
+            return SyntaxBrackets::Columns(columns.clone());
+        }
+        // Aligned blocks: scanning up, line after line, reads one block per block, not per line.
+        let block_start = line / BRACKET_BLOCK_LINES * BRACKET_BLOCK_LINES;
+        let lines = block_start..(block_start + BRACKET_BLOCK_LINES).min(text.line_count());
+        let block = bracket_columns_of_lines(query, &mut self.query_cursor, tree, text, lines);
+        self.line_brackets.extend((block_start..).zip(block));
+        SyntaxBrackets::Columns(self.line_brackets[&line].clone())
     }
 
     fn folds_by_syntax(&self) -> bool {
@@ -697,6 +796,54 @@ mod tests {
     }
 
     #[test]
+    fn every_bundled_grammar_but_html_has_bracket_tokens() {
+        for name in TREE_SITTER_LANGUAGES {
+            let has_brackets = Grammar::compile(name).unwrap().unwrap().brackets.is_some();
+            assert_eq!(has_brackets, *name != "HTML", "{name}");
+        }
+    }
+
+    /// The bracket columns of each line of `content` in `language_name`, from the parsed tree.
+    fn code_brackets(language_name: &str, content: &str) -> Vec<Vec<usize>> {
+        let registry = LanguageRegistry::new();
+        let mut highlighter =
+            TreeHighlighter::new(registry.grammar(language_name).unwrap(), &SyntaxTheme::dark_modern());
+        let text = Text::new(content);
+        highlighter.wait_until_parsed(&text);
+        (0..text.line_count())
+            .map(|line| match highlighter.code_brackets(&text, line) {
+                SyntaxBrackets::Columns(columns) => columns,
+                other => panic!("line {line}: {other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn brackets_in_raw_strings_chars_and_comments_are_not_tokens() {
+        let rust = "f(r#\"(\"#, '(', /* ( /* ) */ [ */ x)";
+
+        assert_eq!(code_brackets("Rust", rust), vec![vec![1, 34]]);
+    }
+
+    #[test]
+    fn tokens_of_several_chars_hold_their_brackets() {
+        let bash = "echo $(ls ${dir})";
+
+        assert_eq!(code_brackets("Bourne Again Shell (bash)", bash), vec![vec![6, 11, 15, 16]]);
+    }
+
+    #[test]
+    fn brackets_wait_for_the_tree_to_match_the_text() {
+        let mut highlighter = rust_highlighter();
+        highlighter.parse_wait = Duration::ZERO;
+        let text = Text::new(&"fn f() {}\n".repeat(20_000));
+
+        assert_eq!(highlighter.code_brackets(&text, 0), SyntaxBrackets::Parsing);
+        highlighter.wait_until_parsed(&text);
+        assert_eq!(highlighter.code_brackets(&text, 0), SyntaxBrackets::Columns(vec![4, 5, 7, 8]));
+    }
+
+    #[test]
     fn captures_take_the_theme_colors_of_their_scopes() {
         let mut highlighter = rust_highlighter();
         let text = Text::new("fn main() { let s = \"é\\n\"; } // done\n");
@@ -726,9 +873,9 @@ mod tests {
         let after = changes.apply(&before);
 
         highlighter.text_edited(&before, &changes, &EditedLines { first_line: 0, old_last_line: 0, new_last_line: 0 });
+        highlighter.wait_until_parsed(&after);
 
         assert_eq!(colored_runs(&mut highlighter, &after, 1)[0].1, 0x6a);
-        assert!(highlighter.is_parsed());
     }
 
     #[test]

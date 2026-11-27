@@ -155,6 +155,10 @@ impl LanguageConfiguration {
     pub fn is_closing_bracket(&self, character: char) -> bool {
         self.brackets.iter().any(|(_, close)| *close == character)
     }
+
+    pub fn is_bracket(&self, character: char) -> bool {
+        self.brackets.iter().any(|&(open, close)| open == character || close == character)
+    }
 }
 
 impl Default for LanguageConfiguration {
