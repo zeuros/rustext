@@ -121,10 +121,10 @@ rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP featu
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit):
-1. LSP code lenses turned into `CodeLens` values (`textDocument/codeLens`, resolved lazily).
-2. Tree-sitter for bracket matching and colorization where a grammar is bundled, replacing
+1. Tree-sitter for bracket matching and colorization where a grammar is bundled, replacing
    the lexer (D21) there; language injections (JS in HTML, code blocks in Markdown).
-3. Format on type (`onTypeFormatting`) and on paste.
+2. Format on type (`onTypeFormatting`) and on paste.
+3. LSP code lenses turned into `CodeLens` values (`textDocument/codeLens`, resolved lazily).
 
 **Done in the last sessions** (newest first):
 - Language services: a lightbulb where the cursor rests on code actions; code actions (Ctrl+.), format document (Shift+Alt+F) and selection (Ctrl+K Ctrl+F), Go to Symbol
