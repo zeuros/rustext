@@ -120,7 +120,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Sticky scroll (scopes pinned at the top) | `stickyScroll.enabled/maxLineCount/defaultModel` | P2 | done |
 | Padding top / bottom | `padding` | P1 | done |
 | Fonts, ligatures, line height, letter spacing, zoom | `fontFamily`, `fontSize`, `fontLigatures`, `lineHeight`, `letterSpacing`, `mouseWheelZoom`, `fontZoomIn/Out/Reset` | P0 | done |
-| Unicode highlighting (invisible, ambiguous chars) | `unicodeHighlight.*` | P2 | todo |
+| Unicode highlighting (invisible, ambiguous chars) | `unicodeHighlight.*` | P2 | done: invisible and ambiguous characters boxed, hover explains (D32); no per-locale confusables |
 | Unusual line terminators (LS, PS, NEL) | `unusualLineTerminators` | P2 | done: lines split on `\n` only, others are chars (D4) |
 | Long lines: stop rendering after N chars | `stopRenderingLineAfter` | P1 | done |
 | Placeholder text when empty | `placeholder` | P2 | done (`ViewConfig::placeholder`) |

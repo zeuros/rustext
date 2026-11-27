@@ -23,6 +23,7 @@ pub mod state;
 pub mod structure;
 pub mod style;
 pub mod text;
+pub mod unicode;
 pub mod words;
 pub mod wrap;
 

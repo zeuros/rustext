@@ -2,6 +2,6 @@
 549 crates/rustext-core/src/structure.rs
 529 crates/rustext-egui/src/code_editor/find.rs
 546 crates/rustext-egui/src/code_editor/input.rs
-1084 crates/rustext-egui/src/code_editor/mod.rs
-801 crates/rustext-egui/src/code_editor/paint.rs
+1056 crates/rustext-egui/src/code_editor/mod.rs
+745 crates/rustext-egui/src/code_editor/paint.rs
 1015 crates/rustext-lsp/src/client.rs

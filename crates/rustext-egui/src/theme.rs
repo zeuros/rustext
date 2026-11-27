@@ -43,6 +43,8 @@ pub struct EditorTheme {
     pub removed_line_background: Color32,
     /// Lines of a moved block (D30), on both sides of a diff.
     pub moved_line_background: Color32,
+    /// The box around an invisible or ambiguous character (D32).
+    pub unicode_highlight_border: Color32,
     pub inserted_text_background: Color32,
     pub removed_text_background: Color32,
     pub diff_padding_background: Color32,
@@ -100,6 +102,7 @@ impl EditorTheme {
             inserted_line_background: hex_alpha(0x2a6a3a, 0x38),
             removed_line_background: hex_alpha(0x6a2a2a, 0x38),
             moved_line_background: hex_alpha(0x2a4f8a, 0x50),
+            unicode_highlight_border: hex(0xd18616),
             inserted_text_background: hex_alpha(0x2a6a3a, 0x80),
             removed_text_background: hex_alpha(0x8a2a2a, 0x80),
             diff_padding_background: hex(0x252525),
@@ -148,6 +151,7 @@ impl EditorTheme {
             inserted_line_background: hex_alpha(0x9ccc2c, 0x40),
             removed_line_background: hex_alpha(0xff0000, 0x26),
             moved_line_background: hex_alpha(0x0078d4, 0x24),
+            unicode_highlight_border: hex(0xcea33d),
             inserted_text_background: hex_alpha(0x9ccc2c, 0x80),
             removed_text_background: hex_alpha(0xff0000, 0x50),
             diff_padding_background: hex(0xf3f3f3),

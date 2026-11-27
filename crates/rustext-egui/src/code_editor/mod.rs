@@ -15,6 +15,7 @@ mod code_lens;
 mod completion;
 mod config;
 mod find;
+mod hover;
 mod input;
 mod layout;
 mod list_at_cursor;
@@ -23,6 +24,8 @@ mod paint;
 mod palette;
 mod smart_select;
 mod structure;
+mod unicode;
+mod whitespace;
 pub(crate) mod wrapping;
 
 use egui::{CursorIcon, EventFilter, FontId, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
@@ -795,37 +798,6 @@ impl<'a> CodeEditor<'a> {
                 )
             })
             .collect();
-    }
-
-    /// Messages of the decorations under the pointer: on the text, or in the gutter for glyphs.
-    fn hover_messages(&self, target: MouseTarget, hovered_char: Option<usize>) -> Vec<String> {
-        let text = self.state.text();
-        let decorations = self.all_decorations().filter(|decoration| decoration.hover_message.is_some());
-        let hovered: Vec<&Decoration> = match target {
-            MouseTarget::Text { .. } => match hovered_char {
-                Some(offset) => decorations
-                    .filter(|decoration| {
-                        decoration.start <= offset && offset < decoration.end.max(decoration.start + 1)
-                    })
-                    .collect(),
-                None => Vec::new(),
-            },
-            MouseTarget::GlyphMargin { line } | MouseTarget::LineNumber { line } => decorations
-                .filter(|decoration| {
-                    let is_gutter_kind =
-                        matches!(decoration.kind, DecorationKind::Glyph(_) | DecorationKind::LineNumberColor(_));
-                    is_gutter_kind && decoration.first_line(text) == line
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        let link_message = match (target, hovered_char) {
-            (MouseTarget::Text { .. }, Some(offset)) if self.link_at(offset).is_some() => {
-                Some("Follow link (Ctrl+click)".to_string())
-            }
-            _ => None,
-        };
-        hovered.into_iter().filter_map(|decoration| decoration.hover_message.clone()).chain(link_message).collect()
     }
 
     /// Moves the cursor to the next (or previous) squiggle, wrapping around (F8).

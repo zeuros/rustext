@@ -464,6 +464,25 @@ layouts leave out the rows after a fold's header up to the row of the first line
 - A fold changes the layout's key: the rows are laid out again on the next frame, as after a
   wrap.
 
+## D32. Suspicious characters: invisible ones and ASCII look-alikes, boxed
+
+`rustext_core::unicode::suspicious_chars` finds, on one line, the characters Monaco's
+`unicodeHighlight` points out; the editor boxes those of the visible lines (a decoration, so
+no state) and its hover names them (`U+0430 'а' looks like ASCII 'a'`).
+
+- Invisible (on by default): format and bidi controls (Trojan Source), zero width and odd-width
+  spaces, fillers, variation selectors, tags.
+- Ambiguous (on by default): a table of Cyrillic, Greek and Latin letters drawn like ASCII
+  ones, punctuation drawn like ASCII punctuation (the Greek question mark for `;`, `−` for
+  `-`), and the fullwidth forms of ASCII. A look-alike letter is pointed out only in a word
+  made of ASCII and look-alikes (`pаypal`, `ехес`): a word with other letters of its script
+  (`привет`) is text in that language. Monaco uses Unicode's confusables per locale; a small
+  table with this rule gives the same answers in code without the 2 MB of data.
+- Smart quotes and dashes are not in the table: they are common in comments and strings and
+  harmless in code (they don't compile as quotes).
+- Strings and comments are checked like code, as Monaco does in an untrusted workspace.
+- `non_basic_ascii` (off) points out every other character; `allowed_characters` exempts some.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

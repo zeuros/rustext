@@ -1,5 +1,7 @@
 //! What a code editor shows and how (Monaco's `IEditorOptions` that concern the view).
 
+use rustext_core::unicode::UnicodeHighlight;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum LineNumbers {
     #[default]
@@ -81,6 +83,8 @@ pub struct ViewConfig {
     pub padding_top: f32,
     /// Lines longer than this many chars are cut, for speed (Monaco's `stopRenderingLineAfter`).
     pub max_rendered_line_chars: usize,
+    /// Which invisible and ambiguous characters are boxed (Monaco's `unicodeHighlight`, D32).
+    pub unicode_highlight: UnicodeHighlight,
     pub scrollbar_width: f32,
     /// Alt + wheel scrolls this many times faster.
     pub fast_scroll_sensitivity: f32,
@@ -144,6 +148,7 @@ impl Default for ViewConfig {
             rulers: Vec::new(),
             padding_top: 4.0,
             max_rendered_line_chars: 10_000,
+            unicode_highlight: UnicodeHighlight::default(),
             scrollbar_width: 14.0,
             fast_scroll_sensitivity: 5.0,
             mouse_wheel_zoom: true,

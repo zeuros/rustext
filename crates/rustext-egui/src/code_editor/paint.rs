@@ -7,7 +7,7 @@ use rustext_core::{Position, Selection, Selections, Text};
 
 use super::layout::{LineLayout, to_color};
 use super::structure::folded_header_lines;
-use super::{CodeEditor, CurrentLineHighlight, CursorStyle, Drag, LineNumbers, Metrics, WhitespaceRendering};
+use super::{CodeEditor, CurrentLineHighlight, CursorStyle, Drag, LineNumbers, Metrics};
 use crate::theme::EditorTheme;
 
 /// What the gutter needs to know about the cursors and folds.
@@ -52,6 +52,7 @@ impl CodeEditor<'_> {
         let last_visible_line = self.nearest_line(visible_rows.end.saturating_sub(1)).max(first_visible_line);
         structure_decorations
             .extend(self.link_decorations(first_visible_line..=last_visible_line, self.ctrl_hovered_char));
+        structure_decorations.extend(self.unicode_decorations(first_visible_line..=last_visible_line));
         let (indent_levels, active_guide) = if self.config.indent_guides {
             self.indent_guides(first_visible_line..last_visible_line + 1, primary_head.line)
         } else {
@@ -362,65 +363,6 @@ impl CodeEditor<'_> {
         }
     }
 
-    /// `·` on spaces and `→` on tabs, where the whitespace rendering mode wants them.
-    #[allow(clippy::too_many_arguments)]
-    fn paint_whitespace(
-        &self,
-        painter: &Painter,
-        metrics: &Metrics,
-        text: &Text,
-        line: usize,
-        layout: &LineLayout,
-        top: f32,
-        selections: &Selections,
-    ) {
-        let mode = self.config.render_whitespace;
-        if mode == WhitespaceRendering::None {
-            return;
-        }
-        let chars: Vec<char> = text.line_content(line).chars().collect();
-        let line_start = text.line_start(line);
-        let trailing_start = chars.iter().rposition(|character| !character.is_whitespace()).map_or(0, |last| last + 1);
-        let is_whitespace =
-            |column: usize| chars.get(column).is_some_and(|character| *character == ' ' || *character == '\t');
-        let text_left = self.text_left(metrics);
-        let center_y = top + metrics.row_height / 2.0;
-        let segment_columns = layout.first_column..layout.end_column();
-        for (column, &character) in chars.iter().enumerate().take(self.config.max_rendered_line_chars) {
-            if !segment_columns.contains(&column) || (character != ' ' && character != '\t') {
-                continue;
-            }
-            let is_shown = match mode {
-                WhitespaceRendering::None => false,
-                WhitespaceRendering::All => true,
-                WhitespaceRendering::Trailing => column >= trailing_start,
-                WhitespaceRendering::Boundary => {
-                    character == '\t'
-                        || column == 0
-                        || column >= trailing_start
-                        || is_whitespace(column + 1)
-                        || is_whitespace(column.wrapping_sub(1))
-                }
-                WhitespaceRendering::Selection => {
-                    let offset = line_start + column;
-                    selections.iter().any(|selection| selection.start() <= offset && offset < selection.end())
-                }
-            };
-            if !is_shown {
-                continue;
-            }
-            let left = text_left + layout.x_of_column(column);
-            let right = text_left + layout.x_of_column(column + 1);
-            if character == '\t' {
-                let start = pos2(left + metrics.char_width * 0.2, center_y);
-                let end = pos2((right - metrics.char_width * 0.2).max(start.x + 2.0), center_y);
-                painter.arrow(start, end - start, Stroke::new(1.0, self.theme.whitespace));
-            } else {
-                painter.circle_filled(pos2((left + right) / 2.0, center_y), 1.2, self.theme.whitespace);
-            }
-        }
-    }
-
     /// A small label after the line's text: `CR` for a `\r\n` line, `⋯` for a folded line.
     #[expect(clippy::too_many_arguments, reason = "predates the complexity lints (D28)")]
     fn paint_end_of_line_label(
@@ -518,7 +460,9 @@ impl CodeEditor<'_> {
                     );
                 }
                 DecorationKind::Border(color) => {
-                    let rect = Rect::from_min_max(pos2(left, top), pos2(right.max(left + 2.0), bottom));
+                    // A zero width char still gets a box to see.
+                    let rect =
+                        Rect::from_min_max(pos2(left, top), pos2(right.max(left + metrics.char_width / 2.0), bottom));
                     painter.rect_stroke(
                         rect,
                         CornerRadius::same(2),

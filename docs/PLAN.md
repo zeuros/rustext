@@ -121,14 +121,15 @@ rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP featu
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit; chosen by the user, others left out on purpose):
-1. Unicode highlighting: invisible and ambiguous characters boxed.
-2. Cursor undo / redo (Ctrl+U) and transpose letters.
-3. Insert final newline.
-4. `#region` folding markers, and unfold on a click after a folded line's end.
-5. Linked editing (HTML tag pairs renamed together).
-6. Minimap marks (search matches, diagnostics).
+1. Cursor undo / redo (Ctrl+U) and transpose letters.
+2. Insert final newline.
+3. `#region` folding markers, and unfold on a click after a folded line's end.
+4. Linked editing (HTML tag pairs renamed together).
+5. Minimap marks (search matches, diagnostics).
 
 **Done in the last sessions** (newest first):
+- Unicode highlighting (D32): invisible characters and ASCII look-alikes boxed, explained on
+  hover (`ViewConfig::unicode_highlight`).
 - Folding in diffs (D31): the diff's editors fold, and the layouts hide the folded rows on
   both sides.
 - Moved code in diffs (D30): `DiffOptions::detect_moves`, moved blocks tinted with a

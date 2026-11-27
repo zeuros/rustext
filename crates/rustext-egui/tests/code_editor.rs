@@ -439,6 +439,19 @@ fn hovering_a_diagnostic_shows_its_message() {
 }
 
 #[test]
+fn hovering_a_lookalike_letter_says_what_it_looks_like() {
+    let mut harness = harness("let p\u{0430}ypal = 1;");
+    let pos = geometry(&harness).cell_center(0, 5);
+
+    harness.event(Event::PointerMoved(pos));
+    for _ in 0..60 {
+        harness.step();
+    }
+
+    assert!(harness.query_by_label("U+0430 'а' looks like ASCII 'a'").is_some());
+}
+
+#[test]
 fn folds_below_an_edit_shift_with_it() {
     let mut harness = harness(FOLDABLE);
     click(&mut harness, 0, 0);
