@@ -11,9 +11,11 @@ Start here, in this order:
 
 ## Commands
 
-- `scripts/check.sh`: what CI runs (fmt check, clippy `-D warnings`, tests), stopping at the first failure. Run it before every commit; `cargo fmt --all` fixes formatting.
+- `scripts/check.sh`: what CI runs (fmt check, clippy `-D warnings`, `cargo shear`, file sizes, nextest and doctests), stopping at the first failure. Needs `cargo install cargo-nextest cargo-shear`. Run it before every commit; `cargo fmt --all` fixes formatting.
   Commit in a separate command after it printed success: chaining `check.sh; …; git commit` in one
   shell line commits broken code when the check fails.
+- `scripts/file_size.sh`: source files hold at most 500 lines before their test module. Files in
+  `scripts/file_size_baseline.txt` may only shrink; after splitting one, run it with `--baseline`.
 - Scripted edits (python `str.replace`) must assert the old text is present: rustfmt reflows long
   lines, and a silent no-op replacement has already lost two edits in this repository.
 - `cargo run -p rustext-demo --release`: the playground app. `-- <file>` opens a file; `-- --diff <old> <new>` a diff.

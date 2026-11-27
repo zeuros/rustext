@@ -3,3 +3,4 @@
 *.diff.png
 .playwright-mcp/
 .claude/worktrees/
+/mutants.out*

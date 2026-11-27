@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  rust:
+  lint:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,11 +18,43 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-shear
+
       - name: Format
         run: cargo fmt --all --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Unused dependencies
+        run: cargo shear
+
+      - name: File sizes
+        run: scripts/file_size.sh
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
       - name: Tests
-        run: cargo test --workspace
+        run: cargo nextest run --workspace
+
+      - name: Doctests
+        run: cargo test --workspace --doc

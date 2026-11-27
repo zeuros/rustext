@@ -391,6 +391,20 @@ colors, matching and the bracket pair guide are unchanged and need no tree of th
 - Cost: steady typing is unchanged; the bracket states of a whole 100k-line file (after
   Ctrl+End) take ~25 ms frames for ten frames instead of ~16 ms.
 
+## D28. Quality gates are Rust-native tools, no Sonar
+
+CI fails on: rustfmt, clippy `-D warnings`, unused dependencies (`cargo shear`), source files
+over 500 lines before their test module (`scripts/file_size.sh`), and tests (nextest, plus
+doctests) on Linux, Windows and macOS. Weekly, `cargo mutants` runs on the pure crates (core,
+diff, syntax) and uploads the mutants no test kills. Renovate opens grouped dependency updates.
+
+- Files over the limit are pinned in `scripts/file_size_baseline.txt` at their current size:
+  they may shrink, never grow, and leave the list once they fit. Splitting one means running
+  `scripts/file_size.sh --baseline`.
+- Sonar's Rust analysis mostly re-reads clippy's; its dashboards don't pay for a second
+  service. Randomized tests (`random_commands`, `random_diffs`, `random_events`) stay
+  hand-rolled and seeded; proptest would only add shrinking.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

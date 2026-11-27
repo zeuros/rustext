@@ -1,0 +1,4 @@
+too-many-lines-threshold = 60
+cognitive-complexity-threshold = 15
+excessive-nesting-threshold = 5
+too-many-arguments-threshold = 5

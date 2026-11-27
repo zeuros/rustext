@@ -1,0 +1,36 @@
+name: Mutants
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  mutants:
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [rustext-core, rustext-diff, rustext-syntax]
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants, nextest
+
+      - name: Mutants
+        run: cargo mutants --package ${{ matrix.crate }} --in-place --no-shuffle
+        continue-on-error: true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants-${{ matrix.crate }}
+          path: mutants.out
