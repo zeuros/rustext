@@ -102,7 +102,9 @@ pub struct Keymap {
 }
 
 impl Keymap {
-    /// Later bindings take precedence over earlier ones with the same chords.
+    /// Binds `chords` (one, or a sequence) to `action`; later bindings take precedence over
+    /// earlier ones with the same chords. With no chords, the action is only in the command
+    /// palette.
     pub fn bind(mut self, chords: &[KeyChord], action: Action) -> Self {
         self.bindings.push(Binding { chords: chords.to_vec(), action });
         self
@@ -223,6 +225,8 @@ impl Keymap {
         for (key_chord, command) in commands {
             keymap = keymap.bind(&[key_chord], edit(command));
         }
+        // No key, as in VS Code: listed by the command palette only.
+        keymap = keymap.bind(&[], edit(Command::InsertFinalNewline));
 
         let command_k = chord(command, Key::K);
         let sequences = [

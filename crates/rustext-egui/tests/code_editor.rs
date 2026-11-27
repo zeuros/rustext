@@ -580,6 +580,20 @@ fn the_command_palette_runs_a_command_by_name() {
 }
 
 #[test]
+fn a_command_with_no_key_runs_from_the_palette() {
+    let mut harness = harness("a");
+    click(&mut harness, 0, 1);
+
+    harness.key_press(Key::F1);
+    harness.event(Event::Text("final newline".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+
+    assert_eq!(content(&harness), "a\n");
+}
+
+#[test]
 fn up_and_down_move_by_visual_row_when_wrapping() {
     // Rows: "alpha beta " / "gamma delta" / "end".
     let mut harness = wrapping_harness("alpha beta gamma delta\nend", 12);

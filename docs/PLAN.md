@@ -121,12 +121,13 @@ rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP featu
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit; chosen by the user, others left out on purpose):
-1. Insert final newline.
-2. `#region` folding markers, and unfold on a click after a folded line's end.
-3. Linked editing (HTML tag pairs renamed together).
-4. Minimap marks (search matches, diagnostics).
+1. `#region` folding markers, and unfold on a click after a folded line's end.
+2. Linked editing (HTML tag pairs renamed together).
+3. Minimap marks (search matches, diagnostics).
 
 **Done in the last sessions** (newest first):
+- Insert final newline (`Command::InsertFinalNewline`), a palette-only command: a keymap
+  binding without chords is listed by the palette and matches no key.
 - Cursor undo / redo (Ctrl+U, Ctrl+Shift+U: selections before each cursor move, forgotten on
   an edit) and transpose letters (Ctrl+K Ctrl+T). `Command` moved to `state/command.rs`.
 - Unicode highlighting (D32): invisible characters and ASCII look-alikes boxed, explained on

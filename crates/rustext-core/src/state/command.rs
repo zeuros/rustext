@@ -64,6 +64,8 @@ pub enum Command {
     ToggleBlockComment,
     /// Swaps the chars around each cursor (VS Code's `transposeLetters`).
     TransposeLetters,
+    /// Ends the text with a line ending, if it doesn't (before saving).
+    InsertFinalNewline,
     /// Applies a transaction computed outside (find / replace, formatting, an application edit).
     Apply(Transaction),
     /// Inserts a snippet (`${1:name}`…) in place of the primary selection and the
@@ -148,6 +150,7 @@ impl Command {
             Command::ToggleLineComment => "comment.line",
             Command::ToggleBlockComment => "comment.block",
             Command::TransposeLetters => "edit.transposeLetters",
+            Command::InsertFinalNewline => "edit.insertFinalNewline",
             Command::Apply(_) => "edit.apply",
             Command::InsertSnippet { .. } => "edit.insertSnippet",
         }

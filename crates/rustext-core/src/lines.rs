@@ -219,6 +219,21 @@ pub fn trim_trailing_whitespace(context: &EditContext) -> Option<Transaction> {
     Some(Transaction { changes, selections, kind: EditKind::Other, auto_closed_offsets: Vec::new() })
 }
 
+/// Ends the text with its line ending when the last line has content (VS Code's
+/// `files.insertFinalNewline`, for an application to run before saving). Cursors at the end
+/// stay on their line.
+pub fn insert_final_newline(context: &EditContext) -> Option<Transaction> {
+    let text = context.text;
+    if text.line_len(text.last_line()) == 0 {
+        return None;
+    }
+    let changes = ChangeSet::single(Change::insert(text.len_chars(), text.line_ending().as_str()));
+    let map = |offset: usize| changes.map_offset(offset, crate::change::Bias::Before);
+    let selections =
+        context.selections.map_each(|selection| Selection::new(map(selection.anchor), map(selection.head)));
+    Some(Transaction { changes, selections, kind: EditKind::Other, auto_closed_offsets: Vec::new() })
+}
+
 /// Ctrl+Enter / Ctrl+Shift+Enter: a new line below or above the cursor's line, with its
 /// indentation, the cursor on it.
 pub fn insert_line(context: &EditContext, direction: VerticalDirection) -> Option<Transaction> {
@@ -361,6 +376,30 @@ mod tests {
         };
         let transaction = command(&context).expect("a transaction");
         (transaction.changes.apply(&text).to_string(), transaction.selections)
+    }
+
+    #[test]
+    fn a_final_newline_is_added_after_a_last_line_with_content() {
+        let (content, selections) = run("a\r\nb", Selections::cursor(4), insert_final_newline);
+
+        assert_eq!(content, "a\r\nb\r\n");
+        assert_eq!(selections.primary(), Selection::cursor(4));
+    }
+
+    #[test]
+    fn a_text_ending_with_a_newline_gets_no_other() {
+        let text = Text::new("a\n");
+        let (config, language) = (EditingConfig::default(), LanguageConfiguration::default());
+        let selections = Selections::cursor(0);
+        let context = EditContext {
+            text: &text,
+            selections: &selections,
+            config: &config,
+            language: &language,
+            auto_closed_offsets: &[],
+        };
+
+        assert!(insert_final_newline(&context).is_none());
     }
 
     #[test]

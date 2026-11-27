@@ -305,6 +305,7 @@ impl EditorState {
             Command::ToggleLineComment => toggle_line_comment(&context),
             Command::ToggleBlockComment => toggle_block_comment(&context),
             Command::TransposeLetters => edit::transpose_letters(&context),
+            Command::InsertFinalNewline => lines::insert_final_newline(&context),
             Command::Apply(transaction) => Some(transaction),
             Command::InsertSnippet { .. } => None,
         };

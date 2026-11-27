@@ -87,7 +87,7 @@ From `../gitgud/src/app/components/monaco-editor-view`, `merge-editor` and `file
 | Transpose letters | `transposeLetters` | P2 | done: Ctrl+K Ctrl+T (no default binding on Linux in VS Code) |
 | Case transforms | `transformToUppercase/Lowercase/Titlecase/Snakecase/Camelcase/Kebabcase/Pascalcase` | P1 | done |
 | Trim trailing whitespace | `editor.action.trimTrailingWhitespace` | P1 | done |
-| Insert final newline | contrib `insertFinalNewLine` | P2 | todo |
+| Insert final newline | contrib `insertFinalNewLine` | P2 | done: `Command::InsertFinalNewline`, in the palette (no key, as in VS Code); the application runs it before saving if it wants |
 | Clipboard | `clipboardCopyAction`, `Cut`, `Paste`, `emptySelectionClipboard` (copy whole line), `multiCursorPaste` (spread), `copyWithSyntaxHighlighting` | P0 | done |
 | Overtype mode (Insert key) | `overtypeCursorStyle`, `overtypeOnPaste` | P2 | todo |
 | In-place replace (cycle true/false…) | `inPlaceReplace.up/down` | P3 | todo |
