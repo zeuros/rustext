@@ -121,16 +121,17 @@ rust_analyzer.rs` (ignored: needs `rust-analyzer`), which checks every LSP featu
 real server. Every feature is a commit on `main`.
 
 **Next, in order** (each a commit; chosen by the user, others left out on purpose):
-1. Moved code detection in diffs (Monaco's `experimental.showMoves`).
-2. Folding in diffs (off today when the application passes its own `DisplayLayout`).
-3. Unicode highlighting: invisible and ambiguous characters boxed.
-4. Cursor undo / redo (Ctrl+U) and transpose letters.
-5. Insert final newline.
-6. `#region` folding markers, and unfold on a click after a folded line's end.
-7. Linked editing (HTML tag pairs renamed together).
-8. Minimap marks (search matches, diagnostics).
+1. Folding in diffs (off today when the application passes its own `DisplayLayout`).
+2. Unicode highlighting: invisible and ambiguous characters boxed.
+3. Cursor undo / redo (Ctrl+U) and transpose letters.
+4. Insert final newline.
+5. `#region` folding markers, and unfold on a click after a folded line's end.
+6. Linked editing (HTML tag pairs renamed together).
+7. Minimap marks (search matches, diagnostics).
 
 **Done in the last sessions** (newest first):
+- Moved code in diffs (D30): `DiffOptions::detect_moves`, moved blocks tinted with a
+  "Moved to/from line N" lens that jumps to the other end ("Show moved code" in the demo).
 - Embedded languages (D29): HTML's scripts and styles are parsed as JavaScript and CSS over
   their parts, for colors, brackets, symbols, folds and smart select; HTML's prose brackets
   come from its tree too. The existing complexity-lint violations are pinned (D28).

@@ -4,11 +4,12 @@
 
 use rustext_core::decoration::{Decoration, DecorationKind};
 use rustext_core::display::{DisplayLayout, DisplayRow, RowContent};
+use rustext_core::services::CodeLens;
 use rustext_core::style::Rgba;
 use rustext_core::{Position, Text};
 
 use crate::layout::{CollapseOptions, RowKind, Segment, collapse_unchanged, inline_rows, side_by_side_rows};
-use crate::line_diff::LineDiff;
+use crate::line_diff::{LineDiff, LineRange};
 
 /// Colors of a diff, as data (the widget's theme provides them).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -17,6 +18,8 @@ pub struct DiffColors {
     pub added_line: Rgba,
     pub removed_text: Rgba,
     pub added_text: Rgba,
+    /// Lines of a moved block, on both sides.
+    pub moved_line: Rgba,
 }
 
 /// How unchanged regions are shown: all of them, or collapsed except the ones the user opened
@@ -68,6 +71,42 @@ struct DiffRow {
     kind: RowKind,
 }
 
+/// The lines of one side that moved, and those starting a moved block (which get a code lens
+/// row naming where the block went, D30).
+struct MovedLines {
+    blocks: Vec<LineRange>,
+}
+
+impl MovedLines {
+    fn of(diff: &LineDiff, is_old_side: bool) -> Self {
+        let blocks = diff.moves.iter().map(|moved| if is_old_side { moved.old } else { moved.new }).collect();
+        Self { blocks }
+    }
+
+    fn contains(&self, line: Option<usize>) -> bool {
+        line.is_some_and(|line| self.blocks.iter().any(|block| block.contains(line)))
+    }
+
+    /// The lens row above `line` when a moved block starts there.
+    fn lens_row(&self, line: Option<usize>) -> Option<DisplayRow> {
+        let line = line.filter(|&line| self.blocks.iter().any(|block| block.start == line))?;
+        Some(DisplayRow::new(RowContent::CodeLens(line)))
+    }
+}
+
+/// The code lenses of the moved blocks, for the old and the new side: "Moved to line 12" above
+/// the old block, "Moved from line 3" above the new one. The lenses of each side are in the
+/// order of `diff.moves`, so a clicked lens's index is its move's.
+pub fn move_code_lenses(diff: &LineDiff) -> (Vec<CodeLens>, Vec<CodeLens>) {
+    let old =
+        diff.moves.iter().map(|moved| CodeLens::new(moved.old.start, format!("Moved to line {}", moved.new.start + 1)));
+    let new = diff
+        .moves
+        .iter()
+        .map(|moved| CodeLens::new(moved.new.start, format!("Moved from line {}", moved.old.start + 1)));
+    (old.collect(), new.collect())
+}
+
 /// Rows grouped into shown and collapsed segments, with each collapsed segment's lines on both
 /// sides.
 fn segments_of(rows: &[DiffRow], collapsing: &Collapsing) -> Vec<Segment> {
@@ -100,13 +139,24 @@ fn segments_of(rows: &[DiffRow], collapsing: &Collapsing) -> Vec<Segment> {
 }
 
 /// The display row of a diff row on one side, `None` for a side with no line.
-fn side_row(line: Option<usize>, kind: RowKind, is_old_side: bool, colors: &DiffColors) -> DisplayRow {
+fn side_row(
+    line: Option<usize>,
+    kind: RowKind,
+    is_old_side: bool,
+    moved: &MovedLines,
+    colors: &DiffColors,
+) -> DisplayRow {
+    let is_moved = moved.contains(line);
     let Some(line) = line else { return DisplayRow::new(RowContent::Padding) };
     let row = DisplayRow::new(RowContent::Line(line));
     match (kind, is_old_side) {
         (RowKind::Unchanged, _) => row,
-        (_, true) => row.with_background(colors.removed_line).with_marker('-'),
-        (_, false) => row.with_background(colors.added_line).with_marker('+'),
+        (_, true) => {
+            row.with_background(if is_moved { colors.moved_line } else { colors.removed_line }).with_marker('-')
+        }
+        (_, false) => {
+            row.with_background(if is_moved { colors.moved_line } else { colors.added_line }).with_marker('+')
+        }
     }
 }
 
@@ -132,18 +182,24 @@ pub fn side_by_side_layouts(
         .into_iter()
         .map(|row| DiffRow { old_line: row.old_line, new_line: row.new_line, kind: row.kind })
         .collect();
+    let (old_moved, new_moved) = (MovedLines::of(diff, true), MovedLines::of(diff, false));
     let mut old_rows = Vec::with_capacity(rows.len());
     let mut new_rows = Vec::with_capacity(rows.len());
     for segment in segments_of(&rows, collapsing) {
         match segment {
             Segment::Shown { start_row, end_row } => {
                 for row in &rows[start_row..end_row] {
+                    let (old_lens, new_lens) = (old_moved.lens_row(row.old_line), new_moved.lens_row(row.new_line));
+                    if old_lens.is_some() || new_lens.is_some() {
+                        old_rows.push(old_lens.unwrap_or(DisplayRow::new(RowContent::Padding)));
+                        new_rows.push(new_lens.unwrap_or(DisplayRow::new(RowContent::Padding)));
+                    }
                     let old_points = WrapPoints::of(wraps.old, row.old_line);
                     let new_points = WrapPoints::of(wraps.new, row.new_line);
                     let height = 1 + old_points.len().max(new_points.len());
-                    let old_first = side_row(row.old_line, row.kind, true, colors);
+                    let old_first = side_row(row.old_line, row.kind, true, &old_moved, colors);
                     push_line_rows(&mut old_rows, old_first, row.old_line, old_points, height);
-                    let new_first = side_row(row.new_line, row.kind, false, colors);
+                    let new_first = side_row(row.new_line, row.kind, false, &new_moved, colors);
                     push_line_rows(&mut new_rows, new_first, row.new_line, new_points, height);
                 }
             }
@@ -156,6 +212,12 @@ pub fn side_by_side_layouts(
     push_trailing_empty_line(&mut old_rows, old, diff.old_line_count);
     push_trailing_empty_line(&mut new_rows, new, diff.new_line_count);
     (DisplayLayout::new(old_rows, old.line_count()), DisplayLayout::new(new_rows, new.line_count()))
+}
+
+/// The row of a removed line in an inline view: a line of the old text, foreign to the editor.
+fn removed_foreign_row(old_line: usize, old_moved: &MovedLines, colors: &DiffColors) -> DisplayRow {
+    let background = if old_moved.contains(Some(old_line)) { colors.moved_line } else { colors.removed_line };
+    DisplayRow::new(RowContent::Foreign(old_line)).with_background(background).with_marker('-')
 }
 
 /// Rows of the new editor of an inline view: removed lines are foreign rows from the old text
@@ -171,20 +233,20 @@ pub fn inline_layout(
         .into_iter()
         .map(|row| DiffRow { old_line: row.old_line, new_line: row.new_line, kind: row.kind })
         .collect();
+    let (old_moved, new_moved) = (MovedLines::of(diff, true), MovedLines::of(diff, false));
     let mut display_rows = Vec::with_capacity(rows.len());
     for segment in segments_of(&rows, collapsing) {
         match segment {
             Segment::Shown { start_row, end_row } => {
                 for row in &rows[start_row..end_row] {
                     match (row.kind, row.old_line, row.new_line) {
-                        (RowKind::Removed, Some(old_line), _) => display_rows.push(
-                            DisplayRow::new(RowContent::Foreign(old_line))
-                                .with_background(colors.removed_line)
-                                .with_marker('-'),
-                        ),
+                        (RowKind::Removed, Some(old_line), _) => {
+                            display_rows.push(removed_foreign_row(old_line, &old_moved, colors));
+                        }
                         (_, _, new_line) => {
+                            display_rows.extend(new_moved.lens_row(new_line));
                             let points = WrapPoints::of(new_wrap_points, new_line);
-                            let first = side_row(new_line, row.kind, false, colors);
+                            let first = side_row(new_line, row.kind, false, &new_moved, colors);
                             push_line_rows(&mut display_rows, first, new_line, points, 1 + points.len());
                         }
                     }
@@ -300,10 +362,66 @@ mod tests {
         added_line: Rgba::rgb(0, 255, 0),
         removed_text: Rgba::rgb(128, 0, 0),
         added_text: Rgba::rgb(0, 128, 0),
+        moved_line: Rgba::rgb(0, 0, 255),
     };
 
     fn contents(layout: &DisplayLayout) -> Vec<RowContent> {
         layout.rows().iter().map(|row| row.content).collect()
+    }
+
+    /// `main` moved below `helper`: old lines 0..3 are new lines 5..8.
+    fn moved_function_diff() -> (Text, Text, LineDiff) {
+        let main = "fn main() {\n    println!(\"hello\");\n}\n";
+        let helper = "fn helper() -> u32 {\n    let answer = 42;\n    answer\n}\n";
+        let (old, new) = (Text::new(&format!("{main}\n{helper}")), Text::new(&format!("{helper}\n{main}")));
+        let diff = diff_lines(&old, &new, &DiffOptions { detect_moves: true, ..DiffOptions::default() });
+        assert_eq!(diff.moves.len(), 1);
+        (old, new, diff)
+    }
+
+    #[test]
+    fn a_moved_block_has_a_lens_row_above_it_on_both_sides() {
+        let (old, new, diff) = moved_function_diff();
+
+        let (old_layout, new_layout) =
+            side_by_side_layouts(&diff, &old, &new, &Collapsing::default(), &COLORS, &WrapPoints::NONE);
+
+        let old_rows = contents(&old_layout);
+        let new_rows = contents(&new_layout);
+        assert_eq!(old_rows.len(), new_rows.len());
+        let old_lens_row = old_rows.iter().position(|row| *row == RowContent::CodeLens(0)).expect("old lens");
+        assert_eq!(old_rows[old_lens_row + 1], RowContent::Line(0));
+        assert_eq!(new_rows[old_lens_row], RowContent::Padding);
+        let new_lens_row = new_rows.iter().position(|row| *row == RowContent::CodeLens(5)).expect("new lens");
+        assert_eq!(new_rows[new_lens_row + 1], RowContent::Line(5));
+    }
+
+    #[test]
+    fn moved_lines_have_the_moved_color() {
+        let (old, new, diff) = moved_function_diff();
+
+        let (old_layout, new_layout) =
+            side_by_side_layouts(&diff, &old, &new, &Collapsing::default(), &COLORS, &WrapPoints::NONE);
+
+        let background_of = |layout: &DisplayLayout, line: usize| {
+            layout.rows().iter().find(|row| row.content == RowContent::Line(line)).and_then(|row| row.background)
+        };
+        assert_eq!(background_of(&old_layout, 1), Some(COLORS.moved_line));
+        assert_eq!(background_of(&new_layout, 6), Some(COLORS.moved_line));
+        assert_eq!(background_of(&old_layout, 3), Some(COLORS.removed_line));
+    }
+
+    #[test]
+    fn the_inline_view_names_where_a_block_came_from() {
+        let (_, new, diff) = moved_function_diff();
+
+        let layout = inline_layout(&diff, &new, &Collapsing::default(), &COLORS, &[]);
+
+        let rows = contents(&layout);
+        let lens_row = rows.iter().position(|row| *row == RowContent::CodeLens(5)).expect("lens");
+        assert_eq!(rows[lens_row + 1], RowContent::Line(5));
+        let (_, new_lenses) = move_code_lenses(&diff);
+        assert_eq!(new_lenses[0].label, "Moved from line 1");
     }
 
     #[test]

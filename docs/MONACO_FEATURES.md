@@ -237,7 +237,7 @@ All `languages.register*Provider`. Design here: see DECISIONS D9.
 | Resizable split | `enableSplitViewResizing`, `splitViewDefaultRatio` | P1 | done |
 | Navigate changes (F7 / Shift+F7) | `goToDiff('next'|'previous')`, `revealFirstDiff` | P0 | done |
 | Original side editable | `originalEditable` | P2 | done (`DiffViewConfig::old_editable`) |
-| Moved code detection | `experimental.showMoves` | P2 | todo |
+| Moved code detection | `experimental.showMoves` | P2 | done: `DiffOptions::detect_moves`, tinted blocks with a lens jumping to the other end (D30); no inner diff of a moved block |
 | Diff word wrap | `diffWordWrap` | P1 | done (`inherit`: the diff wraps when the `ViewConfig` does; sides stay aligned with padding; removed lines of an inline view don't wrap) |
 | Accessible diff viewer | `accessibleDiffViewerNext` | P3 | done (Alt+F2: the change at the cursor as spoken lines with 3 context lines; F7 / Shift+F7 move, Escape closes) |
 | Size / time limits | `maxComputationTime`, `maxFileSize` | P0 | done |

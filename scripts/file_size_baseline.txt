@@ -4,5 +4,5 @@
 546 crates/rustext-egui/src/code_editor/input.rs
 1238 crates/rustext-egui/src/code_editor/mod.rs
 801 crates/rustext-egui/src/code_editor/paint.rs
-558 crates/rustext-egui/src/diff_editor.rs
+546 crates/rustext-egui/src/diff_editor/mod.rs
 1015 crates/rustext-lsp/src/client.rs

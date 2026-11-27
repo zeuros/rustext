@@ -48,6 +48,7 @@ impl DiffPage {
             config: DiffViewConfig {
                 mode: if inline { DiffViewMode::Inline } else { DiffViewMode::SideBySide },
                 collapse_unchanged: Some(CollapseOptions::default()),
+                diff_options: rustext_diff::DiffOptions { detect_moves: true, ..rustext_diff::DiffOptions::default() },
                 ..DiffViewConfig::default()
             },
             view_config: ViewConfig {
@@ -100,6 +101,7 @@ impl DiffPage {
             self.config.collapse_unchanged = collapses.then(CollapseOptions::default);
         }
         ui.checkbox(&mut self.config.diff_options.ignore_trim_whitespace, "Ignore trim whitespace");
+        ui.checkbox(&mut self.config.diff_options.detect_moves, "Show moved code");
         ui.checkbox(&mut self.config.old_editable, "Old side editable");
         ui.add(egui::Slider::new(&mut self.config.inline_below_width, 0.0..=1500.0).text("Inline below width"));
         ui.separator();

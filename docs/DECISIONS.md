@@ -431,6 +431,24 @@ page share their names, and one tree per language reuses its previous tree incre
 - Markdown, Vue and Svelte stay with their TextMate grammars, which embed fenced code and
   scripts already (D13).
 
+## D30. Moved code: blocks of removed lines found again among added ones
+
+With `DiffOptions::detect_moves` (off by default, as Monaco's `experimental.showMoves`), the
+line diff looks for blocks removed in one hunk and added in another: `LineDiff::moves`.
+
+- Lines compare by their trimmed content, so a block moved into a `mod` or out of an `if` is a
+  move. Going down the removed lines, each takes the longest run of equal added lines in
+  another hunk that no earlier block took. A move has at least 3 lines and 20 chars that
+  aren't whitespace (a `}` and a blank line match anywhere); a line with more than 64 equal
+  added lines starts no move (cost stays linear).
+- A hunk's own lines are not a move of themselves: lines re-indented in place stay a change.
+- Shown as data the editors already paint: moved lines get `DiffColors::moved_line` instead of
+  red/green, and a code lens row above each block on both sides ("Moved to line 12" /
+  "Moved from line 3", D25), padded on the other side to keep rows aligned. A click on one
+  puts the other side's cursor at the other end. Inline, only the new side has lenses (the
+  removed lines are foreign rows there), and its lens is a label.
+- Moves inside a moved block (changed lines within it) are not diffed again, unlike Monaco.
+
 ## Inspiration (read their code, don't copy it)
 
 | Project | Take |

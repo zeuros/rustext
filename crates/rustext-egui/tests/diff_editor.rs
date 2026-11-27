@@ -238,3 +238,26 @@ fn dragging_the_separator_resizes_the_sides() {
     let ratio = harness.state().document.dragged_split_ratio.expect("dragged");
     assert!((ratio - 0.3).abs() < 0.02, "ratio {ratio}");
 }
+
+#[test]
+fn clicking_a_moved_blocks_lens_goes_to_where_it_moved() {
+    let main = "fn main() {\n    println!(\"hello\");\n}\n";
+    let helper = "fn helper() -> u32 {\n    let answer = 42;\n    answer\n}\n";
+    let diff_options = rustext_diff::DiffOptions { detect_moves: true, ..rustext_diff::DiffOptions::default() };
+    let config = DiffViewConfig {
+        mode: DiffViewMode::SideBySide,
+        inline_below_width: 0.0,
+        diff_options,
+        ..DiffViewConfig::default()
+    };
+    let mut harness = harness(&format!("{main}\n{helper}"), &format!("{helper}\n{main}"), config);
+    assert_eq!(harness.state().document.diff().moves.len(), 1);
+
+    // Row 0 of the old side is the lens above the moved `main`.
+    let old_lens = harness.state().document.old_view.geometry().unwrap().cell_center(0, 2);
+    click(&mut harness, old_lens);
+
+    let document = &harness.state().document;
+    assert_eq!(document.focused_side(), DiffSide::New);
+    assert_eq!(document.new.text().position(document.new.selections().primary().head).line, 5);
+}

@@ -10,16 +10,19 @@ use std::collections::BTreeSet;
 use egui::{Rect, Stroke, Ui, UiBuilder, pos2};
 use rustext_core::decoration::{Decoration, DecorationKind};
 use rustext_core::display::DisplayLayout;
+use rustext_core::services::CodeLens;
 use rustext_core::style::LineStyler;
 use rustext_core::{Command, EditingConfig, EditorState, Selection, Selections, Text};
 use rustext_diff::{
     CollapseOptions, Collapsing, DiffColors, DiffOptions, LineDiff, LineSelection, RowKind, WrapPoints, diff_lines,
-    inline_layout, inner_change_decorations, side_by_side_layouts, side_by_side_rows,
+    inline_layout, inner_change_decorations, move_code_lenses, side_by_side_layouts, side_by_side_rows,
 };
 
 use crate::code_editor::{CodeEditor, EditorResponse, EditorView, Foreign, MouseTarget, ViewConfig, to_rgba};
 use crate::keymap::{Action, Keymap};
 use crate::theme::EditorTheme;
+
+mod accessible_viewer;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum DiffViewMode {
@@ -73,6 +76,10 @@ struct DiffDisplay {
     inline_layout: DisplayLayout,
     old_decorations: Vec<Decoration>,
     new_decorations: Vec<Decoration>,
+    /// "Moved to line N" above each moved block of the old side, "Moved from line N" of the
+    /// new side, in the order of the diff's moves.
+    old_move_lenses: Vec<CodeLens>,
+    new_move_lenses: Vec<CodeLens>,
 }
 
 /// Both texts of a diff, their views, and the diff between them.
@@ -202,6 +209,20 @@ impl DiffDocument {
         self.new_view.reveal_cursor();
     }
 
+    /// Puts the cursor of `side` at the start of the `index`th moved block there, the other end
+    /// of the move whose lens was clicked (D30).
+    fn go_to_move(&mut self, index: usize, side: DiffSide) {
+        let Some(moved) = self.diff.moves.get(index).copied() else { return };
+        let (state, view, line) = match side {
+            DiffSide::Old => (&mut self.old, &mut self.old_view, moved.old.start),
+            DiffSide::New => (&mut self.new, &mut self.new_view, moved.new.start),
+        };
+        let offset = state.text().line_start(line.min(state.text().last_line()));
+        state.execute(Command::SetSelections(Selections::cursor(offset)));
+        view.reveal_cursor();
+        self.focused_side = side;
+    }
+
     fn expand_collapsed(&mut self, side: DiffSide, first_line: usize) {
         let old_line = match side {
             DiffSide::Old => Some(first_line),
@@ -271,6 +292,7 @@ impl<'a> DiffEditor<'a> {
             added_line: to_rgba(self.theme.inserted_line_background),
             removed_text: to_rgba(self.theme.removed_text_background),
             added_text: to_rgba(self.theme.inserted_text_background),
+            moved_line: to_rgba(self.theme.moved_line_background),
         }
     }
 
@@ -292,8 +314,17 @@ impl<'a> DiffEditor<'a> {
             side_by_side_layouts(&document.diff, old_text, new_text, &collapsing, &colors, &wraps);
         let inline = inline_layout(&document.diff, new_text, &collapsing, &colors, wraps.new);
         let (old_decorations, new_decorations) = inner_change_decorations(&document.diff, old_text, new_text, &colors);
-        document.display =
-            Some(DiffDisplay { key, old_layout, new_layout, inline_layout: inline, old_decorations, new_decorations });
+        let (old_move_lenses, new_move_lenses) = move_code_lenses(&document.diff);
+        document.display = Some(DiffDisplay {
+            key,
+            old_layout,
+            new_layout,
+            inline_layout: inline,
+            old_decorations,
+            new_decorations,
+            old_move_lenses,
+            new_move_lenses,
+        });
     }
 
     pub fn show(mut self, ui: &mut Ui) -> DiffResponse {
@@ -320,59 +351,6 @@ impl<'a> DiffEditor<'a> {
         self.show_accessible_viewer(ui, rect);
         ui.advance_cursor_after_rect(rect);
         response
-    }
-
-    /// The change at the cursor as lines a screen reader reads (`removed line 9: …`), in a
-    /// panel along the bottom; F7 / Shift+F7 move to the next / previous change, Escape closes.
-    fn show_accessible_viewer(&mut self, ui: &Ui, rect: Rect) {
-        const CONTEXT_LINES: usize = 3;
-        let document = &mut *self.document;
-        if !document.shows_accessible_viewer {
-            return;
-        }
-        if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
-            document.shows_accessible_viewer = false;
-            return;
-        }
-        let hunk_index = document.hunk_at_cursor();
-        let lines = hunk_index
-            .map(|index| {
-                rustext_diff::hunk_read_lines(
-                    &document.diff,
-                    document.old.text(),
-                    document.new.text(),
-                    index,
-                    CONTEXT_LINES,
-                )
-            })
-            .unwrap_or_default();
-        let title = match hunk_index {
-            Some(index) => format!("Change {} of {}", index + 1, document.diff.hunks.len()),
-            None => "No change at the cursor: F7 goes to the next one".to_string(),
-        };
-        let theme = self.theme;
-        egui::Area::new(ui.make_persistent_id("rustext-accessible-diff-viewer"))
-            .order(egui::Order::Foreground)
-            .fade_in(false)
-            .fixed_pos(pos2(rect.left() + 8.0, rect.bottom() - 8.0))
-            .pivot(egui::Align2::LEFT_BOTTOM)
-            .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).fill(theme.widget_background).stroke((1.0, theme.widget_border)).show(
-                    ui,
-                    |ui| {
-                        ui.set_width((rect.width() - 32.0).max(200.0));
-                        ui.label(egui::RichText::new(title).strong().color(theme.foreground));
-                        for line in &lines {
-                            let color = match line.kind {
-                                rustext_diff::ReadLineKind::Unchanged => theme.line_number,
-                                rustext_diff::ReadLineKind::Removed => theme.error,
-                                rustext_diff::ReadLineKind::Added => theme.info,
-                            };
-                            ui.label(egui::RichText::new(line.spoken()).monospace().color(color));
-                        }
-                    },
-                );
-            });
     }
 
     #[expect(clippy::too_many_lines, reason = "predates the complexity lints (D28)")]
@@ -408,6 +386,7 @@ impl<'a> DiffEditor<'a> {
                 .wrap_under_given_layout()
                 .display_layout(&display.old_layout)
                 .decorations(&display.old_decorations)
+                .code_lenses(&display.old_move_lenses)
                 .markers(true);
                 if let Some(styler) = self.old_styler.as_deref_mut() {
                     editor = editor.styler(styler);
@@ -433,6 +412,7 @@ impl<'a> DiffEditor<'a> {
                 .wrap_under_given_layout()
                 .display_layout(&display.new_layout)
                 .decorations(&display.new_decorations)
+                .code_lenses(&display.new_move_lenses)
                 .markers(true);
                 if let Some(styler) = self.new_styler.as_deref_mut() {
                     editor = editor.styler(styler);
@@ -487,6 +467,7 @@ impl<'a> DiffEditor<'a> {
                 .wrap_under_given_layout()
                 .display_layout(&display.inline_layout)
                 .decorations(&display.new_decorations)
+                .code_lenses(&display.new_move_lenses)
                 .foreign(foreign)
                 .markers(true);
                 if let Some(styler) = self.new_styler.as_deref_mut() {
@@ -527,6 +508,13 @@ impl<'a> DiffEditor<'a> {
                 Some(MouseTarget::Foreign { line }) => document.click_removed_line(line, shift),
                 _ => {}
             }
+        }
+
+        if let Some(index) = old.as_ref().and_then(|old| old.clicked_code_lens) {
+            document.go_to_move(index, DiffSide::New);
+        }
+        if let Some(index) = new.clicked_code_lens.filter(|_| mode == DiffViewMode::SideBySide) {
+            document.go_to_move(index, DiffSide::Old);
         }
 
         let actions = old.iter().flat_map(|old| old.unhandled_actions.iter()).chain(new.unhandled_actions.iter());

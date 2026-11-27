@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 use imara_diff::{Algorithm, Diff, InternedInput};
 use rustext_core::{Position, Range, Text};
 
+use crate::moves::{MovedBlock, detect_moves};
+
 /// Lines `start..end` (0-based, end excluded).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct LineRange {
@@ -75,6 +77,9 @@ pub struct DiffOptions {
     pub max_inner_change_lines: usize,
     /// Past this, inner changes stop being computed for the remaining hunks.
     pub max_computation_time: Duration,
+    /// Finds blocks removed in one hunk and added in another (Monaco's
+    /// `experimental.showMoves`, off by default as there).
+    pub detect_moves: bool,
 }
 
 impl Default for DiffOptions {
@@ -84,6 +89,7 @@ impl Default for DiffOptions {
             inner_changes: true,
             max_inner_change_lines: 1_000,
             max_computation_time: Duration::from_millis(500),
+            detect_moves: false,
         }
     }
 }
@@ -96,6 +102,8 @@ pub struct LineDiff {
     pub new_line_count: usize,
     /// Inner changes were skipped for some hunks because of `max_computation_time`.
     pub hit_time_limit: bool,
+    /// Blocks moved from one hunk to another, by their old lines; with `detect_moves` only.
+    pub moves: Vec<MovedBlock>,
 }
 
 impl LineDiff {
@@ -149,7 +157,7 @@ pub fn diff_lines(old: &Text, new: &Text, options: &DiffOptions) -> LineDiff {
     diff.postprocess_lines(&input);
 
     let mut hit_time_limit = false;
-    let hunks = diff
+    let hunks: Vec<Hunk> = diff
         .hunks()
         .map(|hunk| {
             let old_range = LineRange::new(hunk.before.start as usize, hunk.before.end as usize);
@@ -166,7 +174,8 @@ pub fn diff_lines(old: &Text, new: &Text, options: &DiffOptions) -> LineDiff {
             Hunk { old: old_range, new: new_range, inner_changes }
         })
         .collect();
-    LineDiff { hunks, old_line_count, new_line_count, hit_time_limit }
+    let moves = if options.detect_moves { detect_moves(old, new, &hunks) } else { Vec::new() };
+    LineDiff { hunks, old_line_count, new_line_count, hit_time_limit, moves }
 }
 
 /// A word of a hunk's text: a run of word chars, a run of whitespace, or one other char; with

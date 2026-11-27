@@ -32,6 +32,7 @@ fn large_diff_timings() {
         added_line: Rgba::hex(0x00ff00),
         removed_text: Rgba::hex(0x800000),
         added_text: Rgba::hex(0x008000),
+        moved_line: Rgba::hex(0x0000ff),
     };
     for (line_count, change_every) in [(10_000, 50), (10_000, 3), (100_000, 50)] {
         let (old, new) = texts(line_count, change_every);
